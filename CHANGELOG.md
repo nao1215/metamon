@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING** `metamon.commutativity_of` no longer takes the `of:` parameter.
+  The argument was never read by the body — the swap transform and structural
+  equality are independent of the supplied function — and forced callers to
+  thread the operator twice (once into the template, once into `forall_morph`).
+  Drop `of:` at the call site:
+  ```gleam
+  // before
+  let mr = metamon.commutativity_of(name: "add_commutative", of: add)
+  // after
+  let mr = metamon.commutativity_of(name: "add_commutative")
+  ```
+  (#5)
+
 ## [0.1.0] - 2026-05-06
 
 Initial public release.

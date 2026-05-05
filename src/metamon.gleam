@@ -259,17 +259,14 @@ pub fn equivariant_under(
 /// Use it as:
 ///
 /// ```gleam
-/// let mr = metamon.commutativity_of(name: "add_commutative", of: add)
+/// let mr = metamon.commutativity_of(name: "add_commutative")
 /// metamon.forall_morph(
 ///   generator.tuple2(int_gen, int_gen),
 ///   mr,
 ///   fn(pair) { add(pair.0, pair.1) },
 /// )
 /// ```
-pub fn commutativity_of(
-  name name: String,
-  of _op: fn(a, a) -> b,
-) -> Mr(#(a, a), b) {
+pub fn commutativity_of(name name: String) -> Mr(#(a, a), b) {
   let swap = transform.new("swap", fn(pair: #(a, a)) { #(pair.1, pair.0) })
   mr(name: name, transform: swap, relation: relation.equal())
 }
