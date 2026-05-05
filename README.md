@@ -739,7 +739,7 @@ pub fn configured_property_test() {
 }
 ```
 
-`with_runs`, `with_max_size`, `with_shrink_limit`, `with_max_discards`,
+`with_runs`, `with_max_size`, `with_shrink_limit`,
 `with_max_edges`, `with_regression_file` all return
 `Result(Config, ConfigError)`. `with_seed` and `with_diff_enabled`
 are total.
