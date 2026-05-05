@@ -85,29 +85,49 @@ pub fn run_forall(
   let regression_entries = load_regression_for(cfg, "(plain property)")
   case replay_regression_for_forall(gen, regression_entries, property) {
     Halted(text) -> panic_with(text)
-    Done ->
-      case
-        iterate_inputs(cfg, gen, fn(input, source, run_index) {
-          case property(input) {
-            True -> Continue
-            False -> {
-              record_regression_for(cfg, "(plain property)", source, input)
-              Stop(forall_failure(
-                cfg,
-                test_name,
-                gen,
-                property,
-                run_index,
-                input,
-                source,
-              ))
-            }
-          }
-        })
-      {
-        Done -> finish_with_coverage_check(cfg, test_name, None)
-        Halted(report_text) -> panic_with(report_text)
-      }
+    Done -> drive_forall(cfg, test_name, gen, property)
+  }
+}
+
+fn drive_forall(
+  cfg: Config,
+  test_name: String,
+  gen: Generator(a),
+  property: fn(a) -> Bool,
+) -> Nil {
+  let outcome =
+    iterate_inputs(cfg, gen, fn(input, source, run_index) {
+      forall_step(cfg, test_name, gen, property, input, source, run_index)
+    })
+  case outcome {
+    Done -> finish_with_coverage_check(cfg, test_name, None)
+    Halted(report_text) -> panic_with(report_text)
+  }
+}
+
+fn forall_step(
+  cfg: Config,
+  test_name: String,
+  gen: Generator(a),
+  property: fn(a) -> Bool,
+  input: a,
+  source: InputSource,
+  run_index: Int,
+) -> Step(a) {
+  case property(input) {
+    True -> Continue
+    False -> {
+      record_regression_for(cfg, "(plain property)", source, input)
+      Stop(forall_failure(
+        cfg,
+        test_name,
+        gen,
+        property,
+        run_index,
+        input,
+        source,
+      ))
+    }
   }
 }
 
@@ -123,33 +143,54 @@ pub fn run_forall_morph(
   let entries = load_regression_for(cfg, spec_name(spec))
   case replay_regression_for_morph(gen, spec, f, entries) {
     Halted(text) -> panic_with(text)
-    Done ->
-      case
-        iterate_inputs(cfg, gen, fn(input, source, run_index) {
-          let evaluation = evaluate_spec(spec, f, input)
-          case evaluation.holds {
-            True -> Continue
-            False -> {
-              record_regression_for(cfg, spec_name(spec), source, input)
-              Stop(morph_failure(
-                cfg,
-                test_name,
-                gen,
-                spec,
-                f,
-                run_index,
-                input,
-                source,
-                evaluation,
-              ))
-            }
-          }
-        })
-      {
-        Done ->
-          finish_with_coverage_check(cfg, test_name, Some(spec_name(spec)))
-        Halted(report_text) -> panic_with(report_text)
-      }
+    Done -> drive_morph(cfg, test_name, gen, spec, f)
+  }
+}
+
+fn drive_morph(
+  cfg: Config,
+  test_name: String,
+  gen: Generator(a),
+  spec: MorphSpec(a, b),
+  f: fn(a) -> b,
+) -> Nil {
+  let outcome =
+    iterate_inputs(cfg, gen, fn(input, source, run_index) {
+      morph_step(cfg, test_name, gen, spec, f, input, source, run_index)
+    })
+  case outcome {
+    Done -> finish_with_coverage_check(cfg, test_name, Some(spec_name(spec)))
+    Halted(report_text) -> panic_with(report_text)
+  }
+}
+
+fn morph_step(
+  cfg: Config,
+  test_name: String,
+  gen: Generator(a),
+  spec: MorphSpec(a, b),
+  f: fn(a) -> b,
+  input: a,
+  source: InputSource,
+  run_index: Int,
+) -> Step(a) {
+  let evaluation = evaluate_spec(spec, f, input)
+  case evaluation.holds {
+    True -> Continue
+    False -> {
+      record_regression_for(cfg, spec_name(spec), source, input)
+      Stop(morph_failure(
+        cfg,
+        test_name,
+        gen,
+        spec,
+        f,
+        run_index,
+        input,
+        source,
+        evaluation,
+      ))
+    }
   }
 }
 

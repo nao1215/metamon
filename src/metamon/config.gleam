@@ -114,34 +114,46 @@ pub fn with_output_format(c: Config, fmt: OutputFormat) -> Config {
 
 // ---------- read-only accessors ----------
 
+/// The number of successful runs the runner targets per property.
 pub fn runs(c: Config) -> Int {
   c.runs
 }
 
+/// The seed used to drive the deterministic PRNG. `with_seed`
+/// pins this to a fixed value for reproducibility.
 pub fn seed(c: Config) -> Seed {
   c.seed
 }
 
+/// Upper bound on the `Range` size parameter; controls the
+/// complexity ramp from the first run to the last.
 pub fn max_size(c: Config) -> Int {
   c.max_size
 }
 
+/// Maximum number of shrink steps the runner attempts on a single
+/// failure before giving up.
 pub fn shrink_limit(c: Config) -> Int {
   c.shrink_limit
 }
 
+/// Cap on the size of the cartesian-product edge sets that
+/// combinators like `tuple2` / `map2` build up.
 pub fn max_edges(c: Config) -> Int {
   c.max_edges
 }
 
+/// Path to the regression file; `None` disables the feature.
 pub fn regression_file(c: Config) -> Option(String) {
   c.regression_file
 }
 
+/// Whether structural diff is shown in failure output.
 pub fn diff_enabled(c: Config) -> Bool {
   c.diff_enabled
 }
 
+/// Selected failure-report format (`Text` or `Json`).
 pub fn output_format(c: Config) -> OutputFormat {
   c.output_format
 }

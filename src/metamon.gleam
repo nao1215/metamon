@@ -228,8 +228,8 @@ fn list_map_specs(ms: List(Mr(a, b))) -> List(MorphSpec(a, b)) {
 /// Encoded as a Plain MR whose transform is `f` itself and whose
 /// relation is structural equality.
 pub fn idempotency_of(name name: String, of f: fn(a) -> a) -> Mr(a, a) {
-  let t = transform.new("apply " <> name, f)
-  mr(name: name, transform: t, relation: relation.equal())
+  let apply_t = transform.new("apply " <> name, f)
+  mr(name: name, transform: apply_t, relation: relation.equal())
 }
 
 /// `f(T(x)) == f(x)` — `f` is invariant under the input transform.

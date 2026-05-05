@@ -82,28 +82,33 @@ pub fn next_int_in(s: Seed, lo: Int, hi: Int) -> #(Int, Seed) {
 /// that does not align with the original — sufficient for shrinking
 /// independent generator components without correlation artefacts.
 pub fn split(s: Seed) -> #(Seed, Seed) {
-  let #(a, _) = next_int(s)
-  let xored = int.bitwise_and(int.bitwise_exclusive_or(a, split_xor), mask_32)
-  let #(b, _) = next_int(Seed(state: xored))
-  #(Seed(state: a), Seed(state: b))
+  let #(left_state, _) = next_int(s)
+  let xored =
+    int.bitwise_and(int.bitwise_exclusive_or(left_state, split_xor), mask_32)
+  let #(right_state, _) = next_int(Seed(state: xored))
+  #(Seed(state: left_state), Seed(state: right_state))
 }
 
 fn step(state: Int) -> Int {
   // Marsaglia xorshift32. Each shift result is masked to 32 bits to
   // erase JS's signed-shift sign extension and BEAM's unbounded
   // arithmetic; the two targets thus produce the same value.
-  let a =
+  let after_first_shift =
     int.bitwise_exclusive_or(
       state,
       int.bitwise_and(int.bitwise_shift_left(state, 13), mask_32),
     )
-  let b = int.bitwise_exclusive_or(a, int.bitwise_shift_right(a, 17))
-  let c =
+  let after_second_shift =
     int.bitwise_exclusive_or(
-      b,
-      int.bitwise_and(int.bitwise_shift_left(b, 5), mask_32),
+      after_first_shift,
+      int.bitwise_shift_right(after_first_shift, 17),
     )
-  int.bitwise_and(c, mask_32)
+  let after_third_shift =
+    int.bitwise_exclusive_or(
+      after_second_shift,
+      int.bitwise_and(int.bitwise_shift_left(after_second_shift, 5), mask_32),
+    )
+  int.bitwise_and(after_third_shift, mask_32)
 }
 
 fn normalise(value: Int) -> Int {

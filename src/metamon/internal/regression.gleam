@@ -65,45 +65,60 @@ pub fn parse(contents: String) -> List(Entry) {
 }
 
 fn parse_block(raw: String) -> Result(Entry, Nil) {
-  let trimmed = string.trim(raw)
-  case trimmed {
+  case string.trim(raw) {
     "" -> Error(Nil)
-    _ -> {
-      let pairs = parse_lines(trimmed)
-      case
-        lookup(pairs, "mr"),
-        lookup(pairs, "config_seed"),
-        lookup(pairs, "run_index"),
-        lookup(pairs, "size"),
-        lookup(pairs, "edge_index"),
-        lookup(pairs, "recorded")
-      {
-        Ok(mr), Ok(seed_str), Ok(run_str), Ok(size_str), Ok(edge_str), Ok(rec) -> {
-          case
-            int.parse(seed_str),
-            int.parse(run_str),
-            int.parse(size_str),
-            parse_edge(edge_str)
-          {
-            Ok(seed_value), Ok(run_value), Ok(size_value), Ok(edge) ->
-              Ok(Entry(
-                mr_name: strip_quotes(mr),
-                config_seed: seed_value,
-                run_index: run_value,
-                size: size_value,
-                edge_index: edge,
-                note: case lookup(pairs, "note") {
-                  Ok(text) -> Some(strip_quotes(text))
-                  Error(_) -> None
-                },
-                recorded: strip_quotes(rec),
-              ))
-            _, _, _, _ -> Error(Nil)
-          }
-        }
-        _, _, _, _, _, _ -> Error(Nil)
-      }
-    }
+    trimmed -> parse_block_body(parse_lines(trimmed))
+  }
+}
+
+fn parse_block_body(pairs: List(#(String, String))) -> Result(Entry, Nil) {
+  case
+    lookup(pairs, "mr"),
+    lookup(pairs, "config_seed"),
+    lookup(pairs, "run_index"),
+    lookup(pairs, "size"),
+    lookup(pairs, "edge_index"),
+    lookup(pairs, "recorded")
+  {
+    Ok(mr), Ok(seed_str), Ok(run_str), Ok(size_str), Ok(edge_str), Ok(rec) ->
+      build_entry(pairs, mr, seed_str, run_str, size_str, edge_str, rec)
+    _, _, _, _, _, _ -> Error(Nil)
+  }
+}
+
+fn build_entry(
+  pairs: List(#(String, String)),
+  mr: String,
+  seed_str: String,
+  run_str: String,
+  size_str: String,
+  edge_str: String,
+  rec: String,
+) -> Result(Entry, Nil) {
+  case
+    int.parse(seed_str),
+    int.parse(run_str),
+    int.parse(size_str),
+    parse_edge(edge_str)
+  {
+    Ok(seed_value), Ok(run_value), Ok(size_value), Ok(edge) ->
+      Ok(Entry(
+        mr_name: strip_quotes(mr),
+        config_seed: seed_value,
+        run_index: run_value,
+        size: size_value,
+        edge_index: edge,
+        note: lookup_note(pairs),
+        recorded: strip_quotes(rec),
+      ))
+    _, _, _, _ -> Error(Nil)
+  }
+}
+
+fn lookup_note(pairs: List(#(String, String))) -> Option(String) {
+  case lookup(pairs, "note") {
+    Ok(text) -> Some(strip_quotes(text))
+    Error(_) -> None
   }
 }
 

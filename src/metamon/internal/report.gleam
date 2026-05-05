@@ -191,12 +191,15 @@ fn body_lines(report: FailureReport) -> List(String) {
     None -> []
     Some(_) -> ["  relation:    `" <> report.relation_name <> "`"]
   }
-  let inputs = [
-    "  source input  (shrunk):\n    " <> report.source_input,
-    "  follow-up input  (= transform(source)):\n    " <> report.followup_input,
-    "  source output:\n    " <> report.source_output,
-    "  follow-up output:\n    " <> report.followup_output,
-  ]
+  let inputs = case report.morph_mode {
+    None -> ["  source input  (shrunk):\n    " <> report.source_input]
+    Some(_) -> [
+      "  source input  (shrunk):\n    " <> report.source_input,
+      "  follow-up input  (= transform(source)):\n    " <> report.followup_input,
+      "  source output:\n    " <> report.source_output,
+      "  follow-up output:\n    " <> report.followup_output,
+    ]
+  }
   let diff_block = case report.diff_enabled, report.morph_mode {
     True, Some(_) -> [
       "  diff (source_output vs follow-up_output):\n"

@@ -150,8 +150,8 @@ pub fn map2(
   Generator(
     run: fn(s: Seed, size: Int) {
       let #(s1, s2) = seed_module.split(s)
-      let t = tree.zip(g1.run(s1, size), g2.run(s2, size))
-      tree.map(t, fn(pair) { f(pair.0, pair.1) })
+      let zipped = tree.zip(g1.run(s1, size), g2.run(s2, size))
+      tree.map(zipped, fn(pair) { f(pair.0, pair.1) })
     },
     edges: cartesian_capped(g1.edges, g2.edges, f, default_max_edges),
   )
@@ -357,9 +357,9 @@ fn filter_run(
   size: Int,
   retries_left: Int,
 ) -> Tree(a) {
-  let t = g.run(s, size)
-  case predicate(t.value) {
-    True -> tree.filter(t, predicate)
+  let candidate = g.run(s, size)
+  case predicate(candidate.value) {
+    True -> tree.filter(candidate, predicate)
     False -> {
       case retries_left <= 0 {
         True ->

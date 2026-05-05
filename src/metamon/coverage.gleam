@@ -30,6 +30,8 @@ pub type Requirement {
   Requirement(label: String, kind: RequirementKind, hits: Int)
 }
 
+/// Distinguishes percentage-based from absolute-count requirements
+/// so the runner knows which threshold to compare against.
 pub type RequirementKind {
   /// At least `target_pct`% of inputs must hit the label.
   Pct(target_pct: Float)
