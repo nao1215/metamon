@@ -64,14 +64,6 @@ pub fn with_shrink_limit(
   config.with_shrink_limit(c, n)
 }
 
-/// Re-export of `with_max_discards`.
-pub fn with_max_discards(
-  c: Config,
-  n: Int,
-) -> Result(Config, config.ConfigError) {
-  config.with_max_discards(c, n)
-}
-
 /// Re-export of `with_max_edges`.
 pub fn with_max_edges(c: Config, n: Int) -> Result(Config, config.ConfigError) {
   config.with_max_edges(c, n)

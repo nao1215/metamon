@@ -22,7 +22,6 @@ pub opaque type Config {
     seed: Seed,
     max_size: Int,
     shrink_limit: Int,
-    max_discards: Int,
     max_edges: Int,
     regression_file: Option(String),
     diff_enabled: Bool,
@@ -36,7 +35,6 @@ pub fn default_config() -> Config {
     seed: seed_module.random_seed(),
     max_size: 99,
     shrink_limit: 1024,
-    max_discards: 10_000,
     max_edges: 16,
     regression_file: None,
     diff_enabled: True,
@@ -69,15 +67,6 @@ pub fn with_shrink_limit(c: Config, n: Int) -> Result(Config, ConfigError) {
   case n <= 0 {
     True -> Error(NonPositive(field: "shrink_limit", value: n))
     False -> Ok(Config(..c, shrink_limit: n))
-  }
-}
-
-/// Override the discard limit (the number of `filter` rejections we
-/// tolerate before giving up).
-pub fn with_max_discards(c: Config, n: Int) -> Result(Config, ConfigError) {
-  case n <= 0 {
-    True -> Error(NonPositive(field: "max_discards", value: n))
-    False -> Ok(Config(..c, max_discards: n))
   }
 }
 
@@ -122,10 +111,6 @@ pub fn max_size(c: Config) -> Int {
 
 pub fn shrink_limit(c: Config) -> Int {
   c.shrink_limit
-}
-
-pub fn max_discards(c: Config) -> Int {
-  c.max_discards
 }
 
 pub fn max_edges(c: Config) -> Int {

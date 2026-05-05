@@ -21,12 +21,14 @@ import metamon/coverage
 import metamon/generator.{type Generator}
 import metamon/generator/seed.{type Seed} as seed_module
 import metamon/generator/tree.{type Tree}
+import metamon/internal/regression
 import metamon/internal/report.{
   type FailureReport, type InputSource, type MorphMode, EdgeSource, Equivariant,
   FailureReport, Plain, RandomSource,
 }
 import metamon/relation.{type Relation}
 import metamon/transform.{type Transform}
+import simplifile
 
 /// Internal description of a metamorphic relation. Built from
 /// `metamon.mr` and `metamon.mr_equivariant`.
@@ -48,25 +50,32 @@ pub fn run_forall(
   property: fn(a) -> Bool,
 ) -> Nil {
   reset_state()
-  case
-    iterate_inputs(cfg, gen, fn(input, source, run_index) {
-      case property(input) {
-        True -> Continue
-        False ->
-          Stop(forall_failure(
-            cfg,
-            test_name,
-            gen,
-            property,
-            run_index,
-            input,
-            source,
-          ))
+  let regression_entries = load_regression_for(cfg, "(plain property)")
+  case replay_regression_for_forall(gen, regression_entries, property) {
+    Halted(text) -> panic_with(text)
+    Done ->
+      case
+        iterate_inputs(cfg, gen, fn(input, source, run_index) {
+          case property(input) {
+            True -> Continue
+            False -> {
+              record_regression_for(cfg, "(plain property)", source, input)
+              Stop(forall_failure(
+                cfg,
+                test_name,
+                gen,
+                property,
+                run_index,
+                input,
+                source,
+              ))
+            }
+          }
+        })
+      {
+        Done -> finish_with_coverage_check(cfg, test_name, None)
+        Halted(report_text) -> panic_with(report_text)
       }
-    })
-  {
-    Done -> finish_with_coverage_check(cfg, test_name, None)
-    Halted(report_text) -> panic_with(report_text)
   }
 }
 
@@ -79,28 +88,36 @@ pub fn run_forall_morph(
   f: fn(a) -> b,
 ) -> Nil {
   reset_state()
-  case
-    iterate_inputs(cfg, gen, fn(input, source, run_index) {
-      let evaluation = evaluate_spec(spec, f, input)
-      case evaluation.holds {
-        True -> Continue
-        False ->
-          Stop(morph_failure(
-            cfg,
-            test_name,
-            gen,
-            spec,
-            f,
-            run_index,
-            input,
-            source,
-            evaluation,
-          ))
+  let entries = load_regression_for(cfg, spec_name(spec))
+  case replay_regression_for_morph(gen, spec, f, entries) {
+    Halted(text) -> panic_with(text)
+    Done ->
+      case
+        iterate_inputs(cfg, gen, fn(input, source, run_index) {
+          let evaluation = evaluate_spec(spec, f, input)
+          case evaluation.holds {
+            True -> Continue
+            False -> {
+              record_regression_for(cfg, spec_name(spec), source, input)
+              Stop(morph_failure(
+                cfg,
+                test_name,
+                gen,
+                spec,
+                f,
+                run_index,
+                input,
+                source,
+                evaluation,
+              ))
+            }
+          }
+        })
+      {
+        Done ->
+          finish_with_coverage_check(cfg, test_name, Some(spec_name(spec)))
+        Halted(report_text) -> panic_with(report_text)
       }
-    })
-  {
-    Done -> finish_with_coverage_check(cfg, test_name, Some(spec_name(spec)))
-    Halted(report_text) -> panic_with(report_text)
   }
 }
 
@@ -509,3 +526,165 @@ fn take_first(items: List(a), n: Int) -> List(a) {
     n, [first, ..rest] -> [first, ..take_first(rest, n - 1)]
   }
 }
+
+// ---------- regression file ----------
+
+fn load_regression_for(cfg: Config, mr_name: String) -> List(regression.Entry) {
+  case config.regression_file(cfg) {
+    None -> []
+    Some(path) ->
+      case simplifile.read(path) {
+        Ok(content) ->
+          regression.parse(content)
+          |> list.filter(fn(entry: regression.Entry) {
+            entry.mr_name == mr_name
+          })
+        Error(_) -> []
+      }
+  }
+}
+
+fn record_regression_for(
+  cfg: Config,
+  mr_name: String,
+  source: InputSource,
+  input: a,
+) -> Nil {
+  case config.regression_file(cfg) {
+    None -> Nil
+    Some(path) -> {
+      let edge_index = case source {
+        EdgeSource(i) -> Some(i)
+        RandomSource(_, _) -> None
+      }
+      let #(seed_value, size) = case source {
+        EdgeSource(_) -> #(seed_module.state(config.seed(cfg)), 0)
+        RandomSource(s, sz) -> #(s, sz)
+      }
+      let run_index = case source {
+        EdgeSource(i) -> i
+        RandomSource(_, _) -> 0
+      }
+      let entry =
+        regression.Entry(
+          mr_name: mr_name,
+          config_seed: seed_value,
+          run_index: run_index,
+          size: size,
+          edge_index: edge_index,
+          note: Some(string.inspect(input)),
+          recorded: int.to_string(now_microseconds()),
+        )
+      let existing = case simplifile.read(path) {
+        Ok(c) -> c
+        Error(_) -> ""
+      }
+      let separator = case existing {
+        "" -> ""
+        _ -> "\n"
+      }
+      let _ =
+        simplifile.write(
+          path,
+          existing <> separator <> regression.render(entry),
+        )
+      Nil
+    }
+  }
+}
+
+fn replay_regression_for_forall(
+  gen: Generator(a),
+  entries: List(regression.Entry),
+  property: fn(a) -> Bool,
+) -> Outcome {
+  case entries {
+    [] -> Done
+    [entry, ..rest] -> {
+      let value = reproduce_entry_value(gen, entry)
+      case property(value) {
+        True -> replay_regression_for_forall(gen, rest, property)
+        False ->
+          Halted(replay_failure_message("(plain property)", entry, value))
+      }
+    }
+  }
+}
+
+fn replay_regression_for_morph(
+  gen: Generator(a),
+  spec: MorphSpec(a, b),
+  f: fn(a) -> b,
+  entries: List(regression.Entry),
+) -> Outcome {
+  case entries {
+    [] -> Done
+    [entry, ..rest] -> {
+      let value = reproduce_entry_value(gen, entry)
+      let evaluation = evaluate_spec(spec, f, value)
+      case evaluation.holds {
+        True -> replay_regression_for_morph(gen, spec, f, rest)
+        False -> Halted(replay_failure_message(spec_name(spec), entry, value))
+      }
+    }
+  }
+}
+
+fn reproduce_entry_value(gen: Generator(a), entry: regression.Entry) -> a {
+  case entry.edge_index {
+    Some(i) -> {
+      // Edge replay: pick the i-th edge of the generator.
+      case list_at(generator.edges_of(gen), i) {
+        Some(value) -> value
+        None ->
+          // Edge index drifted; fall back to generating with the
+          // recorded seed so the runner still produces a value.
+          generator.generate(
+            gen,
+            seed_module.seed(entry.config_seed),
+            entry.size,
+          ).value
+      }
+    }
+    None ->
+      // Random replay: same seed + size produces the same value.
+      generator.generate(gen, seed_module.seed(entry.config_seed), entry.size).value
+  }
+}
+
+fn list_at(items: List(a), index: Int) -> Option(a) {
+  case items, index {
+    [], _ -> None
+    [first, ..], 0 -> Some(first)
+    [_, ..rest], i -> list_at(rest, i - 1)
+  }
+}
+
+fn replay_failure_message(
+  mr_name: String,
+  entry: regression.Entry,
+  value: a,
+) -> String {
+  string.concat([
+    "× regression replay for `",
+    mr_name,
+    "` failed\n  recorded:    ",
+    entry.recorded,
+    "\n  config_seed: ",
+    int.to_string(entry.config_seed),
+    "\n  run_index:   ",
+    int.to_string(entry.run_index),
+    "\n  size:        ",
+    int.to_string(entry.size),
+    "\n  reproduced input:\n    ",
+    string.inspect(value),
+    case entry.note {
+      Some(n) -> "\n  note:\n    " <> n
+      None -> ""
+    },
+  ])
+}
+
+@external(erlang, "metamon_ffi", "now_microseconds")
+@external(javascript, "../../metamon_ffi.mjs", "now_microseconds")
+fn now_microseconds() -> Int

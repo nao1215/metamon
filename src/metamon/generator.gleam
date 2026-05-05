@@ -331,20 +331,46 @@ pub fn scale(g: Generator(a), f: fn(Int) -> Int) -> Generator(a) {
   Generator(run: fn(s: Seed, size: Int) { g.run(s, f(size)) }, edges: g.edges)
 }
 
-/// Reject values that fail `predicate`. The runner increments its
-/// discard counter every rejection; if `Config.max_discards` is
-/// exceeded the run is reported as `GiveUp`.
+/// Reject values that fail `predicate`. The implementation retries
+/// internally up to `filter_retry_limit` times before panicking; this
+/// is the canonical "filter is too strict" failure and is preferable
+/// to silently misreporting the property.
 ///
 /// Edges are filtered by `predicate` so user-supplied edges that fail
-/// it are silently dropped.
+/// the predicate are silently dropped (they would never be tried
+/// anyway).
 pub fn filter(g: Generator(a), predicate: fn(a) -> Bool) -> Generator(a) {
   Generator(
     run: fn(s: Seed, size: Int) {
-      let t = g.run(s, size)
-      tree.filter(t, predicate)
+      filter_run(g, predicate, s, size, filter_retry_limit)
     },
     edges: list.filter(g.edges, predicate),
   )
+}
+
+const filter_retry_limit: Int = 100
+
+fn filter_run(
+  g: Generator(a),
+  predicate: fn(a) -> Bool,
+  s: Seed,
+  size: Int,
+  retries_left: Int,
+) -> Tree(a) {
+  let t = g.run(s, size)
+  case predicate(t.value) {
+    True -> tree.filter(t, predicate)
+    False -> {
+      case retries_left <= 0 {
+        True ->
+          panic as "metamon.filter: predicate rejected the configured number of candidates in a row; the predicate is too strict"
+        False -> {
+          let #(_, s2) = seed_module.split(s)
+          filter_run(g, predicate, s2, size, retries_left - 1)
+        }
+      }
+    }
+  }
 }
 
 /// Recursive generator. At `size = 0` only `base` is used; at higher
