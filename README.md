@@ -3,49 +3,38 @@
 [![CI](https://github.com/nao1215/metamon/actions/workflows/ci.yml/badge.svg)](https://github.com/nao1215/metamon/actions/workflows/ci.yml)
 [![Hex.pm](https://img.shields.io/hexpm/v/metamon)](https://hex.pm/packages/metamon)
 
-Property-based testing **and** metamorphic testing combinator library
+Property-based testing and metamorphic testing combinator library
 for Gleam.
 
 metamon treats both styles of testing as first-class concepts:
 
-- **Property-based testing (PBT)**: state a single-input predicate
-  and let metamon search the input space for counter-examples.
-- **Metamorphic testing (MT)**: state a relation between outputs
-  produced by *two* related inputs (e.g. `f(x)` and `f(reverse(x))`)
+- Property-based testing (PBT): state a single-input predicate and
+  let metamon search the input space for counter-examples.
+- Metamorphic testing (MT): state a relation between outputs
+  produced by two related inputs (e.g. `f(x)` and `f(reverse(x))`)
   and let metamon search for inputs where the relation breaks.
 
-Design notes:
-
-- Metamorphic relations are named values with input transforms,
-  output transforms (for equivariance), and binary relations — every
-  failure report tells you which relation broke.
-- Integrated rose-tree shrinking is always on. Generators carry their
-  own shrink strategy; combinators preserve it automatically.
-- Edge cases (`0`, `Int.max`, `""`, surrogates, ...) are tried before
-  random inputs. `with_examples` lets you bolt on more.
-- Coverage assertions (`cover` / `classify` / `collect`) make
-  distribution gaps visible before they hide bugs.
-- `annotate` / `footnote` attach context to a property; output is
-  free on success, displayed on failure.
-- Failures include source / follow-up inputs, both outputs, a
-  structural diff, and a reproducer snippet.
-- Zero external dependencies — only `gleam_stdlib`. No PBT library
-  is wrapped; everything (Seed, Tree, Range, Generator, Shrink,
-  Runner) is implemented in metamon itself.
+The shape of these features is documented by [How to use](#how-to-use)
+and the test suite under `test/` — there is no separate design
+chapter here.
 
 ## Requirements
 
 - Gleam 1.15 or later
-- Erlang/OTP 27 or later (when targeting Erlang)
-- Node.js 18 or later (when targeting JavaScript)
+- Erlang/OTP 27 or later (when targeting Erlang; CI covers OTP 27 and 28)
+- Node.js 22 or later (when targeting JavaScript; CI covers Node 22 and 24)
+
+Node.js 18 reached end-of-life in April 2025 and Node.js 20 reached
+end-of-life in April 2026. Node 22 is the current minimum.
 
 ## Supported targets
 
 - Erlang (BEAM) — full surface, used for everyday Gleam tests.
-- JavaScript — the Generator / Tree / Seed core is pure Gleam, but
-  `metamon/annotate` and `metamon/coverage` rely on a thin FFI shim
-  for per-process state. The JS shim uses a module-level `Map`, so
-  the runner clears it between properties.
+- JavaScript — the Generator / Tree / Seed core is pure Gleam (32-bit
+  xorshift PRNG, no 64-bit arithmetic) and produces bit-identical
+  output across both targets. `metamon/annotate` and `metamon/coverage`
+  rely on a thin FFI shim for per-process state; the JS shim uses a
+  module-level `Map`, so the runner clears it between properties.
 
 ## Install
 
