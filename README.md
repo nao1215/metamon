@@ -609,6 +609,110 @@ pub fn annotated_property_test() {
 }
 ```
 
+### 5.3. JSON output for CI / LLM consumers
+
+Set the output format on a per-test config to swap the human-readable
+text for a single-line JSON object:
+
+```gleam
+import metamon
+import metamon/config
+import metamon/generator
+import metamon/generator/range
+
+pub fn json_output_test() {
+  let cfg =
+    metamon.default_config()
+    |> metamon.with_output_format(config.Json)
+  metamon.forall_with(
+    cfg,
+    generator.int(range.constant(0, 100)),
+    fn(n) { n >= 0 },
+  )
+}
+```
+
+The schema is stable: top-level keys are `mr_name`, `test_name`,
+`config_seed`, `runs_done`, `runs_total`, `shrinks_done`,
+`shrink_capped`, `source`, `morph_mode`, `relation`, `source_input`,
+`followup_input`, `source_output`, `followup_output`, `annotations`,
+`footnotes`, `coverage`. Pipe to `jq`, post to GitHub Actions
+annotations, or feed into an LLM analysis step.
+
+### 5.4. N-ary metamorphic relations (`forall_morph_n`)
+
+When the relation must compare more than two outputs in one shot,
+hand `forall_morph_n` a list of input transforms and a `RelationN`:
+
+```gleam
+import gleam/list
+import metamon
+import metamon/generator
+import metamon/generator/range
+import metamon/relation
+import metamon/transform/list as list_t
+
+fn list_sum(items: List(Int)) -> Int {
+  list.fold(items, 0, fn(acc, n) { acc + n })
+}
+
+pub fn sum_under_three_invariants_test() {
+  metamon.forall_morph_n(
+    generator.list_of(
+      generator.int(range.constant(0, 9)),
+      range.constant(0, 4),
+    ),
+    [list_t.reverse(), list_t.append(0)],
+    relation.all_equal(),
+    list_sum,
+  )
+}
+```
+
+`relation.all_equal()` asserts every output is structurally equal;
+`relation.pairwise(r)` lifts a binary relation to a chain check.
+
+### 5.5. Stateful / model-based testing
+
+For state machines, build a list of `Command(model, real)` and run it
+against a parallel `(model, real)` pair:
+
+```gleam
+import gleam/dict
+import gleeunit/should
+import metamon/command
+import metamon/stateful
+
+type Model {
+  Model(value: Int)
+}
+
+type Real {
+  Real(state: dict.Dict(String, Int))
+}
+
+pub fn counter_increments_test() {
+  let increment =
+    command.always(
+      name: "increment",
+      next_model: fn(m: Model) { Model(value: m.value + 1) },
+      run: fn(_real: Real) { Ok(Nil) },
+    )
+  let initial_model = Model(value: 0)
+  let initial_real = Real(state: dict.from_list([#("counter", 0)]))
+  let outcome =
+    stateful.run(initial_model, initial_real, [increment, increment])
+  case outcome {
+    stateful.Passed(final, _, _) -> should.equal(final, Model(value: 2))
+    stateful.Failed(_, _, _, _) -> should.fail()
+  }
+}
+```
+
+`command.always` skips the precondition; use `command.new` to gate
+commands on the current model. `stateful.assert_passed` panics with
+a structured failure message when a command's `run` returns `Error`.
+
 ### 6. Configuration
 
 Override the defaults via `with_*` builders. Validation errors
@@ -701,33 +805,37 @@ gives you two ways to keep failing inputs around:
 These are deliberate scope cuts, not bugs. They are listed so you
 know how to work around them.
 
-- **`Transform(a)` is `a -> a`.** Type-changing transformations
+- `Transform(a)` is `a -> a`. Type-changing transformations
   (`String -> Result(Spec, Error)`) cannot live inside the input
   transform of an MR. Encode them as `f` instead and use the
   output side of an Equivariant MR (or a plain `forall`) to assert
   the relation.
-- **`Relation(b)` compares two `b` values.** Heterogeneous relations
+- `Relation(b)` compares two `b` values. Heterogeneous relations
   `(a, b) -> Bool` (e.g. "the output is bounded by the input") are
   expressed with `metamon.forall` and a hand-written predicate
   that closes over both values.
-- **No multi-follow-up MRs (`(b, b, b) -> Bool`).** Compose two
-  transforms with `transform.then` to fold many follow-ups back
-  into a single binary relation.
-- **`bind` shrinks shallowly.** Generators built with `bind` lose
-  some of the shrink quality that `map2..6` and `tuple2..5` give
-  you for free. Prefer applicative composition over monadic chains
-  when both shapes work.
-- **JavaScript-target parallel runners.** `metamon/annotate` and
-  `metamon/coverage` use a module-level `Map` on the JS target;
-  parallel test runners that share a Node process can leak state
-  between properties. Run JS tests sequentially within a process
-  if you depend on these features.
+- `bind` shrinks shallowly. Generators built with `bind` keep the
+  outer shrink tree but the inner shrinks reflect only the first
+  inner generator metamon saw. Prefer applicative composition
+  (`map2..6`, `tuple2..5`) over monadic chains when both shapes
+  fit.
+- `recursive` does not swap branches during shrinking. A failing
+  `Node(left, right)` does not automatically reduce to either
+  `left` or `right`; only the contained leaves shrink. Add
+  `with_examples` listing the small base shapes when you need them
+  tried explicitly.
+- JavaScript-target parallel runners. `metamon/annotate` and
+  `metamon/coverage` use a module-level `Map` on the JS target.
+  Vitest / jest workers run each test file in an isolated worker
+  thread, so parallelism *between files* is fine. Within a single
+  file, do not call `metamon.forall*` concurrently — start one,
+  wait for it, start the next.
 
 ## Modules
 
 | Module | Responsibility |
 |---|---|
-| `metamon` | Top-level API: `forall`, `forall_with`, `forall_morph`, `forall_morph_with`, `assert_morph`, `forall_morphs`, `Mr` (opaque), `mr`, `mr_equivariant`, `name_of`, `idempotency_of`, `invariant_under`, `equivariant_under`, `commutativity_of`, `seed`, `random_seed`, `default_config` and all `with_*` re-exports |
+| `metamon` | Top-level API: `forall`, `forall_with`, `forall_morph`, `forall_morph_with`, `forall_morph_n`, `forall_morph_n_with`, `assert_morph`, `forall_morphs`, `Mr` (opaque), `mr`, `mr_equivariant`, `name_of`, `idempotency_of`, `invariant_under`, `equivariant_under`, `commutativity_of`, `OutputFormat`, `with_output_format`, `seed`, `random_seed`, `default_config` and all `with_*` re-exports |
 | `metamon/config` | `Config`, `ConfigError`, `default_config`, `with_runs`, `with_seed`, `with_max_size`, `with_shrink_limit`, `with_max_edges`, `with_regression_file`, `with_diff_enabled` |
 | `metamon/generator` | `Generator(a)` (opaque), `generate`, `sample`, `statistics`, `with_examples`, `add_edges`, `no_edges`, `return`, `map`, `bind`, `map2`..`map6`, `tuple2`..`tuple5`, `one_of`, `frequency`, `sized`, `resize`, `scale`, `filter`, `recursive`, `int`, `float`, `bool`, `non_negative_int`, `positive_int`, `negative_int`, `byte`, `bit_array`, `ascii_*`, `unicode_codepoint`, `string`, `string_ascii`, `string_unicode`, `list_of`, `non_empty_list_of`, `dict_of`, `set_of`, `option_of`, `result_of` |
 | `metamon/generator/seed` | xorshift32-based `Seed` with `split` (target-portable; identical streams on BEAM and JS) |
@@ -737,10 +845,12 @@ know how to work around them.
 | `metamon/transform/list`   | `reverse`, `dedupe`, `prepend`, `append`, `shuffle` |
 | `metamon/transform/string` | `reverse`, `lowercase`, `uppercase`, `trim`, `prepend`, `append` |
 | `metamon/transform/dict`   | `insert`, `remove`, `shuffle_keys` |
-| `metamon/relation` | `Relation(b)`, `new`, `equal`, `not_equal`, `equivalent_under`, `approximately`, `permutation_of`, `subset_of`, `monotone`, `implies`, `and`, `or`, `invert`, `rename` |
+| `metamon/relation` | `Relation(b)`, `new`, `equal`, `not_equal`, `equivalent_under`, `approximately`, `permutation_of`, `subset_of`, `monotone`, `implies`, `and`, `or`, `invert`, `rename`, `RelationN(b)`, `n_new`, `all_equal`, `pairwise` (N-ary relations for `forall_morph_n`) |
 | `metamon/diff` | Structural diff used in failure reports: `diff`, `diff_string`, `render`, `Same`/`Differ`/`ListDiff`/`TupleDiff`/`StringDiff` |
 | `metamon/annotate` | `annotate`, `annotate_value`, `footnote`, `reset`, `current_annotations`, `current_footnotes` |
-| `metamon/coverage` | `classify`, `cover`, `collect`, `snapshot`, `shortfalls`, `actual_pct`, `requirements_of`, `collected_of`, `hits_for`, `first_shortfall` |
+| `metamon/coverage` | `classify`, `cover`, `cover_at_least`, `classify_in_bucket`, `collect`, `snapshot`, `shortfalls`, `actual_pct`, `target_pct_of`, `requirements_of`, `collected_of`, `hits_for`, `first_shortfall`, `Pct`/`Count` requirement kinds |
+| `metamon/command` | `Command(model, real)`, `new`, `always`, `name_of` (model-based testing primitive) |
+| `metamon/stateful` | `run(initial_model, initial_real, commands)`, `assert_passed`, `Outcome` (model-based test runner) |
 
 ## Choosing PBT vs MT vs `assert_morph`
 

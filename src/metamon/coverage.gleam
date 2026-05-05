@@ -47,13 +47,10 @@ pub fn target_pct_of(req: Requirement, total: Int) -> Float {
     Count(min) ->
       case total <= 0 {
         True -> 0.0
-        False -> int_to_float_safe(min) /. int_to_float_safe(total) *. 100.0
+        False -> int.to_float(min) /. int.to_float(total) *. 100.0
       }
   }
 }
-
-@external(erlang, "erlang", "float")
-fn int_to_float_safe(n: Int) -> Float
 
 /// Snapshot of the coverage state for one property run.
 pub type Snapshot {
