@@ -1,0 +1,50 @@
+name = "metamon"
+version = "0.1.0"
+description = "Property-based testing and metamorphic testing combinator library for Gleam"
+licences = ["MIT"]
+repository = { type = "github", user = "nao1215", repo = "metamon" }
+
+[dependencies]
+gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
+glinter = ">= 2.14.0 and < 3.0.0"
+
+[tools.glinter]
+warnings_as_errors = true
+include = ["src/", "test/"]
+
+[tools.glinter.rules]
+assert_ok_pattern = "error"
+avoid_panic = "error"
+avoid_todo = "error"
+deep_nesting = "error"
+discarded_result = "error"
+division_by_zero = "error"
+duplicate_import = "error"
+echo = "error"
+error_context_lost = "error"
+ffi_usage = "error"
+function_complexity = "error"
+label_possible = "error"
+missing_labels = "error"
+missing_type_annotation = "error"
+module_complexity = "error"
+panic_without_message = "error"
+prefer_guard_clause = "error"
+redundant_case = "error"
+short_variable_name = "error"
+string_inspect = "error"
+stringly_typed_error = "error"
+thrown_away_error = "error"
+todo_without_message = "error"
+trailing_underscore = "error"
+unnecessary_string_concatenation = "error"
+unnecessary_variable = "error"
+unqualified_import = "error"
+unused_exports = "error"
+unwrap_used = "error"
+
+[tools.glinter.ignore]
+"test/**/*.gleam" = ["unused_exports"]

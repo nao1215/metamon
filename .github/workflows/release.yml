@@ -1,0 +1,25 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    name: Publish to Hex
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: extractions/setup-just@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          gleam-version: "1.15"
+
+      - run: just ci
+      - run: echo 'I am not using semantic versioning' | gleam publish -y
+        env:
+          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
