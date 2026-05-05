@@ -420,6 +420,45 @@ fn extreme_hi(r: Range) -> Int {
   hi
 }
 
+// ---------- shortcut generators ----------
+
+/// `True` or `False`, uniformly.
+pub fn bool() -> Generator(Bool) {
+  one_of([return(True), return(False)])
+}
+
+/// Integer in `[0, 1_000_000]`. Linear scaling so small values come
+/// first; shrinks toward 0.
+pub fn non_negative_int() -> Generator(Int) {
+  int(range.linear(0, 1_000_000))
+}
+
+/// Integer in `[1, 1_000_000]`. Shrinks toward 1.
+pub fn positive_int() -> Generator(Int) {
+  int(range.linear_from(1, 1, 1_000_000))
+}
+
+/// Integer in `[-1_000_000, -1]`. Shrinks toward -1.
+pub fn negative_int() -> Generator(Int) {
+  int(range.linear_from(-1, -1_000_000, -1))
+}
+
+/// A single byte (`[0, 255]`).
+pub fn byte() -> Generator(Int) {
+  int(range.constant(0, 255))
+}
+
+/// Bit array of byte-length within `len`. Each byte is generated
+/// uniformly.
+pub fn bit_array(len: Range) -> Generator(BitArray) {
+  list_of(byte(), len)
+  |> map(bytes_to_bit_array)
+}
+
+fn bytes_to_bit_array(bytes: List(Int)) -> BitArray {
+  list.fold(bytes, <<>>, fn(acc, b) { <<acc:bits, b:size(8)>> })
+}
+
 fn attach_known_root(
   unfolded: Tree(Int),
   expected_root: Int,

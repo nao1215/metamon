@@ -31,8 +31,9 @@ import metamon/transform.{type Transform}
 import simplifile
 
 /// Internal description of a metamorphic relation. Built from
-/// `metamon.mr` and `metamon.mr_equivariant`.
-pub type MorphSpec(a, b) {
+/// `metamon.mr` and `metamon.mr_equivariant`. Opaque so the variant
+/// shape can change without breaking downstream test files.
+pub opaque type MorphSpec(a, b) {
   PlainSpec(name: String, transform: Transform(a), relation: Relation(b))
   EquivariantSpec(
     name: String,
@@ -40,6 +41,37 @@ pub type MorphSpec(a, b) {
     output_transform: Transform(b),
     relation: Relation(b),
   )
+}
+
+/// Smart constructor for the Plain MR shape (`f(T(x))` and `f(x)`
+/// are related by `R`).
+pub fn plain(
+  name: String,
+  transform: Transform(a),
+  relation: Relation(b),
+) -> MorphSpec(a, b) {
+  PlainSpec(name: name, transform: transform, relation: relation)
+}
+
+/// Smart constructor for the Equivariant MR shape (`f(T(x))` and
+/// `U(f(x))` are related by `R`).
+pub fn equivariant(
+  name: String,
+  input_transform: Transform(a),
+  output_transform: Transform(b),
+  relation: Relation(b),
+) -> MorphSpec(a, b) {
+  EquivariantSpec(
+    name: name,
+    input_transform: input_transform,
+    output_transform: output_transform,
+    relation: relation,
+  )
+}
+
+/// Public accessor for the MR's user-visible name.
+pub fn morph_name(spec: MorphSpec(a, b)) -> String {
+  spec_name(spec)
 }
 
 /// Run a property test (no metamorphic transform).

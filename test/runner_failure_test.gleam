@@ -41,7 +41,7 @@ pub fn forall_panics_on_violation_test() {
     Reason(text) -> {
       should.be_true(string.contains(text, "× property failed"))
       should.be_true(string.contains(text, "config seed:"))
-      should.be_true(string.contains(text, "reproduce:"))
+      should.be_true(string.contains(text, "reproduce (paste into a test):"))
     }
     NoPanic -> should.fail()
   }

@@ -62,3 +62,20 @@ pub fn segment_constructors_are_visible_test() {
   let _ = Added("c")
   Nil
 }
+
+pub fn tuple_diff_per_position_test() {
+  let d = diff.diff(#(1, "two", 3), #(1, "two", 9))
+  let rendered = diff.render(d)
+  // Position 2 differs (3 vs 9).
+  should.be_true(string.contains(rendered, "#.2"))
+  should.be_true(string.contains(rendered, "- 3"))
+  should.be_true(string.contains(rendered, "+ 9"))
+}
+
+pub fn tuple_diff_equal_collapses_test() {
+  let d = diff.diff(#("a", 1), #("a", 1))
+  case d {
+    Same(_) -> Nil
+    _ -> should.fail()
+  }
+}

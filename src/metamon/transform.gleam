@@ -25,7 +25,7 @@ pub fn identity() -> Transform(a) {
 /// A transform that ignores its input and always returns `value`.
 /// Use sparingly — most metamorphic relations want a real
 /// transformation rather than a constant.
-pub fn always(name: String, value: a) -> Transform(a) {
+pub fn constant(name: String, value: a) -> Transform(a) {
   Transform(name: name, apply: fn(_input) { value })
 }
 

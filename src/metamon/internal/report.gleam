@@ -187,30 +187,24 @@ fn coverage_lines(snap: coverage.Snapshot) -> List(String) {
 }
 
 fn reproduce_lines(report: FailureReport) -> List(String) {
+  // The shrunk input is already shown in `source input (shrunk)`
+  // earlier in the report. The reproduce block re-states the input
+  // alongside an `assert_morph` (or a direct call) call site so users
+  // can paste it into a regression test verbatim.
   case report.morph_mode {
     None -> [
-      "  reproduce:",
-      "    let assert Ok(c) =",
-      "      metamon.default_config()",
-      "      |> metamon.with_seed(metamon.seed("
-        <> int.to_string(report.config_seed)
-        <> "))",
-      "      |> metamon.with_runs("
-        <> int.to_string(report.runs_done + 1)
-        <> ")",
-      "    metamon.forall_with(c, generator, property)",
+      "  reproduce (paste into a test):",
+      "    // The property failed for this input. To pin it as a",
+      "    // regression, store it explicitly and assert directly.",
+      "    let input = " <> report.source_input,
+      "    should.be_true(property(input))",
     ]
     Some(_) -> [
-      "  reproduce:",
-      "    let assert Ok(c) =",
-      "      metamon.default_config()",
-      "      |> metamon.with_seed(metamon.seed("
-        <> int.to_string(report.config_seed)
-        <> "))",
-      "      |> metamon.with_runs("
-        <> int.to_string(report.runs_done + 1)
-        <> ")",
-      "    metamon.forall_morph_with(c, generator, mr, f)",
+      "  reproduce (paste into a test):",
+      "    // The MR failed for this input. To pin it as a regression,",
+      "    // call assert_morph with the shrunk input and the same MR.",
+      "    let input = " <> report.source_input,
+      "    metamon.assert_morph(input, mr, f)",
     ]
   }
 }

@@ -29,7 +29,11 @@ fn to_snake_case_stub(s: String) -> String {
 }
 
 pub fn snake_idempotent_with_examples_and_coverage_test() {
-  let mr = metamon.idempotency_of(to_snake_case_stub, "snake_stub_idempotent")
+  let mr =
+    metamon.idempotency_of(
+      name: "snake_stub_idempotent",
+      of: to_snake_case_stub,
+    )
   let assert Ok(c) =
     metamon.with_runs(
       metamon.default_config()
@@ -58,7 +62,11 @@ fn normalize_stub(input: String) -> String {
 }
 
 pub fn normalize_idempotent_test() {
-  let mr = metamon.idempotency_of(normalize_stub, "normalize_stub_idempotent")
+  let mr =
+    metamon.idempotency_of(
+      name: "normalize_stub_idempotent",
+      of: normalize_stub,
+    )
   let assert Ok(c) = metamon.with_runs(metamon.default_config(), 30)
   metamon.forall_morph_with(
     c,
@@ -169,8 +177,8 @@ fn count_pairs(d: Dict(String, Int)) -> Int {
 pub fn field_order_invariance_test() {
   let mr =
     metamon.invariant_under(
-      dict_t.shuffle_keys(0),
-      "size_invariant_under_shuffle_keys",
+      name: "size_invariant_under_shuffle_keys",
+      under: dict_t.shuffle_keys(0),
     )
   metamon.forall_morph(
     generator.dict_of(

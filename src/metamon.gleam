@@ -14,9 +14,9 @@
 import metamon/config
 import metamon/generator.{type Generator}
 import metamon/generator/seed as seed_module
-import metamon/internal/runner.{type MorphSpec, EquivariantSpec, PlainSpec}
-import metamon/relation.{type Relation, Relation}
-import metamon/transform.{type Transform, Transform}
+import metamon/internal/runner.{type MorphSpec}
+import metamon/relation.{type Relation}
+import metamon/transform.{type Transform}
 
 /// Re-export of the seed type so callers can write `metamon.Seed`.
 pub type Seed =
@@ -101,7 +101,7 @@ pub fn mr(
   transform transform: Transform(a),
   relation relation: Relation(b),
 ) -> Mr(a, b) {
-  Mr(spec: PlainSpec(name: name, transform: transform, relation: relation))
+  Mr(spec: runner.plain(name, transform, relation))
 }
 
 /// Construct an Equivariant MR. The relation is checked between
@@ -113,20 +113,12 @@ pub fn mr_equivariant(
   output output_transform: Transform(b),
   relation relation: Relation(b),
 ) -> Mr(a, b) {
-  Mr(spec: EquivariantSpec(
-    name: name,
-    input_transform: input_transform,
-    output_transform: output_transform,
-    relation: relation,
-  ))
+  Mr(spec: runner.equivariant(name, input_transform, output_transform, relation))
 }
 
 /// Get the user-facing name of an MR.
 pub fn name_of(m: Mr(a, b)) -> String {
-  case m.spec {
-    PlainSpec(name, _, _) -> name
-    EquivariantSpec(name, _, _, _) -> name
-  }
+  runner.morph_name(m.spec)
 }
 
 // ---------- public runners ----------
@@ -182,56 +174,39 @@ fn list_map_specs(ms: List(Mr(a, b))) -> List(MorphSpec(a, b)) {
 }
 
 // ---------- MR templates ----------
+//
+// All templates take `name` first and use labelled arguments so the
+// call sites read naturally:
+//
+//   metamon.idempotency_of(name: "trim", of: string.trim)
+//   metamon.invariant_under(name: "len_under_reverse", under: list_t.reverse())
+//
+// Round-trip is intentionally NOT a template: the textbook
+// `parse(write(x)) == Ok(x)` is a single-input invariant and is
+// expressed more directly with `metamon.forall` than as an MR.
+// See README "Round-trip" section for the canonical pattern.
 
 /// `f(f(x)) == f(x)`. Idempotency.
 ///
-/// Internally encoded as a Plain MR whose transform is `f` itself
-/// and whose relation is structural equality.
-pub fn idempotency_of(f: fn(a) -> a, name: String) -> Mr(a, a) {
-  let t = Transform(name: "apply " <> name, apply: f)
+/// Encoded as a Plain MR whose transform is `f` itself and whose
+/// relation is structural equality.
+pub fn idempotency_of(name name: String, of f: fn(a) -> a) -> Mr(a, a) {
+  let t = transform.new("apply " <> name, f)
   mr(name: name, transform: t, relation: relation.equal())
 }
 
-/// `inverse(f(x)) == Ok(x)`. Round-trip.
-///
-/// The relation succeeds when the round-trip yields `Ok(x)` and the
-/// recovered value structurally matches the input. The transform is
-/// the identity (the source input is the source for both sides of
-/// the relation, with `f` and `inverse` providing the actual
-/// behaviour).
-pub fn round_trip_with(
-  inverse: fn(b) -> Result(a, e),
-  name: String,
-) -> Mr(a, Result(a, e)) {
-  // Captures `inverse` in the relation closure: the predicate gets
-  // the two outputs and the value of the source input is recovered
-  // from `Ok` patterns.
-  let t = Transform(name: "identity", apply: fn(value) { value })
-  let r =
-    Relation(name: "round_trip via " <> name, holds: fn(left, right) {
-      // left  = inverse(f(input))     when called from outside
-      // right = inverse(f(transform(input))) = inverse(f(input))
-      // → equal under transform=identity, so the assertion is
-      //   simply "they agree", which catches `f` being non-
-      //   deterministic. Round-trip correctness is asserted by the
-      //   caller post-evaluation through `assert_round_trip` below.
-      let _ = inverse
-      left == right
-    })
-  mr(name: name, transform: t, relation: r)
+/// `f(T(x)) == f(x)` — `f` is invariant under the input transform.
+pub fn invariant_under(name name: String, under under: Transform(a)) -> Mr(a, b) {
+  mr(name: name, transform: under, relation: relation.equal())
 }
 
-/// `f(T(x)) == f(x)` — `f` is invariant under `transform`.
-pub fn invariant_under(transform: Transform(a), name: String) -> Mr(a, b) {
-  mr(name: name, transform: transform, relation: relation.equal())
-}
-
-/// `R(f(T(x)), U(f(x)))`. Equivariance.
+/// `R(U(f(x)), f(T(x)))`. Equivariance: the input transform `T` and
+/// the output transform `U` commute with `f` modulo `R`.
 pub fn equivariant_under(
-  input_transform: Transform(a),
-  output_transform: Transform(b),
-  rel: Relation(b),
-  name: String,
+  name name: String,
+  input input_transform: Transform(a),
+  output output_transform: Transform(b),
+  relation rel: Relation(b),
 ) -> Mr(a, b) {
   mr_equivariant(
     name: name,
@@ -239,4 +214,25 @@ pub fn equivariant_under(
     output: output_transform,
     relation: rel,
   )
+}
+
+/// `op(a, b) == op(b, a)` — `op` is commutative.
+///
+/// The MR is over the input pair `#(a, a)` and the output type `b`.
+/// Use it as:
+///
+/// ```gleam
+/// let mr = metamon.commutativity_of(name: "add_commutative", of: add)
+/// metamon.forall_morph(
+///   generator.tuple2(int_gen, int_gen),
+///   mr,
+///   fn(pair) { add(pair.0, pair.1) },
+/// )
+/// ```
+pub fn commutativity_of(
+  name name: String,
+  of _op: fn(a, a) -> b,
+) -> Mr(#(a, a), b) {
+  let swap = transform.new("swap", fn(pair: #(a, a)) { #(pair.1, pair.0) })
+  mr(name: name, transform: swap, relation: relation.equal())
 }

@@ -23,6 +23,9 @@ pub type Diff {
   /// Element-wise diff for lists.
   ListDiff(items: List(IndexedDiff))
 
+  /// Element-wise diff for tuples.
+  TupleDiff(items: List(IndexedDiff))
+
   /// Multi-line diff for strings (line-by-line LCS).
   StringDiff(left: String, right: String, segments: List(Segment))
 }
@@ -52,9 +55,15 @@ pub fn diff(left: a, right: a) -> Diff {
 fn shape_aware_diff(left: a, right: a) -> Diff {
   let l_str = string.inspect(left)
   let r_str = string.inspect(right)
-  case is_list_inspect(l_str), is_list_inspect(r_str) {
-    True, True -> list_diff_from_inspect(l_str, r_str)
-    _, _ -> Differ(left: l_str, right: r_str)
+  case
+    is_list_inspect(l_str),
+    is_list_inspect(r_str),
+    is_tuple_inspect(l_str),
+    is_tuple_inspect(r_str)
+  {
+    True, True, _, _ -> list_diff_from_inspect(l_str, r_str)
+    _, _, True, True -> tuple_diff_from_inspect(l_str, r_str)
+    _, _, _, _ -> Differ(left: l_str, right: r_str)
   }
 }
 
@@ -62,10 +71,31 @@ fn is_list_inspect(s: String) -> Bool {
   string.starts_with(s, "[") && string.ends_with(s, "]")
 }
 
+fn is_tuple_inspect(s: String) -> Bool {
+  string.starts_with(s, "#(") && string.ends_with(s, ")")
+}
+
 fn list_diff_from_inspect(left: String, right: String) -> Diff {
   let l_items = split_top_level(left)
   let r_items = split_top_level(right)
   ListDiff(items: zip_items(l_items, r_items, 0))
+}
+
+fn tuple_diff_from_inspect(left: String, right: String) -> Diff {
+  // `#(...)` → drop the leading `#` then reuse the bracket-stripping
+  // path. `split_top_level` accepts an arbitrary `(...)` body too.
+  let l_inner = drop_tuple_prefix(left)
+  let r_inner = drop_tuple_prefix(right)
+  let l_items = split_top_level(l_inner)
+  let r_items = split_top_level(r_inner)
+  TupleDiff(items: zip_items(l_items, r_items, 0))
+}
+
+fn drop_tuple_prefix(inspected: String) -> String {
+  case string.starts_with(inspected, "#(") {
+    True -> "(" <> string.drop_start(inspected, 2)
+    False -> inspected
+  }
 }
 
 fn zip_items(
@@ -94,10 +124,10 @@ fn zip_items(
 }
 
 fn split_top_level(inspected: String) -> List(String) {
-  // Strip the enclosing brackets (which we know are the first/last
-  // characters because `is_list_inspect` returned true) and walk
-  // character-by-character, tracking nesting depth so commas inside
-  // sub-structures don't cause splits.
+  // Strip the enclosing brackets and walk character-by-character,
+  // tracking nesting depth so commas inside sub-structures don't
+  // cause splits. Accepts both `[...]` (lists) and `(...)` (tuples
+  // after `drop_tuple_prefix`).
   let inner = case
     string.starts_with(inspected, "["),
     string.ends_with(inspected, "]")
@@ -106,7 +136,17 @@ fn split_top_level(inspected: String) -> List(String) {
       inspected
       |> string.drop_start(1)
       |> string.drop_end(1)
-    _, _ -> inspected
+    _, _ ->
+      case
+        string.starts_with(inspected, "("),
+        string.ends_with(inspected, ")")
+      {
+        True, True ->
+          inspected
+          |> string.drop_start(1)
+          |> string.drop_end(1)
+        _, _ -> inspected
+      }
   }
   walk_and_split(string.to_graphemes(inner), 0, "", [])
 }
@@ -165,17 +205,27 @@ fn render_with_indent(d: Diff, indent: String) -> String {
     Same(rendered) -> indent <> "= " <> rendered
     Differ(left, right) ->
       indent <> "- " <> left <> "\n" <> indent <> "+ " <> right
-    ListDiff(items) -> render_list_diff(items, indent)
+    ListDiff(items) -> render_list_diff(items, indent, "[#")
+    TupleDiff(items) -> render_list_diff(items, indent, "#.")
     StringDiff(_, _, segments) -> render_string_diff(segments, indent)
   }
 }
 
-fn render_list_diff(items: List(IndexedDiff), indent: String) -> String {
+fn render_list_diff(
+  items: List(IndexedDiff),
+  indent: String,
+  prefix: String,
+) -> String {
+  let close = case prefix {
+    "#." -> ""
+    _ -> "]"
+  }
   list.map(items, fn(item: IndexedDiff) {
     indent
-    <> "[#"
+    <> prefix
     <> int.to_string(item.index)
-    <> "]\n"
+    <> close
+    <> "\n"
     <> render_with_indent(item.diff, indent <> "  ")
   })
   |> string.join("\n")

@@ -26,7 +26,7 @@ import metamon/transform/list as list_t
 pub fn readme_quick_start_test() {
   // The simplest property: trim is idempotent — applying it twice
   // gives the same result as applying it once.
-  let mr = metamon.idempotency_of(string.trim, "trim_idempotent")
+  let mr = metamon.idempotency_of(name: "trim_idempotent", of: string.trim)
   metamon.forall_morph(
     generator.string_ascii(range.constant(0, 16)),
     mr,
@@ -55,7 +55,8 @@ pub fn readme_forall_test() {
 // `sort_dedupe` (sort + remove duplicates) is idempotent — applying
 // it twice produces the same list as applying it once.
 pub fn readme_idempotency_test() {
-  let mr = metamon.idempotency_of(sort_dedupe, "sort_dedupe_idempotent")
+  let mr =
+    metamon.idempotency_of(name: "sort_dedupe_idempotent", of: sort_dedupe)
   metamon.forall_morph(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 6)),
     mr,
@@ -95,7 +96,10 @@ pub fn readme_round_trip_test() {
 pub fn readme_invariance_test() {
   // list.length is invariant under reverse.
   let mr =
-    metamon.invariant_under(list_t.reverse(), "length_invariant_under_reverse")
+    metamon.invariant_under(
+      name: "length_invariant_under_reverse",
+      under: list_t.reverse(),
+    )
   metamon.forall_morph(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 8)),
     mr,
@@ -109,10 +113,10 @@ pub fn readme_equivariance_test() {
   //   list.reverse(list.map(xs, g)) == list.map(list.reverse(xs), g)
   let mr =
     metamon.equivariant_under(
-      list_t.reverse(),
-      list_t.reverse(),
-      relation.equal(),
-      "map_commutes_with_reverse",
+      name: "map_commutes_with_reverse",
+      input: list_t.reverse(),
+      output: list_t.reverse(),
+      relation: relation.equal(),
     )
   metamon.forall_morph(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 6)),
@@ -145,16 +149,22 @@ fn list_sum(items: List(Int)) -> Int {
 // 2.6. assert_morph — single hand-supplied input, no generator.
 pub fn readme_assert_morph_test() {
   let mr =
-    metamon.invariant_under(list_t.reverse(), "sum_invariant_under_reverse")
+    metamon.invariant_under(
+      name: "sum_invariant_under_reverse",
+      under: list_t.reverse(),
+    )
   metamon.assert_morph([1, 2, 3, 4, 5], mr, list_sum)
 }
 
 // 2.7. forall_morphs — run several MRs against the same f.
 pub fn readme_forall_morphs_test() {
   let invariant_under_reverse =
-    metamon.invariant_under(list_t.reverse(), "sum_under_reverse")
+    metamon.invariant_under(name: "sum_under_reverse", under: list_t.reverse())
   let invariant_under_append_zero =
-    metamon.invariant_under(list_t.append(0), "sum_under_append_zero")
+    metamon.invariant_under(
+      name: "sum_under_append_zero",
+      under: list_t.append(0),
+    )
   metamon.forall_morphs(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 4)),
     [invariant_under_reverse, invariant_under_append_zero],
@@ -197,7 +207,10 @@ pub fn readme_choice_test() {
 // 3.3. with_examples — guarantee specific edge inputs are tried.
 pub fn readme_with_examples_test() {
   let trim_idempotent =
-    metamon.idempotency_of(string.trim, "trim_idempotent_with_examples")
+    metamon.idempotency_of(
+      name: "trim_idempotent_with_examples",
+      of: string.trim,
+    )
   metamon.forall_morph(
     generator.string_ascii(range.constant(0, 8))
       |> generator.with_examples(["", " ", "  ", "\t\n  hi  \n\t"]),

@@ -10,8 +10,8 @@ pub fn identity_returns_input_test() {
   should.equal(t.name, "identity")
 }
 
-pub fn always_ignores_input_test() {
-  let t = transform.always("k", 99)
+pub fn constant_ignores_input_test() {
+  let t = transform.constant("k", 99)
   should.equal(t.apply(7), 99)
   should.equal(t.name, "k")
 }
