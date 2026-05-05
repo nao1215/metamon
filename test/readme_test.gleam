@@ -158,7 +158,7 @@ pub fn readme_assert_morph_test() {
 
 // 2.7. commutativity_of — op(a, b) == op(b, a).
 pub fn readme_commutativity_test() {
-  let mr = metamon.commutativity_of(name: "add_commutative", of: add_int)
+  let mr = metamon.commutativity_of(name: "add_commutative")
   metamon.forall_morph(
     generator.tuple2(
       generator.int(range.constant(-50, 50)),

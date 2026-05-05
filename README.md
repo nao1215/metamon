@@ -312,7 +312,7 @@ fn add(a: Int, b: Int) -> Int {
 }
 
 pub fn add_commutative_test() {
-  let mr = metamon.commutativity_of(name: "add_commutative", of: add)
+  let mr = metamon.commutativity_of(name: "add_commutative")
   metamon.forall_morph(
     generator.tuple2(
       generator.int(range.constant(-50, 50)),
