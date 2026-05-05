@@ -11,7 +11,7 @@
 //// in `metamon/relation`; per-property context in `metamon/annotate`
 //// and `metamon/coverage`; structural diff in `metamon/diff`.
 
-import metamon/config.{type Config}
+import metamon/config
 import metamon/generator.{type Generator}
 import metamon/generator/seed as seed_module
 import metamon/internal/runner.{type MorphSpec, EquivariantSpec, PlainSpec}
@@ -21,6 +21,10 @@ import metamon/transform.{type Transform, Transform}
 /// Re-export of the seed type so callers can write `metamon.Seed`.
 pub type Seed =
   seed_module.Seed
+
+/// Re-export of `Config` so callers can write `metamon.Config`.
+pub type Config =
+  config.Config
 
 /// Construct a deterministic seed from an integer.
 pub fn seed(value: Int) -> Seed {
