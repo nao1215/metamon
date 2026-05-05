@@ -28,7 +28,7 @@ pub fn cover_records_a_requirement_test() {
   let snap = coverage.snapshot()
   let assert [req] = coverage.requirements_of(snap)
   should.equal(req.label, "even")
-  should.equal(req.target_pct, 50.0)
+  should.equal(req.kind, coverage.Pct(50.0))
   should.equal(req.hits, 3)
 }
 
@@ -73,4 +73,49 @@ pub fn collect_buckets_values_test() {
 pub fn actual_pct_zero_when_total_zero_test() {
   should.equal(coverage.actual_pct(0, 0), 0.0)
   should.equal(coverage.actual_pct(50, 100), 50.0)
+}
+
+// ---------- Count-kind requirement ----------
+
+pub fn cover_at_least_records_count_kind_test() {
+  coverage.reset()
+  coverage.cover_at_least(2, "primes", True)
+  coverage.cover_at_least(2, "primes", False)
+  coverage.cover_at_least(2, "primes", True)
+  let snap = coverage.snapshot()
+  let assert [req] = coverage.requirements_of(snap)
+  should.equal(req.label, "primes")
+  should.equal(req.kind, coverage.Count(2))
+  should.equal(req.hits, 2)
+}
+
+pub fn cover_at_least_meets_target_test() {
+  coverage.reset()
+  coverage.cover_at_least(2, "ok", True)
+  coverage.cover_at_least(2, "ok", True)
+  coverage.cover_at_least(2, "ok", True)
+  let snap = coverage.snapshot()
+  should.equal(coverage.shortfalls(snap), [])
+}
+
+pub fn cover_at_least_falls_short_test() {
+  coverage.reset()
+  coverage.cover_at_least(5, "ok", True)
+  coverage.cover_at_least(5, "ok", False)
+  coverage.cover_at_least(5, "ok", False)
+  let snap = coverage.snapshot()
+  case coverage.shortfalls(snap) {
+    [req] -> should.equal(req.kind, coverage.Count(5))
+    _ -> should.fail()
+  }
+}
+
+pub fn classify_in_bucket_groups_labels_test() {
+  coverage.reset()
+  coverage.classify_in_bucket("size", "small")
+  coverage.classify_in_bucket("size", "small")
+  coverage.classify_in_bucket("size", "large")
+  let snap = coverage.snapshot()
+  should.equal(coverage.hits_for(snap, "size=small"), 2)
+  should.equal(coverage.hits_for(snap, "size=large"), 1)
 }

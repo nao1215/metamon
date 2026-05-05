@@ -23,10 +23,37 @@ const requirements_key: String = "coverage_requirements"
 
 const collected_key: String = "coverage_collected"
 
-/// One coverage requirement.
+/// One coverage requirement. A requirement is met when the label's
+/// hit count is at least `target_pct`% of total runs (Pct kind) or
+/// at least `min_hits` absolute occurrences (Count kind).
 pub type Requirement {
-  Requirement(label: String, target_pct: Float, hits: Int)
+  Requirement(label: String, kind: RequirementKind, hits: Int)
 }
+
+pub type RequirementKind {
+  /// At least `target_pct`% of inputs must hit the label.
+  Pct(target_pct: Float)
+  /// At least `min_hits` inputs must hit the label.
+  Count(min_hits: Int)
+}
+
+/// Backwards-compat helper: extract the percentage target if the
+/// requirement is a Pct one, otherwise compute it from the
+/// minimum-count requirement and the recorded total. Used by the
+/// failure formatter and the `target_pct` accessor in older code.
+pub fn target_pct_of(req: Requirement, total: Int) -> Float {
+  case req.kind {
+    Pct(target) -> target
+    Count(min) ->
+      case total <= 0 {
+        True -> 0.0
+        False -> int_to_float_safe(min) /. int_to_float_safe(total) *. 100.0
+      }
+  }
+}
+
+@external(erlang, "erlang", "float")
+fn int_to_float_safe(n: Int) -> Float
 
 /// Snapshot of the coverage state for one property run.
 pub type Snapshot {
@@ -53,11 +80,34 @@ pub fn classify(label: String, condition: Bool) -> Nil {
 /// `target_pct` percent of all inputs in the run.
 pub fn cover(target_pct: Float, label: String, condition: Bool) -> Nil {
   bump_total()
-  ensure_requirement(label, target_pct)
+  ensure_pct_requirement(label, target_pct)
   case condition {
     False -> Nil
     True -> bump_count(counts_key, label)
   }
+}
+
+/// Absolute-count variant of `cover`: assert that the label is hit
+/// at least `min_hits` times across the entire run. Useful when you
+/// know the exact number of edge cases that should fire (e.g. "at
+/// least 3 inputs trigger the empty-list path").
+pub fn cover_at_least(min_hits: Int, label: String, condition: Bool) -> Nil {
+  bump_total()
+  ensure_count_requirement(label, min_hits)
+  case condition {
+    False -> Nil
+    True -> bump_count(counts_key, label)
+  }
+}
+
+/// Tag the current input as belonging to a mutually-exclusive
+/// `bucket` within `group`. Buckets are recorded as
+/// `"<group>=<bucket>"` so the failure report can show distribution
+/// by group at a glance. Calling `classify_in_bucket` more than once
+/// per input within the same `group` is a programming error and is
+/// silently kept (the runner does not enforce mutual exclusion).
+pub fn classify_in_bucket(group: String, bucket: String) -> Nil {
+  classify(group <> "=" <> bucket, True)
 }
 
 /// Render `value` via `show` and add the result to the histogram of
@@ -91,13 +141,18 @@ pub fn snapshot() -> Snapshot {
   )
 }
 
-/// Find requirements whose actual coverage % falls short of the target.
+/// Find requirements whose actual coverage falls short of the target.
+/// Pct requirements are checked against `actual_pct`; Count
+/// requirements are checked against the absolute hit count.
 pub fn shortfalls(snap: Snapshot) -> List(Requirement) {
   case snap.total <= 0 {
     True -> []
     False ->
       list.filter(snap.requirements, fn(req: Requirement) {
-        actual_pct(req.hits, snap.total) <. req.target_pct
+        case req.kind {
+          Pct(target) -> actual_pct(req.hits, snap.total) <. target
+          Count(min) -> req.hits < min
+        }
       })
   }
 }
@@ -143,16 +198,21 @@ fn read_dict(key: String) -> Dict(String, Int) {
   }
 }
 
-fn ensure_requirement(label: String, target_pct: Float) -> Nil {
+fn ensure_pct_requirement(label: String, target_pct: Float) -> Nil {
+  ensure_requirement(label, Pct(target_pct))
+}
+
+fn ensure_count_requirement(label: String, min_hits: Int) -> Nil {
+  ensure_requirement(label, Count(min_hits))
+}
+
+fn ensure_requirement(label: String, kind: RequirementKind) -> Nil {
   let current = read_requirements()
   let already = list.any(current, fn(req: Requirement) { req.label == label })
   case already {
     True -> Nil
     False -> {
-      let updated = [
-        Requirement(label: label, target_pct: target_pct, hits: 0),
-        ..current
-      ]
+      let updated = [Requirement(label: label, kind: kind, hits: 0), ..current]
       process_state.put(requirements_key, updated)
       Nil
     }
@@ -173,7 +233,7 @@ fn enriched_requirements(counts: Dict(String, Int)) -> List(Requirement) {
       Ok(n) -> n
       Error(_) -> 0
     }
-    Requirement(label: req.label, target_pct: req.target_pct, hits: hits)
+    Requirement(label: req.label, kind: req.kind, hits: hits)
   })
 }
 

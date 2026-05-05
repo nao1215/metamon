@@ -157,3 +157,59 @@ pub fn invert(r: Relation(b)) -> Relation(b) {
 pub fn rename(r: Relation(b), name: String) -> Relation(b) {
   Relation(name: name, holds: r.holds)
 }
+
+// ---------- N-ary relations ----------
+
+/// A relation across an arbitrary number of follow-up outputs.
+/// `holds(outputs)` receives the source output as `outputs[0]` and
+/// the i-th follow-up output as `outputs[i + 1]`. Used by
+/// `metamon.forall_morph_n` for MRs that compare more than two
+/// outputs (e.g. `f(x), f(T1(x)), f(T2(x))` are pairwise equal).
+pub type RelationN(b) {
+  RelationN(name: String, holds: fn(List(b)) -> Bool)
+}
+
+/// Construct an N-ary relation directly.
+pub fn n_new(name: String, holds: fn(List(b)) -> Bool) -> RelationN(b) {
+  RelationN(name: name, holds: holds)
+}
+
+/// All elements of the input list are equal under structural `==`.
+/// Trivially `True` for lists of length 0 or 1.
+pub fn all_equal() -> RelationN(b) {
+  RelationN(name: "all_equal", holds: fn(items) { all_equal_loop(items) })
+}
+
+fn all_equal_loop(items: List(b)) -> Bool {
+  case items {
+    [] -> True
+    [_] -> True
+    [first, second, ..rest] ->
+      case first == second {
+        True -> all_equal_loop([second, ..rest])
+        False -> False
+      }
+  }
+}
+
+/// Lift a binary `Relation(b)` to an N-ary relation by checking it
+/// pairwise: every consecutive pair `(items[i], items[i+1])` must
+/// satisfy `r`. For `name == "equal"` this gives a chain of equal
+/// values; for `monotone` it gives a sorted chain.
+pub fn pairwise(r: Relation(b)) -> RelationN(b) {
+  RelationN(name: "pairwise(" <> r.name <> ")", holds: fn(items) {
+    pairwise_loop(r, items)
+  })
+}
+
+fn pairwise_loop(r: Relation(b), items: List(b)) -> Bool {
+  case items {
+    [] -> True
+    [_] -> True
+    [first, second, ..rest] ->
+      case r.holds(first, second) {
+        True -> pairwise_loop(r, [second, ..rest])
+        False -> False
+      }
+  }
+}

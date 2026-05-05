@@ -14,6 +14,14 @@ pub type ConfigError {
   InvalidPath(path: String, reason: String)
 }
 
+/// Failure-report output format.
+pub type OutputFormat {
+  /// Multi-line human-readable text (the default).
+  Text
+  /// Single-line JSON object suitable for CI annotations and LLM parsing.
+  Json
+}
+
 /// Opaque configuration record. Use `default_config()` and `with_*`
 /// to build instances.
 pub opaque type Config {
@@ -25,6 +33,7 @@ pub opaque type Config {
     max_edges: Int,
     regression_file: Option(String),
     diff_enabled: Bool,
+    output_format: OutputFormat,
   )
 }
 
@@ -38,6 +47,7 @@ pub fn default_config() -> Config {
     max_edges: 16,
     regression_file: None,
     diff_enabled: True,
+    output_format: Text,
   )
 }
 
@@ -95,6 +105,13 @@ pub fn with_diff_enabled(c: Config, enabled: Bool) -> Config {
   Config(..c, diff_enabled: enabled)
 }
 
+/// Choose the failure-report output format. `Text` is the default;
+/// `Json` produces a single-line JSON object suitable for piping
+/// into CI dashboards or LLM-driven analysis.
+pub fn with_output_format(c: Config, fmt: OutputFormat) -> Config {
+  Config(..c, output_format: fmt)
+}
+
 // ---------- read-only accessors ----------
 
 pub fn runs(c: Config) -> Int {
@@ -123,4 +140,8 @@ pub fn regression_file(c: Config) -> Option(String) {
 
 pub fn diff_enabled(c: Config) -> Bool {
   c.diff_enabled
+}
+
+pub fn output_format(c: Config) -> OutputFormat {
+  c.output_format
 }

@@ -5,6 +5,7 @@
 import gleam/dict
 import gleam/float
 import gleam/int
+import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
@@ -47,6 +48,90 @@ pub type FailureReport {
     footnotes: List(String),
     coverage_snapshot: Option(coverage.Snapshot),
   )
+}
+
+/// Render a failure report as a single-line JSON object. Stable
+/// schema suitable for CI dashboards and LLM-driven analysis. The
+/// fields mirror the human-readable layout 1:1 so neither output is
+/// the source of truth — the same `FailureReport` produces both.
+pub fn render_json(report: FailureReport) -> String {
+  let mode = case report.morph_mode {
+    None -> json.string("plain")
+    Some(Plain(t)) ->
+      json.object([
+        #("kind", json.string("plain")),
+        #("transform", json.string(t)),
+      ])
+    Some(Equivariant(input_t, output_t)) ->
+      json.object([
+        #("kind", json.string("equivariant")),
+        #("input_transform", json.string(input_t)),
+        #("output_transform", json.string(output_t)),
+      ])
+  }
+  let source = case report.input_source {
+    EdgeSource(i) ->
+      json.object([
+        #("kind", json.string("edge")),
+        #("index", json.int(i)),
+      ])
+    RandomSource(seed_value, size) ->
+      json.object([
+        #("kind", json.string("random")),
+        #("seed", json.int(seed_value)),
+        #("size", json.int(size)),
+      ])
+  }
+  let coverage_field = case report.coverage_snapshot {
+    None -> json.null()
+    Some(snap) -> coverage_to_json(snap)
+  }
+  json.object([
+    #("mr_name", json.string(report.mr_name)),
+    #("test_name", json.string(report.test_name)),
+    #("config_seed", json.int(report.config_seed)),
+    #("runs_done", json.int(report.runs_done)),
+    #("runs_total", json.int(report.runs_total)),
+    #("shrinks_done", json.int(report.shrinks_done)),
+    #("shrink_capped", json.bool(report.shrink_capped)),
+    #("source", source),
+    #("morph_mode", mode),
+    #("relation", json.string(report.relation_name)),
+    #("source_input", json.string(report.source_input)),
+    #("followup_input", json.string(report.followup_input)),
+    #("source_output", json.string(report.source_output)),
+    #("followup_output", json.string(report.followup_output)),
+    #("annotations", json.array(report.annotations, json.string)),
+    #("footnotes", json.array(report.footnotes, json.string)),
+    #("coverage", coverage_field),
+  ])
+  |> json.to_string
+}
+
+fn coverage_to_json(snap: coverage.Snapshot) -> json.Json {
+  json.object([
+    #("total", json.int(snap.total)),
+    #(
+      "requirements",
+      json.array(coverage.requirements_of(snap), fn(req: coverage.Requirement) {
+        json.object([
+          #("label", json.string(req.label)),
+          #("target_pct", json.float(coverage.target_pct_of(req, snap.total))),
+          #("hits", json.int(req.hits)),
+          #("actual_pct", json.float(coverage.actual_pct(req.hits, snap.total))),
+        ])
+      }),
+    ),
+    #(
+      "collected",
+      json.array(dict.to_list(coverage.collected_of(snap)), fn(pair) {
+        json.object([
+          #("label", json.string(pair.0)),
+          #("count", json.int(pair.1)),
+        ])
+      }),
+    ),
+  ])
 }
 
 /// Render a failure report. The output is multi-line and ends with a
@@ -176,7 +261,7 @@ fn coverage_lines(snap: coverage.Snapshot) -> List(String) {
       <> " ("
       <> float.to_string(pct)
       <> "%) target≥"
-      <> float.to_string(req.target_pct)
+      <> float.to_string(coverage.target_pct_of(req, total))
       <> "%"
     })
   let collected = coverage.collected_of(snap)

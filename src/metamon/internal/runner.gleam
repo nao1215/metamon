@@ -25,7 +25,7 @@ import metamon/internal/regression
 import metamon/internal/report.{
   type FailureReport, type InputSource, type MorphMode, EdgeSource, Equivariant,
   FailureReport, Plain, RandomSource,
-}
+} as report_module
 import metamon/relation.{type Relation}
 import metamon/transform.{type Transform}
 import simplifile
@@ -167,9 +167,111 @@ pub fn run_assert_morph(
     False -> {
       let report =
         morph_failure_static(test_name, spec, input, evaluation, 0, 0)
-      panic_with(report.render(report))
+      panic_with(render_for(config.default_config(), report))
     }
   }
+}
+
+fn render_for(cfg: Config, report: FailureReport) -> String {
+  case config.output_format(cfg) {
+    config.Text -> report_module.render(report)
+    config.Json -> report_module.render_json(report)
+  }
+}
+
+/// Run an N-ary metamorphic relation: apply each transform to the
+/// source input to build follow-ups, then check `relation` over the
+/// list `[f(source), f(T0(source)), ..., f(Tn(source))]`.
+pub fn run_forall_morph_n(
+  cfg: Config,
+  test_name: String,
+  gen: Generator(a),
+  transforms: List(Transform(a)),
+  rel: relation.RelationN(b),
+  f: fn(a) -> b,
+) -> Nil {
+  reset_state()
+  case
+    iterate_inputs(cfg, gen, fn(input, source, run_index) {
+      let outputs = compute_n_outputs(transforms, f, input)
+      case rel.holds(outputs) {
+        True -> Continue
+        False ->
+          Stop(morph_n_failure(
+            cfg,
+            test_name,
+            transforms,
+            rel,
+            run_index,
+            input,
+            source,
+            outputs,
+          ))
+      }
+    })
+  {
+    Done -> finish_with_coverage_check(cfg, test_name, Some(rel.name))
+    Halted(text) -> panic_with(text)
+  }
+}
+
+fn compute_n_outputs(
+  transforms: List(Transform(a)),
+  f: fn(a) -> b,
+  input: a,
+) -> List(b) {
+  let source_output = f(input)
+  let followups =
+    list.map(transforms, fn(t: Transform(a)) { f(t.apply(input)) })
+  [source_output, ..followups]
+}
+
+fn morph_n_failure(
+  cfg: Config,
+  test_name: String,
+  transforms: List(Transform(a)),
+  rel: relation.RelationN(b),
+  run_index: Int,
+  input: a,
+  source: InputSource,
+  outputs: List(b),
+) -> String {
+  let transform_names =
+    list.map(transforms, fn(t: Transform(a)) { t.name })
+    |> string.join(", ")
+  let outputs_rendered =
+    list.index_map(outputs, fn(out, i) {
+      "    [" <> int.to_string(i) <> "] " <> string.inspect(out)
+    })
+    |> string.join("\n")
+  string.concat([
+    "× n-ary metamorphic relation `",
+    rel.name,
+    "` failed\n  test:        ",
+    test_name,
+    "\n  config seed: ",
+    int.to_string(seed_module.state(config.seed(cfg))),
+    "\n  runs:        ",
+    int.to_string(run_index),
+    " / ",
+    int.to_string(config.runs(cfg)),
+    "\n  source:      ",
+    case source {
+      EdgeSource(i) -> "edge(" <> int.to_string(i) <> ")"
+      RandomSource(s, sz) ->
+        "random(seed="
+        <> int.to_string(s)
+        <> ", size="
+        <> int.to_string(sz)
+        <> ")"
+    },
+    "\n  transforms:  ",
+    transform_names,
+    "\n  source input:\n    ",
+    string.inspect(input),
+    "\n  outputs (source first, then each follow-up):\n",
+    outputs_rendered,
+  ])
 }
 
 /// Run multiple metamorphic specs against the same generator + `f`.
@@ -332,7 +434,7 @@ fn forall_failure(
       footnotes: annotate.current_footnotes(),
       coverage_snapshot: Some(coverage.snapshot()),
     )
-  report.render(report)
+  render_for(cfg, report)
 }
 
 type Evaluation(b) {
@@ -432,7 +534,7 @@ fn morph_failure(
   // future shrinks can reuse the original failing evaluation if we
   // decide to short-circuit small inputs.
   let _ = evaluation
-  report.render(report)
+  render_for(cfg, report)
 }
 
 fn morph_failure_static(
@@ -540,7 +642,7 @@ fn finish_with_coverage_check(
         <> " ("
         <> float.to_string(coverage.actual_pct(req.hits, snap.total))
         <> "%, target≥"
-        <> float.to_string(req.target_pct)
+        <> float.to_string(coverage.target_pct_of(req, snap.total))
         <> "%)"
       panic_with(message)
     }

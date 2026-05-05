@@ -82,6 +82,17 @@ pub fn with_diff_enabled(c: Config, enabled: Bool) -> Config {
   config.with_diff_enabled(c, enabled)
 }
 
+/// Re-export of `OutputFormat` so callers can write
+/// `metamon.OutputFormat`.
+pub type OutputFormat =
+  config.OutputFormat
+
+/// Choose the failure-report output format. `Text` (default) is
+/// human-friendly; `Json` is single-line JSON for CI / LLM consumers.
+pub fn with_output_format(c: Config, fmt: OutputFormat) -> Config {
+  config.with_output_format(c, fmt)
+}
+
 // ---------- Mr type and constructors ----------
 
 /// A named metamorphic relation. Construct via `mr` (the Plain form,
@@ -151,6 +162,32 @@ pub fn forall_morph_with(
 /// Run a metamorphic relation against a single input. Generator-free.
 pub fn assert_morph(input: a, m: Mr(a, b), f: fn(a) -> b) -> Nil {
   runner.run_assert_morph("assert_morph", m.spec, f, input)
+}
+
+/// Run an N-ary metamorphic relation: apply each of `transforms` to
+/// the source input to build follow-up inputs, then assert that the
+/// resulting outputs `[f(x), f(T0(x)), ..., f(Tn(x))]` satisfy
+/// `relation`. Useful when the property requires comparing more than
+/// two outputs in one shot (e.g. `(a, b, c) ↦ op(op(a,b), c)` and its
+/// re-associations all agree).
+pub fn forall_morph_n(
+  g: Generator(a),
+  transforms: List(Transform(a)),
+  rel: relation.RelationN(b),
+  f: fn(a) -> b,
+) -> Nil {
+  forall_morph_n_with(default_config(), g, transforms, rel, f)
+}
+
+/// `forall_morph_n` with an explicit configuration.
+pub fn forall_morph_n_with(
+  cfg: Config,
+  g: Generator(a),
+  transforms: List(Transform(a)),
+  rel: relation.RelationN(b),
+  f: fn(a) -> b,
+) -> Nil {
+  runner.run_forall_morph_n(cfg, "forall_morph_n", g, transforms, rel, f)
 }
 
 /// Run multiple metamorphic relations against the same generator.
