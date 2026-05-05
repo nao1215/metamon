@@ -2,3 +2,7 @@
 *.ez
 /build
 erl_crash.dump
+CLAUDE.md
+.codex
+.claude
+doc/reference/*
