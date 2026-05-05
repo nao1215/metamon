@@ -156,7 +156,34 @@ pub fn readme_assert_morph_test() {
   metamon.assert_morph([1, 2, 3, 4, 5], mr, list_sum)
 }
 
-// 2.7. forall_morphs — run several MRs against the same f.
+// 2.7. commutativity_of — op(a, b) == op(b, a).
+pub fn readme_commutativity_test() {
+  let mr = metamon.commutativity_of(name: "add_commutative", of: add_int)
+  metamon.forall_morph(
+    generator.tuple2(
+      generator.int(range.constant(-50, 50)),
+      generator.int(range.constant(-50, 50)),
+    ),
+    mr,
+    fn(pair) { add_int(pair.0, pair.1) },
+  )
+}
+
+fn add_int(a: Int, b: Int) -> Int {
+  a + b
+}
+
+// 2.8. round-trip via PBT (no MR template — see README).
+pub fn readme_round_trip_via_forall_test() {
+  metamon.forall(generator.int(range.constant(-1000, 1000)), fn(n) {
+    case int.parse(int.to_string(n)) {
+      Ok(parsed) -> parsed == n
+      Error(_) -> False
+    }
+  })
+}
+
+// 2.9. forall_morphs — run several MRs against the same f.
 pub fn readme_forall_morphs_test() {
   let invariant_under_reverse =
     metamon.invariant_under(name: "sum_under_reverse", under: list_t.reverse())

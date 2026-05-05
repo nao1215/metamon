@@ -36,6 +36,16 @@ end-of-life in April 2026. Node 22 is the current minimum.
   rely on a thin FFI shim for per-process state; the JS shim uses a
   module-level `Map`, so the runner clears it between properties.
 
+> Parallel test runners on JavaScript: the per-process state used by
+> `metamon/annotate` and `metamon/coverage` is a module-level `Map` on
+> the JavaScript target. If your test runner executes multiple
+> `metamon.forall*` invocations in parallel within the same Node
+> process (vitest workers, jest with `--detectOpenHandles=false`, etc.),
+> annotation and coverage state can leak between properties. On the
+> BEAM target every test runs in its own process, so the issue does
+> not arise. Run JS tests sequentially within a process if you rely on
+> these features.
+
 ## Install
 
 ```sh
@@ -55,7 +65,7 @@ import metamon/generator
 import metamon/generator/range
 
 pub fn trim_idempotent_test() {
-  let mr = metamon.idempotency_of(string.trim, "trim_idempotent")
+  let mr = metamon.idempotency_of(name: "trim_idempotent", of: string.trim)
   metamon.forall_morph(
     generator.string_ascii(range.constant(0, 16)),
     mr,
@@ -127,7 +137,8 @@ import metamon/generator
 import metamon/generator/range
 
 pub fn sort_dedupe_idempotent_test() {
-  let mr = metamon.idempotency_of(sort_dedupe, "sort_dedupe_idempotent")
+  let mr =
+    metamon.idempotency_of(name: "sort_dedupe_idempotent", of: sort_dedupe)
   metamon.forall_morph(
     generator.list_of(
       generator.int(range.constant(0, 9)),
@@ -188,7 +199,10 @@ import gleam/list
 
 pub fn length_invariant_under_reverse_test() {
   let mr =
-    metamon.invariant_under(list_t.reverse(), "length_invariant_under_reverse")
+    metamon.invariant_under(
+      name: "length_invariant_under_reverse",
+      under: list_t.reverse(),
+    )
   metamon.forall_morph(
     generator.list_of(
       generator.int(range.constant(0, 9)),
@@ -216,10 +230,10 @@ import gleam/list
 pub fn map_commutes_with_reverse_test() {
   let mr =
     metamon.equivariant_under(
-      list_t.reverse(),
-      list_t.reverse(),
-      relation.equal(),
-      "map_commutes_with_reverse",
+      name: "map_commutes_with_reverse",
+      input: list_t.reverse(),
+      output: list_t.reverse(),
+      relation: relation.equal(),
     )
   metamon.forall_morph(
     generator.list_of(
@@ -275,12 +289,67 @@ import metamon/transform/list as list_t
 
 pub fn sum_reverse_regression_test() {
   let mr =
-    metamon.invariant_under(list_t.reverse(), "sum_invariant_under_reverse")
+    metamon.invariant_under(
+      name: "sum_invariant_under_reverse",
+      under: list_t.reverse(),
+    )
   metamon.assert_morph([1, 2, 3, 4, 5], mr, list_sum)
 }
 ```
 
-#### 2.7. `forall_morphs` — multiple MRs against the same `f`
+#### 2.7. Commutativity: `op(a, b) == op(b, a)`
+
+The `commutativity_of` template builds an MR over the input pair
+`#(a, a)` whose transform swaps the two components:
+
+```gleam
+import metamon
+import metamon/generator
+import metamon/generator/range
+
+fn add(a: Int, b: Int) -> Int {
+  a + b
+}
+
+pub fn add_commutative_test() {
+  let mr = metamon.commutativity_of(name: "add_commutative", of: add)
+  metamon.forall_morph(
+    generator.tuple2(
+      generator.int(range.constant(-50, 50)),
+      generator.int(range.constant(-50, 50)),
+    ),
+    mr,
+    fn(pair) { add(pair.0, pair.1) },
+  )
+}
+```
+
+#### 2.8. Round-trip: `parse(write(x)) == Ok(x)`
+
+Round-trip is intentionally NOT an MR template: the textbook
+`parse(write(x)) == Ok(x)` is a single-input invariant and is more
+direct as a `forall`:
+
+```gleam
+import metamon
+import metamon/generator
+import metamon/generator/range
+import gleam/int
+
+pub fn int_string_round_trip_test() {
+  metamon.forall(
+    generator.int(range.constant(-1000, 1000)),
+    fn(n) {
+      case int.parse(int.to_string(n)) {
+        Ok(parsed) -> parsed == n
+        Error(_) -> False
+      }
+    },
+  )
+}
+```
+
+#### 2.9. `forall_morphs` — multiple MRs against the same `f`
 
 Each MR is exercised independently and the runner reports all
 failures, not just the first:
@@ -293,9 +362,12 @@ import metamon/transform/list as list_t
 
 pub fn sum_multi_mr_test() {
   let invariant_under_reverse =
-    metamon.invariant_under(list_t.reverse(), "sum_under_reverse")
+    metamon.invariant_under(name: "sum_under_reverse", under: list_t.reverse())
   let invariant_under_append_zero =
-    metamon.invariant_under(list_t.append(0), "sum_under_append_zero")
+    metamon.invariant_under(
+      name: "sum_under_append_zero",
+      under: list_t.append(0),
+    )
   metamon.forall_morphs(
     generator.list_of(
       generator.int(range.constant(0, 9)),
@@ -308,6 +380,27 @@ pub fn sum_multi_mr_test() {
 ```
 
 ### 3. Generators
+
+#### 3.0. Shortcuts for the most common shapes
+
+```gleam
+import metamon/generator
+import metamon/generator/range
+
+pub fn shortcut_examples() {
+  let _: generator.Generator(Bool)      = generator.bool()
+  let _: generator.Generator(Int)       = generator.non_negative_int()
+  let _: generator.Generator(Int)       = generator.positive_int()
+  let _: generator.Generator(Int)       = generator.negative_int()
+  let _: generator.Generator(Int)       = generator.byte()
+  let _: generator.Generator(BitArray)  = generator.bit_array(range.constant(0, 16))
+  Nil
+}
+```
+
+These wrap `generator.int(range.linear(...))` etc. with the most
+useful default ranges. Reach for the underlying `generator.int(...)`
+when you need different bounds or shrink origins.
 
 #### 3.1. Building record-shaped values with `map2`
 
@@ -366,7 +459,10 @@ import gleam/string
 
 pub fn trim_idempotent_with_examples_test() {
   let trim_idempotent =
-    metamon.idempotency_of(string.trim, "trim_idempotent_with_examples")
+    metamon.idempotency_of(
+      name: "trim_idempotent_with_examples",
+      of: string.trim,
+    )
   metamon.forall_morph(
     generator.string_ascii(range.constant(0, 8))
       |> generator.with_examples(["", " ", "  ", "\t\n  hi  \n\t"]),
@@ -583,33 +679,66 @@ appear:
   footnotes:
     - <footnote calls>
 
-  reproduce:
-    let assert Ok(c) =
-      metamon.default_config()
-      |> metamon.with_seed(metamon.seed(<seed>))
-      |> metamon.with_runs(<i+1>)
-    metamon.forall_morph_with(c, generator, mr, f)
+  reproduce (paste into a test):
+    // The MR failed for this input. To pin it as a regression,
+    // call assert_morph with the shrunk input and the same MR.
+    let input = <pretty-printed shrunk input>
+    metamon.assert_morph(input, mr, f)
 ```
 
-The `reproduce` block can be pasted into a regression test to pin
-the failing input forever.
+The `reproduce` block paired with `metamon.with_regression_file(...)`
+gives you two ways to keep failing inputs around:
+
+- **Reproduce block (in-test)**: paste the shrunk input directly into
+  a Gleam test as a literal. Survives regardless of the runner state.
+- **Regression file (`with_regression_file(path)`)**: the runner
+  appends each failure to a TOML file and re-runs every entry on
+  startup before any random generation. Useful when you want past
+  failures rerun on every CI build without changing the test source.
+
+## Limitations
+
+These are deliberate scope cuts, not bugs. They are listed so you
+know how to work around them.
+
+- **`Transform(a)` is `a -> a`.** Type-changing transformations
+  (`String -> Result(Spec, Error)`) cannot live inside the input
+  transform of an MR. Encode them as `f` instead and use the
+  output side of an Equivariant MR (or a plain `forall`) to assert
+  the relation.
+- **`Relation(b)` compares two `b` values.** Heterogeneous relations
+  `(a, b) -> Bool` (e.g. "the output is bounded by the input") are
+  expressed with `metamon.forall` and a hand-written predicate
+  that closes over both values.
+- **No multi-follow-up MRs (`(b, b, b) -> Bool`).** Compose two
+  transforms with `transform.then` to fold many follow-ups back
+  into a single binary relation.
+- **`bind` shrinks shallowly.** Generators built with `bind` lose
+  some of the shrink quality that `map2..6` and `tuple2..5` give
+  you for free. Prefer applicative composition over monadic chains
+  when both shapes work.
+- **JavaScript-target parallel runners.** `metamon/annotate` and
+  `metamon/coverage` use a module-level `Map` on the JS target;
+  parallel test runners that share a Node process can leak state
+  between properties. Run JS tests sequentially within a process
+  if you depend on these features.
 
 ## Modules
 
 | Module | Responsibility |
 |---|---|
-| `metamon` | Top-level API: `forall`, `forall_with`, `forall_morph`, `forall_morph_with`, `assert_morph`, `forall_morphs`, `Mr` (opaque), `mr`, `mr_equivariant`, `name_of`, `idempotency_of`, `round_trip_with`, `invariant_under`, `equivariant_under`, `seed`, `random_seed`, `default_config` and all `with_*` re-exports |
-| `metamon/config` | `Config`, `ConfigError`, `default_config`, `with_runs`, `with_seed`, `with_max_size`, `with_shrink_limit`, `with_max_discards`, `with_max_edges`, `with_regression_file`, `with_diff_enabled` |
-| `metamon/generator` | `Generator(a)` (opaque), `generate`, `sample`, `statistics`, `with_examples`, `add_edges`, `no_edges`, `return`, `map`, `bind`, `map2`..`map6`, `tuple2`..`tuple5`, `one_of`, `frequency`, `sized`, `resize`, `scale`, `filter`, `recursive`, `int`, `float`, `ascii_*`, `unicode_codepoint`, `string`, `string_ascii`, `string_unicode`, `list_of`, `non_empty_list_of`, `dict_of`, `set_of`, `option_of`, `result_of` |
-| `metamon/generator/seed` | splitmix64-based `Seed` with `split` |
+| `metamon` | Top-level API: `forall`, `forall_with`, `forall_morph`, `forall_morph_with`, `assert_morph`, `forall_morphs`, `Mr` (opaque), `mr`, `mr_equivariant`, `name_of`, `idempotency_of`, `invariant_under`, `equivariant_under`, `commutativity_of`, `seed`, `random_seed`, `default_config` and all `with_*` re-exports |
+| `metamon/config` | `Config`, `ConfigError`, `default_config`, `with_runs`, `with_seed`, `with_max_size`, `with_shrink_limit`, `with_max_edges`, `with_regression_file`, `with_diff_enabled` |
+| `metamon/generator` | `Generator(a)` (opaque), `generate`, `sample`, `statistics`, `with_examples`, `add_edges`, `no_edges`, `return`, `map`, `bind`, `map2`..`map6`, `tuple2`..`tuple5`, `one_of`, `frequency`, `sized`, `resize`, `scale`, `filter`, `recursive`, `int`, `float`, `bool`, `non_negative_int`, `positive_int`, `negative_int`, `byte`, `bit_array`, `ascii_*`, `unicode_codepoint`, `string`, `string_ascii`, `string_unicode`, `list_of`, `non_empty_list_of`, `dict_of`, `set_of`, `option_of`, `result_of` |
+| `metamon/generator/seed` | xorshift32-based `Seed` with `split` (target-portable; identical streams on BEAM and JS) |
 | `metamon/generator/tree` | Lazy rose tree used as the integrated shrink representation |
 | `metamon/generator/range` | `singleton`, `constant`, `linear`, `linear_from`, `exponential` (Hedgehog-style ranges) |
-| `metamon/transform` | `Transform(a)`, `new`, `identity`, `always`, `then`, `repeat`, `rename` |
+| `metamon/transform` | `Transform(a)`, `new`, `identity`, `constant`, `then`, `repeat`, `rename` |
 | `metamon/transform/list`   | `reverse`, `dedupe`, `prepend`, `append`, `shuffle` |
 | `metamon/transform/string` | `reverse`, `lowercase`, `uppercase`, `trim`, `prepend`, `append` |
 | `metamon/transform/dict`   | `insert`, `remove`, `shuffle_keys` |
 | `metamon/relation` | `Relation(b)`, `new`, `equal`, `not_equal`, `equivalent_under`, `approximately`, `permutation_of`, `subset_of`, `monotone`, `implies`, `and`, `or`, `invert`, `rename` |
-| `metamon/diff` | Structural diff used in failure reports: `diff`, `diff_string`, `render`, `Same`/`Differ`/`ListDiff`/`StringDiff` |
+| `metamon/diff` | Structural diff used in failure reports: `diff`, `diff_string`, `render`, `Same`/`Differ`/`ListDiff`/`TupleDiff`/`StringDiff` |
 | `metamon/annotate` | `annotate`, `annotate_value`, `footnote`, `reset`, `current_annotations`, `current_footnotes` |
 | `metamon/coverage` | `classify`, `cover`, `collect`, `snapshot`, `shortfalls`, `actual_pct`, `requirements_of`, `collected_of`, `hits_for`, `first_shortfall` |
 
