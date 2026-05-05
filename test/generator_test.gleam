@@ -195,14 +195,10 @@ pub fn string_ascii_within_length_bounds_test() {
   test_helpers.integers_from(0, 30)
   |> list.each(fn(i) {
     let value = generator.generate(g, seed.seed(i), 99).value
-    let len = string_length(value)
+    let len = string.length(value)
     should.be_true(len >= 3 && len <= 5)
   })
 }
-
-@external(erlang, "string", "length")
-@external(javascript, "../src/metamon_ffi.mjs", "string_length_js")
-fn string_length(s: String) -> Int
 
 pub fn statistics_buckets_values_test() {
   let g = generator.int(range.constant(0, 1))

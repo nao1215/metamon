@@ -3,6 +3,7 @@
 //// the format is easy to test in isolation.
 
 import gleam/dict
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -173,9 +174,9 @@ fn coverage_lines(snap: coverage.Snapshot) -> List(String) {
       <> "/"
       <> int.to_string(total)
       <> " ("
-      <> float_to_string(pct)
+      <> float.to_string(pct)
       <> "%) target≥"
-      <> float_to_string(req.target_pct)
+      <> float.to_string(req.target_pct)
       <> "%"
     })
   let collected = coverage.collected_of(snap)
@@ -219,7 +220,3 @@ fn indent(block: String, prefix: String) -> String {
   |> list.map(fn(line) { prefix <> line })
   |> string.join("\n")
 }
-
-@external(erlang, "erlang", "float_to_binary")
-@external(javascript, "../../metamon_ffi.mjs", "float_to_string")
-fn float_to_string(value: Float) -> String

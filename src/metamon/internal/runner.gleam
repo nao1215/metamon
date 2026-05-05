@@ -10,6 +10,7 @@
 ////   * Reset and read the per-process annotate/coverage state.
 ////   * Build a `FailureReport` and panic with its rendered form.
 
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -488,9 +489,9 @@ fn finish_with_coverage_check(
         <> "/"
         <> int.to_string(snap.total)
         <> " ("
-        <> float_to_string(coverage.actual_pct(req.hits, snap.total))
+        <> float.to_string(coverage.actual_pct(req.hits, snap.total))
         <> "%, target≥"
-        <> float_to_string(req.target_pct)
+        <> float.to_string(req.target_pct)
         <> "%)"
       panic_with(message)
     }
@@ -508,7 +509,3 @@ fn take_first(items: List(a), n: Int) -> List(a) {
     n, [first, ..rest] -> [first, ..take_first(rest, n - 1)]
   }
 }
-
-@external(erlang, "erlang", "float_to_binary")
-@external(javascript, "../../metamon_ffi.mjs", "float_to_string")
-fn float_to_string(value: Float) -> String

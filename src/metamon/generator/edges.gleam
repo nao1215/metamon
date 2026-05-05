@@ -10,6 +10,10 @@
 /// "common bug magnets" (`Int.max`, `Int.min`, neighbouring values
 /// around 0) when they fall inside the range.
 pub fn ints_in(lo: Int, hi: Int) -> List(Int) {
+  // The "huge" candidates are the JavaScript safe-integer extremes
+  // (`±(2^53 - 1)`). The BEAM has arbitrary-precision integers, but
+  // we keep the catalogue identical across targets so generated edge
+  // sets are reproducible regardless of the runtime.
   let candidates = [
     0,
     1,
@@ -18,8 +22,8 @@ pub fn ints_in(lo: Int, hi: Int) -> List(Int) {
     hi,
     lo + 1,
     hi - 1,
-    9_223_372_036_854_775_807,
-    -9_223_372_036_854_775_808,
+    9_007_199_254_740_991,
+    -9_007_199_254_740_991,
   ]
   candidates
   |> filter_in_range(lo, hi)

@@ -5,6 +5,7 @@
 //// oaspec in as a dev-dependency.
 
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/list
 import gleam/string
 import metamon
@@ -70,7 +71,7 @@ pub fn normalize_idempotent_test() {
 // § 8.3 — Round-trip pattern: encode → decode → equal to original.
 // Stub: prepend a fixed token, then strip it back.
 fn write_spec(spec: List(Int)) -> String {
-  list.map(spec, int_to_string)
+  list.map(spec, int.to_string)
   |> string.join(",")
 }
 
@@ -183,10 +184,6 @@ pub fn field_order_invariance_test() {
 }
 
 // helpers
-
-@external(erlang, "erlang", "integer_to_binary")
-@external(javascript, "../../metamon_ffi.mjs", "integer_to_string")
-fn int_to_string(n: Int) -> String
 
 fn parse_int(s: String) -> Result(Int, Nil) {
   // Tiny integer parser: handles non-negative integers only.

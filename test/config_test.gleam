@@ -1,5 +1,6 @@
 import gleam/option.{None, Some}
 import gleeunit/should
+import metamon
 import metamon/config
 
 pub fn defaults_are_sane_test() {
@@ -32,17 +33,10 @@ pub fn with_runs_accepts_positive_test() {
 
 pub fn with_seed_is_total_test() {
   let c = config.default_config()
-  let new = config.with_seed(c, metamon_seed())
+  let new = config.with_seed(c, metamon.seed(0))
   // should not error (no Result type)
   let _ = new
   Nil
-}
-
-@external(erlang, "metamon@generator@seed", "seed")
-fn metamon_seed_raw(value: Int) -> a
-
-fn metamon_seed() -> a {
-  metamon_seed_raw(0)
 }
 
 pub fn with_regression_file_rejects_empty_test() {

@@ -10,6 +10,7 @@
 //// in a way appropriate for each combinator (see § 4.4 of the spec).
 
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/set.{type Set}
@@ -416,16 +417,13 @@ pub fn float(lo: Float, hi: Float) -> Generator(Float) {
   Generator(
     run: fn(s: Seed, _size: Int) {
       let #(scaled, _) = seed_module.next_int_in(s, 0, 1_000_000)
-      let fraction = int_to_float(scaled) /. 1_000_000.0
+      let fraction = int.to_float(scaled) /. 1_000_000.0
       let value = low +. { high -. low } *. fraction
       tree.from_list(value, [tree.singleton(low), tree.singleton(high)])
     },
     edges: edge_lib.floats_in(low, high),
   )
 }
-
-@external(erlang, "erlang", "float")
-fn int_to_float(n: Int) -> Float
 
 // ---------- string / codepoint ----------
 

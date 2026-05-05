@@ -15,7 +15,7 @@ jobs:
       - uses: extractions/setup-just@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: "27"
+          otp-version: "28"
           gleam-version: "1.15"
       - run: just format-check
 
@@ -27,33 +27,60 @@ jobs:
       - uses: extractions/setup-just@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: "27"
+          otp-version: "28"
           gleam-version: "1.15"
       - run: just deps
       - run: just lint
 
   build:
-    name: Build
+    name: Build (OTP ${{ matrix.otp-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        otp-version: ["27", "28"]
     steps:
       - uses: actions/checkout@v6
       - uses: extractions/setup-just@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: "27"
+          otp-version: ${{ matrix.otp-version }}
           gleam-version: "1.15"
       - run: just deps
       - run: just build
 
-  test:
-    name: Test
+  test-erlang:
+    name: Test (Erlang, OTP ${{ matrix.otp-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        otp-version: ["27", "28"]
     steps:
       - uses: actions/checkout@v6
       - uses: extractions/setup-just@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: "27"
+          otp-version: ${{ matrix.otp-version }}
           gleam-version: "1.15"
       - run: just deps
       - run: just test
+
+  test-javascript:
+    name: Test (JavaScript, Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["22", "24"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28"
+          gleam-version: "1.15"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: gleam deps download
+      - run: gleam test --target javascript

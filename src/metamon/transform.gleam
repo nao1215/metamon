@@ -2,6 +2,8 @@
 //// in failure messages so a metamorphic relation always reports which
 //// transformation produced the follow-up input.
 
+import gleam/int
+
 /// A named, deterministic function `a -> a`.
 ///
 /// `name` is shown in failure output. `apply` must be pure: same input,
@@ -42,7 +44,7 @@ pub fn repeat(t: Transform(a), times n: Int) -> Transform(a) {
     True -> identity()
     False ->
       Transform(
-        name: t.name <> " × " <> int_to_string(n),
+        name: t.name <> " × " <> int.to_string(n),
         apply: repeat_apply(t.apply, n),
       )
   }
@@ -64,7 +66,3 @@ fn repeat_step(f: fn(a) -> a, remaining: Int, value: a) -> a {
 pub fn rename(t: Transform(a), name: String) -> Transform(a) {
   Transform(name: name, apply: t.apply)
 }
-
-@external(erlang, "erlang", "integer_to_binary")
-@external(javascript, "../metamon_ffi.mjs", "integer_to_string")
-fn int_to_string(n: Int) -> String

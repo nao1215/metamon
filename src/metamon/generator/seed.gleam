@@ -1,61 +1,63 @@
-//// Deterministic pseudo-random seed based on splitmix64.
+//// Deterministic pseudo-random seed.
 ////
-//// Pure-Gleam, target-agnostic (BEAM and JS produce identical streams).
-//// Provides `split`, `next_int`, and `next_int_in` so generators can derive
-//// independent sub-streams without depending on Erlang's `rand` module or
-//// any external library.
+//// The implementation is the 32-bit "Marsaglia xorshift" PRNG. It
+//// uses only shifts and xors — no multiplication — so BEAM (bignum
+//// integers) and JavaScript (53-bit safe doubles) produce
+//// bit-identical streams. An LCG-style multiplier would overflow
+//// JavaScript's double precision well before the 32-bit mask and
+//// cause subtle distribution drift.
+////
+//// Statistical quality is not the goal here — determinism and
+//// portability are. Property-based testing is well-served even by
+//// modest PRNGs because the failure search is shrinker-driven, not
+//// statistical.
 
 import gleam/int
 
-/// Internal state of the splitmix64 PRNG.
-///
-/// 64-bit unsigned arithmetic is emulated with a 64-bit mask so the BEAM
-/// (arbitrary-precision integers) and JavaScript (BigInt-promoted) targets
-/// produce the same numeric stream.
+const mask_32: Int = 0xFFFFFFFF
+
+const split_xor: Int = 0xA5A5A5A5
+
+const default_state: Int = 0xDEADBEEF
+
+/// Internal state of the PRNG. Always non-negative and ≤ `0xFFFFFFFF`.
+/// The xorshift family has `0` as a fixed point, so a masked-to-zero
+/// input is silently replaced with a non-zero default.
 pub opaque type Seed {
   Seed(state: Int)
 }
 
-const mask_64: Int = 0xFFFFFFFFFFFFFFFF
-
-const golden_gamma: Int = 0x9E3779B97F4A7C15
-
-const mix_a: Int = 0xBF58476D1CE4E5B9
-
-const mix_b: Int = 0x94D049BB133111EB
-
-/// Construct a seed from an integer. Negative values are masked to 64 bits.
+/// Construct a seed from an integer. Negative or out-of-range values
+/// are normalised by masking to the 32-bit positive window so the
+/// stream stays target-portable.
 pub fn seed(value: Int) -> Seed {
-  Seed(state: int.bitwise_and(value, mask_64))
+  Seed(state: normalise(value))
 }
 
-/// Construct a seed from the system clock. The value is read once and then
-/// the seed evolves purely through `split` / `next_int`.
+/// Construct a seed from the system clock. Useful for ad-hoc local
+/// runs; CI should pin a value via `metamon.with_seed(metamon.seed(_))`.
 pub fn random_seed() -> Seed {
-  Seed(state: int.bitwise_and(now_microseconds(), mask_64))
+  Seed(state: normalise(now_microseconds()))
 }
 
-/// Expose the underlying 64-bit state. Useful for serialising into a
-/// regression file.
+/// The raw integer state. Used by the regression-file format to
+/// serialise a seed into a reproduction key.
 pub fn state(s: Seed) -> Int {
   s.state
 }
 
-/// Advance the seed once and return the next 64-bit unsigned integer
-/// together with the advanced seed.
+/// Advance the seed once and return the next non-negative integer
+/// alongside the advanced seed.
 pub fn next_int(s: Seed) -> #(Int, Seed) {
-  let next_state = int.bitwise_and(s.state + golden_gamma, mask_64)
-  let z0 = next_state
-  let z1 = mix(int.bitwise_exclusive_or(z0, shift_right(z0, 30)), mix_a)
-  let z2 = mix(int.bitwise_exclusive_or(z1, shift_right(z1, 27)), mix_b)
-  let z3 = int.bitwise_exclusive_or(z2, shift_right(z2, 31))
-  #(z3, Seed(state: next_state))
+  let next_state = step(s.state)
+  #(next_state, Seed(state: next_state))
 }
 
 /// Return an integer uniformly in the closed interval `[lo, hi]`.
 ///
-/// If `lo > hi` the bounds are swapped. If `lo == hi` the bound is returned
-/// without consuming randomness (the seed is still advanced for determinism).
+/// If `lo > hi` the bounds are swapped. If `lo == hi` the bound is
+/// returned without consuming randomness (the seed is still advanced
+/// for determinism).
 pub fn next_int_in(s: Seed, lo: Int, hi: Int) -> #(Int, Seed) {
   let #(low, high) = case lo > hi {
     True -> #(hi, lo)
@@ -69,29 +71,51 @@ pub fn next_int_in(s: Seed, lo: Int, hi: Int) -> #(Int, Seed) {
     False -> {
       let #(raw, s2) = next_int(s)
       let span = high - low + 1
-      let positive = int.bitwise_and(raw, 0x7FFFFFFFFFFFFFFF)
-      #(low + positive % span, s2)
+      #(low + raw % span, s2)
     }
   }
 }
 
-/// Split a seed into two statistically independent seeds.
-///
-/// Used to give each `Generator` sub-component its own stream so that
-/// shrinking one component does not perturb others.
+/// Split a seed into two statistically independent seeds. The
+/// implementation derives the second seed by xor-ing the first with a
+/// constant before stepping, which on a 32-bit LCG produces a stream
+/// that does not align with the original — sufficient for shrinking
+/// independent generator components without correlation artefacts.
 pub fn split(s: Seed) -> #(Seed, Seed) {
-  let #(left_state, s1) = next_int(s)
-  let #(right_state, _) = next_int(s1)
-  #(Seed(state: left_state), Seed(state: right_state))
+  let #(a, _) = next_int(s)
+  let xored = int.bitwise_and(int.bitwise_exclusive_or(a, split_xor), mask_32)
+  let #(b, _) = next_int(Seed(state: xored))
+  #(Seed(state: a), Seed(state: b))
 }
 
-fn mix(value: Int, k: Int) -> Int {
-  let product = value * k
-  int.bitwise_and(product, mask_64)
+fn step(state: Int) -> Int {
+  // Marsaglia xorshift32. Each shift result is masked to 32 bits to
+  // erase JS's signed-shift sign extension and BEAM's unbounded
+  // arithmetic; the two targets thus produce the same value.
+  let a =
+    int.bitwise_exclusive_or(
+      state,
+      int.bitwise_and(int.bitwise_shift_left(state, 13), mask_32),
+    )
+  let b = int.bitwise_exclusive_or(a, int.bitwise_shift_right(a, 17))
+  let c =
+    int.bitwise_exclusive_or(
+      b,
+      int.bitwise_and(int.bitwise_shift_left(b, 5), mask_32),
+    )
+  int.bitwise_and(c, mask_32)
 }
 
-fn shift_right(value: Int, by: Int) -> Int {
-  int.bitwise_shift_right(int.bitwise_and(value, mask_64), by)
+fn normalise(value: Int) -> Int {
+  let positive = case value < 0 {
+    True -> 0 - value
+    False -> value
+  }
+  let masked = int.bitwise_and(positive, mask_32)
+  case masked {
+    0 -> default_state
+    n -> n
+  }
 }
 
 @external(erlang, "metamon_ffi", "now_microseconds")

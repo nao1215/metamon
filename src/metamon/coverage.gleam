@@ -10,6 +10,7 @@
 
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import metamon/internal/process_state
@@ -105,12 +106,9 @@ pub fn shortfalls(snap: Snapshot) -> List(Requirement) {
 pub fn actual_pct(hits: Int, total: Int) -> Float {
   case total <= 0 {
     True -> 0.0
-    False -> int_to_float(hits) /. int_to_float(total) *. 100.0
+    False -> int.to_float(hits) /. int.to_float(total) *. 100.0
   }
 }
-
-@external(erlang, "erlang", "float")
-fn int_to_float(value: Int) -> Float
 
 fn bump_total() -> Nil {
   let updated = read_total() + 1

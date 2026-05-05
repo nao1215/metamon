@@ -4,6 +4,7 @@
 //// constraint?". The `name` is surfaced in failure reports so the
 //// user immediately sees which property broke.
 
+import gleam/float
 import gleam/list
 import gleam/order
 
@@ -38,7 +39,7 @@ pub fn equivalent_under(via: fn(b) -> c, name: String) -> Relation(b) {
 /// Floats within `epsilon` of each other.
 pub fn approximately(epsilon: Float) -> Relation(Float) {
   Relation(
-    name: "approximately(" <> float_to_string(epsilon) <> ")",
+    name: "approximately(" <> float.to_string(epsilon) <> ")",
     holds: fn(left, right) {
       let diff = case left >=. right {
         True -> left -. right
@@ -156,7 +157,3 @@ pub fn invert(r: Relation(b)) -> Relation(b) {
 pub fn rename(r: Relation(b), name: String) -> Relation(b) {
   Relation(name: name, holds: r.holds)
 }
-
-@external(erlang, "erlang", "float_to_binary")
-@external(javascript, "../metamon_ffi.mjs", "float_to_string")
-fn float_to_string(value: Float) -> String

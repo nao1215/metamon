@@ -17,6 +17,7 @@ pub type CapturedPanic {
 }
 
 @external(erlang, "metamon_ffi", "capture_panic")
+@external(javascript, "./metamon_ffi.mjs", "capture_panic")
 fn capture_panic_raw(thunk: fn() -> Nil) -> #(Bool, String)
 
 fn capture(thunk: fn() -> Nil) -> CapturedPanic {

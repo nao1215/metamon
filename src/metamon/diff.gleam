@@ -8,6 +8,7 @@
 //// reason about it programmatically), and avoids requiring users to
 //// supply per-type formatters.
 
+import gleam/int
 import gleam/list
 import gleam/string
 
@@ -173,7 +174,7 @@ fn render_list_diff(items: List(IndexedDiff), indent: String) -> String {
   list.map(items, fn(item: IndexedDiff) {
     indent
     <> "[#"
-    <> int_to_string(item.index)
+    <> int.to_string(item.index)
     <> "]\n"
     <> render_with_indent(item.diff, indent <> "  ")
   })
@@ -190,10 +191,6 @@ fn render_string_diff(segments: List(Segment), indent: String) -> String {
   })
   |> string.join("\n")
 }
-
-@external(erlang, "erlang", "integer_to_binary")
-@external(javascript, "../metamon_ffi.mjs", "integer_to_string")
-fn int_to_string(n: Int) -> String
 
 // ---------- LCS ----------
 //
