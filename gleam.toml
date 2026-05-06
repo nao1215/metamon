@@ -95,10 +95,15 @@ unwrap_used = "error"
   "redundant_case",
 ]
 # Runner is the panic delivery mechanism; generator panics on a
-# stuck `filter`; stateful panics on a failing command.
+# stuck `filter`; stateful panics on a failing command. Range
+# constructors panic on inverted bounds (lo > hi) — an inverted
+# pair is almost always a bug, and matching the project's existing
+# "fail visibly on misconfiguration" stance is preferable to silent
+# normalisation.
 "src/metamon/internal/runner.gleam" = ["avoid_panic"]
 "src/metamon/stateful.gleam" = ["avoid_panic"]
 "src/metamon/generator.gleam" = ["avoid_panic", "assert_ok_pattern"]
+"src/metamon/generator/range.gleam" = ["avoid_panic"]
 # Process-dictionary FFI shims (BEAM + JS) intentionally form the
 # metamon-FFI seam.
 "src/metamon/internal/process_state.gleam" = ["ffi_usage"]

@@ -27,43 +27,53 @@ pub fn singleton(value: Int) -> Range {
 
 /// A range that ignores `size` and always uses `[lo, hi]`. Origin is `lo`
 /// (or `0` if `0` lies inside the interval, which usually shrinks better).
+///
+/// Panics at construction if `lo > hi`. An inverted pair is almost always
+/// a bug (swapped arguments), so failing visibly catches it earlier than
+/// silently normalising.
 pub fn constant(lo: Int, hi: Int) -> Range {
-  let #(low, high) = order_pair(lo, hi)
-  let chosen_origin = case low <= 0 && 0 <= high {
+  let _ = assert_ordered(lo, hi)
+  let chosen_origin = case lo <= 0 && 0 <= hi {
     True -> 0
-    False -> low
+    False -> lo
   }
-  Range(origin: chosen_origin, kind: Const(lo: low, hi: high))
+  Range(origin: chosen_origin, kind: Const(lo: lo, hi: hi))
 }
 
 /// A range that scales linearly: at `size = 0` returns `[origin, origin]`
 /// and at `size = max_size` returns the full `[lo, hi]`.
+///
+/// Panics at construction if `lo > hi`.
 pub fn linear(lo: Int, hi: Int) -> Range {
-  let #(low, high) = order_pair(lo, hi)
-  let chosen_origin = case low <= 0 && 0 <= high {
+  let _ = assert_ordered(lo, hi)
+  let chosen_origin = case lo <= 0 && 0 <= hi {
     True -> 0
-    False -> low
+    False -> lo
   }
-  Range(origin: chosen_origin, kind: Linear(lo: low, hi: high))
+  Range(origin: chosen_origin, kind: Linear(lo: lo, hi: hi))
 }
 
 /// Like `linear` but the origin is supplied explicitly. Useful when the
 /// natural shrink target is not `0` (e.g. years near `2000` shrinking to
 /// `2000`).
+///
+/// Panics at construction if `lo > hi`.
 pub fn linear_from(origin: Int, lo: Int, hi: Int) -> Range {
-  let #(low, high) = order_pair(lo, hi)
-  Range(origin: origin, kind: Linear(lo: low, hi: high))
+  let _ = assert_ordered(lo, hi)
+  Range(origin: origin, kind: Linear(lo: lo, hi: hi))
 }
 
 /// Exponential scaling: bounds grow roughly like `size^2 / max_size`,
 /// well-suited for ranges spanning many orders of magnitude.
+///
+/// Panics at construction if `lo > hi`.
 pub fn exponential(lo: Int, hi: Int) -> Range {
-  let #(low, high) = order_pair(lo, hi)
-  let chosen_origin = case low <= 0 && 0 <= high {
+  let _ = assert_ordered(lo, hi)
+  let chosen_origin = case lo <= 0 && 0 <= hi {
     True -> 0
-    False -> low
+    False -> lo
   }
-  Range(origin: chosen_origin, kind: Exponential(lo: low, hi: high))
+  Range(origin: chosen_origin, kind: Exponential(lo: lo, hi: hi))
 }
 
 /// The shrink target for this range.
@@ -96,10 +106,10 @@ pub fn bounds(range: Range, size: Int, max_size: Int) -> #(Int, Int) {
   }
 }
 
-fn order_pair(left: Int, right: Int) -> #(Int, Int) {
-  case left > right {
-    True -> #(right, left)
-    False -> #(left, right)
+fn assert_ordered(lo: Int, hi: Int) -> Nil {
+  case lo > hi {
+    True -> panic as "range: lo must be <= hi (got inverted bounds)"
+    False -> Nil
   }
 }
 
