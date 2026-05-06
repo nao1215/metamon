@@ -4,4 +4,4 @@
 
 ## Test
 
-- [ ] `just check` passes
+- [ ] `just all` passes
