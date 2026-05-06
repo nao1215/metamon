@@ -70,6 +70,42 @@ pub fn one_of_picks_a_branch_test() {
   should.be_true(list.contains(observed, "b"))
 }
 
+pub fn element_of_picks_a_value_test() {
+  let g = generator.element_of(["red", "green", "blue"])
+  let observed =
+    test_helpers.integers_from(0, 90)
+    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 0).value })
+  should.be_true(list.contains(observed, "red"))
+  should.be_true(list.contains(observed, "green"))
+  should.be_true(list.contains(observed, "blue"))
+}
+
+pub fn element_of_only_yields_listed_values_test() {
+  let g = generator.element_of([1, 2, 3])
+  test_helpers.integers_from(0, 50)
+  |> list.each(fn(i) {
+    let v = generator.generate(g, seed.seed(i), 0).value
+    should.be_true(v == 1 || v == 2 || v == 3)
+  })
+}
+
+pub fn element_of_singleton_is_constant_test() {
+  let g = generator.element_of(["only"])
+  test_helpers.integers_from(0, 10)
+  |> list.each(fn(i) {
+    should.equal(generator.generate(g, seed.seed(i), 0).value, "only")
+  })
+}
+
+pub fn element_of_exposes_each_value_as_edge_test() {
+  let g = generator.element_of(["html", "json", "png", "pdf"])
+  let edges = generator.edges_of(g)
+  should.be_true(list.contains(edges, "html"))
+  should.be_true(list.contains(edges, "json"))
+  should.be_true(list.contains(edges, "png"))
+  should.be_true(list.contains(edges, "pdf"))
+}
+
 pub fn frequency_respects_weights_test() {
   let g =
     generator.frequency([
