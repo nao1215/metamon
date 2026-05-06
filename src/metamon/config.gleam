@@ -3,6 +3,7 @@
 //// validate input return a `Result` so misconfiguration is visible
 //// at the type level (no silent fallback).
 
+import gleam/int
 import gleam/option.{type Option, None, Some}
 import metamon/generator/seed.{type Seed} as seed_module
 
@@ -110,6 +111,66 @@ pub fn with_diff_enabled(c: Config, enabled: Bool) -> Config {
 /// into CI dashboards or LLM-driven analysis.
 pub fn with_output_format(c: Config, fmt: OutputFormat) -> Config {
   Config(..c, output_format: fmt)
+}
+
+// ---------- panic-on-error variants for static test configuration ----------
+//
+// These mirror the validating builders above but panic with a structured
+// message instead of returning `Result`. The recovery arm a `Result` API
+// forces is dead code when the bound is a hard-coded literal that the
+// compiler can already see — every test that overrides defaults would
+// otherwise need a `let assert Ok(c) = ...` line. Reach for these in
+// test code; reach for the validating variants when the value comes
+// from disk, env vars, or a CLI flag and a structured error matters.
+
+/// Like `with_runs`, but panics with a structured message on invalid
+/// input. Intended for hard-coded test configuration where the bound
+/// is statically known.
+pub fn with_runs_or_panic(c: Config, n: Int) -> Config {
+  unwrap_or_panic("with_runs_or_panic", with_runs(c, n))
+}
+
+/// Like `with_max_size`, but panics with a structured message on
+/// invalid input. Intended for hard-coded test configuration.
+pub fn with_max_size_or_panic(c: Config, n: Int) -> Config {
+  unwrap_or_panic("with_max_size_or_panic", with_max_size(c, n))
+}
+
+/// Like `with_shrink_limit`, but panics with a structured message on
+/// invalid input. Intended for hard-coded test configuration.
+pub fn with_shrink_limit_or_panic(c: Config, n: Int) -> Config {
+  unwrap_or_panic("with_shrink_limit_or_panic", with_shrink_limit(c, n))
+}
+
+/// Like `with_max_edges`, but panics with a structured message on
+/// invalid input. Intended for hard-coded test configuration.
+pub fn with_max_edges_or_panic(c: Config, n: Int) -> Config {
+  unwrap_or_panic("with_max_edges_or_panic", with_max_edges(c, n))
+}
+
+/// Like `with_regression_file`, but panics with a structured message
+/// on invalid input. Intended for hard-coded test configuration.
+pub fn with_regression_file_or_panic(c: Config, path: String) -> Config {
+  unwrap_or_panic(
+    "with_regression_file_or_panic",
+    with_regression_file(c, path),
+  )
+}
+
+fn unwrap_or_panic(name: String, result: Result(Config, ConfigError)) -> Config {
+  case result {
+    Ok(c) -> c
+    Error(e) -> panic as { "metamon." <> name <> ": " <> describe_error(e) }
+  }
+}
+
+fn describe_error(e: ConfigError) -> String {
+  case e {
+    NonPositive(field, value) ->
+      field <> " must be > 0 (got " <> int.to_string(value) <> ")"
+    InvalidPath(path, reason) ->
+      "regression_file path is " <> reason <> " (got \"" <> path <> "\")"
+  }
 }
 
 // ---------- read-only accessors ----------

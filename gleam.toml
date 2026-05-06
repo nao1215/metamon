@@ -104,6 +104,10 @@ unwrap_used = "error"
 "src/metamon/stateful.gleam" = ["avoid_panic"]
 "src/metamon/generator.gleam" = ["avoid_panic", "assert_ok_pattern"]
 "src/metamon/generator/range.gleam" = ["avoid_panic"]
+# `_or_panic` config-builder variants intentionally panic with a
+# structured message so test code does not need `let assert Ok(c)`
+# for statically-known literals.
+"src/metamon/config.gleam" = ["avoid_panic"]
 # Process-dictionary FFI shims (BEAM + JS) intentionally form the
 # metamon-FFI seam.
 "src/metamon/internal/process_state.gleam" = ["ffi_usage"]

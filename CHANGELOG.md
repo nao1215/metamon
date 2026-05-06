@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `metamon.with_runs_or_panic`, `with_max_size_or_panic`,
+  `with_shrink_limit_or_panic`, `with_max_edges_or_panic`, and
+  `with_regression_file_or_panic` panic-on-error variants of the
+  validating config builders. Use in test code where the bound is a
+  literal and the `let assert Ok(c) = ...` arm is dead code; the
+  validating variants are still the right choice when the value
+  comes from disk, env vars, or a CLI flag. The panic message
+  carries the structured `ConfigError` so misuse is still legible.
+  (#6)
+
 ### Changed
 - **BREAKING** `metamon/generator/range`: `range.constant`, `range.linear`,
   `range.linear_from`, and `range.exponential` now panic at construction
