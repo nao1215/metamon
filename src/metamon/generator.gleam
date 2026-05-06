@@ -269,6 +269,14 @@ pub fn one_of(generators: List(Generator(a))) -> Generator(a) {
   )
 }
 
+/// Pick uniformly from a non-empty list of values. Equivalent to
+/// `one_of(list.map(values, return))` and inherits the same edge
+/// behaviour: every value is an edge.
+pub fn element_of(values: List(a)) -> Generator(a) {
+  let assert [_, ..] = values as "metamon.element_of: empty list"
+  one_of(list.map(values, return))
+}
+
 /// Weighted choice over a non-empty list of `(weight, generator)` pairs.
 /// Weights must be positive integers; non-positive weights are treated
 /// as `1`.

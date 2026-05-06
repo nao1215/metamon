@@ -427,7 +427,7 @@ pub fn user_age_in_bounds_test() {
 `map3` / `map4` / `map5` / `map6` extend this to records of higher
 arity. `tuple2` … `tuple5` are shortcuts for the tupling case.
 
-#### 3.2. `one_of` and `frequency`
+#### 3.2. `one_of`, `element_of`, `frequency`
 
 ```gleam
 import metamon
@@ -445,6 +445,28 @@ pub fn traffic_light_test() {
   })
 }
 ```
+
+`one_of` picks uniformly from a list of generators. For the common
+case of "pick uniformly from a fixed set of values", `element_of`
+skips the per-value `return` wrap:
+
+```gleam
+import metamon
+import metamon/generator
+
+pub fn extension_is_known_test() {
+  metamon.forall(
+    generator.element_of(["html", "json", "png", "pdf"]),
+    fn(ext) {
+      ext == "html" || ext == "json" || ext == "png" || ext == "pdf"
+    },
+  )
+}
+```
+
+`element_of` panics when the list is empty (mirroring `one_of([])`).
+Every value becomes an edge, so the runner tries each one before
+sampling.
 
 #### 3.3. `with_examples` — guarantee specific inputs are tried
 
@@ -871,7 +893,7 @@ know how to work around them.
 |---|---|
 | `metamon` | Top-level API: `forall`, `forall_with`, `forall_morph`, `forall_morph_with`, `forall_morph_n`, `forall_morph_n_with`, `assert_morph`, `forall_morphs`, `Mr` (opaque), `mr`, `mr_equivariant`, `name_of`, `idempotency_of`, `invariant_under`, `equivariant_under`, `commutativity_of`, `OutputFormat`, `with_output_format`, `seed`, `random_seed`, `default_config` and all `with_*` re-exports |
 | `metamon/config` | `Config`, `ConfigError`, `default_config`, `with_runs`, `with_seed`, `with_max_size`, `with_shrink_limit`, `with_max_edges`, `with_regression_file`, `with_diff_enabled` |
-| `metamon/generator` | `Generator(a)` (opaque), `generate`, `sample`, `statistics`, `with_examples`, `add_edges`, `no_edges`, `return`, `map`, `bind`, `map2`..`map6`, `tuple2`..`tuple5`, `one_of`, `frequency`, `sized`, `resize`, `scale`, `filter`, `recursive`, `int`, `float`, `bool`, `non_negative_int`, `positive_int`, `negative_int`, `byte`, `bit_array`, `ascii_*`, `unicode_codepoint`, `string`, `string_ascii`, `string_unicode`, `list_of`, `non_empty_list_of`, `dict_of`, `set_of`, `option_of`, `result_of` |
+| `metamon/generator` | `Generator(a)` (opaque), `generate`, `sample`, `statistics`, `with_examples`, `add_edges`, `no_edges`, `return`, `map`, `bind`, `map2`..`map6`, `tuple2`..`tuple5`, `one_of`, `element_of`, `frequency`, `sized`, `resize`, `scale`, `filter`, `recursive`, `int`, `float`, `bool`, `non_negative_int`, `positive_int`, `negative_int`, `byte`, `bit_array`, `ascii_*`, `unicode_codepoint`, `string`, `string_ascii`, `string_unicode`, `list_of`, `non_empty_list_of`, `dict_of`, `set_of`, `option_of`, `result_of` |
 | `metamon/generator/seed` | xorshift32-based `Seed` with `split` (target-portable; identical streams on BEAM and JS) |
 | `metamon/generator/tree` | Lazy rose tree used as the integrated shrink representation |
 | `metamon/generator/range` | `singleton`, `constant`, `linear`, `linear_from`, `exponential` (Hedgehog-style ranges) |
