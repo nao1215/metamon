@@ -540,7 +540,41 @@ pub fn and_combination_test() {
 }
 ```
 
-`relation.or`, `relation.invert`, `relation.implies` complete the set.
+`relation.or`, `relation.invert`, `relation.implies` complete the
+Boolean set. For the most common domain shapes, four shortcut
+combinators skip the `and` / custom-`new` plumbing entirely:
+
+```gleam
+import metamon/relation
+import gleam/int
+import gleeunit/should
+
+pub fn approximately_test() {
+  // approximately(epsilon): Float equality with a tolerance.
+  let approx = relation.approximately(0.0001)
+  should.be_true(approx.holds(0.1 +. 0.2, 0.3))
+}
+
+pub fn permutation_of_test() {
+  // permutation_of: two lists are equal as multisets.
+  let perm = relation.permutation_of()
+  should.be_true(perm.holds([3, 1, 2], [1, 2, 3]))
+}
+
+pub fn subset_of_test() {
+  // subset_of: every element of the left list appears in the right.
+  let sub = relation.subset_of()
+  should.be_true(sub.holds([2, 3], [1, 2, 3, 4]))
+}
+
+pub fn monotone_test() {
+  // monotone(cmp): holds when cmp(left, right) is Lt or Eq. Useful
+  // for monotonic-by-construction functions (list.sort, list.scan,
+  // ...).
+  let mono = relation.monotone(int.compare)
+  should.be_true(mono.holds(3, 5))
+}
+```
 
 #### 4.3. `equivalent_under` — relation on a normalised view
 
