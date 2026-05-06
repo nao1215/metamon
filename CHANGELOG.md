@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-06
+
+### Added
+- `metamon.forall_round_trip` and `metamon.forall_round_trip_with`
+  runners for the `decode(encode(x)) == Ok(x)` shape. Failure reports
+  include the header `round_trip[<name>]` so the panic message
+  identifies which round-trip broke; the underlying machinery is the
+  same as `forall`, including shrinking of the source input. (#18)
+- `metamon.forall_observable` and `metamon.forall_observable_with`
+  runners. The predicate returns `#(observation, holds)`; the
+  observation is rendered into the failure report under the label
+  `predicate value`, removing the manual
+  `annotate.annotate_value` instrumentation step that asymmetric
+  with `forall_morph`'s built-in source/follow-up rendering. (#17)
+- `generator.element_of(values)` — shortcut for
+  `one_of(list.map(values, return))`. Panics on an empty list,
+  mirroring `one_of([])`. Every value becomes an edge. (#16)
+- Character-class string shortcuts: `generator.string_alpha`,
+  `string_alphanumeric`, `string_digit`, and
+  `string_printable_ascii`. The last differs from `string_ascii` by
+  skipping the curated edge cases that include `\t` and `\n`. (#15)
+- `BitArray` generator shortcuts: `generator.bit_array_printable`
+  (every byte in `0x20`..`0x7E`) and `generator.bit_array_utf8`
+  (`len` is the codepoint count, not the byte count). (#15)
+
+### Documentation
+- README §4.2 now documents the four domain-specific relation
+  combinators with worked examples: `relation.approximately`,
+  `permutation_of`, `subset_of`, `monotone`. (#19)
+- README §2.2 (round-trip) rewritten on top of `forall_round_trip`;
+  the older two `forall`-based round-trip examples are removed in
+  favour of the named-header runner. (#18)
+- README §1.1 (new) walks through `forall_observable` for properties
+  whose branch hinges on an intermediate value. (#17)
+- README §3.0 shortcut catalog extended with the new string and
+  bit_array generators; existing `ascii_*` family cross-referenced
+  for single-character generators. (#15)
+- README §Install gets a new "Dependency footprint" subsection
+  explaining when `simplifile` and `gleam_json` are reached and the
+  trade-off behind metamon's single-package shape. (#20)
+
 ## [0.2.0] - 2026-05-06
 
 ### Fixed
