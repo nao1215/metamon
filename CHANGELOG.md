@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **BREAKING** `metamon/generator/range`: `range.constant`, `range.linear`,
+  `range.linear_from`, and `range.exponential` now panic at construction
+  when `lo > hi` instead of silently swapping the bounds. An inverted pair
+  is almost always a bug (swapped arguments), so failing visibly catches
+  it earlier than a normalisation that the README never documented. Match
+  metamon's existing "fail visibly on misconfiguration" stance (`with_runs(0)`
+  errors, `filter` panics when the predicate rejects everything). (#7)
 - **BREAKING** `metamon.commutativity_of` no longer takes the `of:` parameter.
   The argument was never read by the body — the swap transform and structural
   equality are independent of the supplied function — and forced callers to

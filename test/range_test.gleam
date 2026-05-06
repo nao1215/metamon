@@ -54,13 +54,6 @@ pub fn bounds_clamp_size_into_valid_window_test() {
   should.equal(range.bounds(r, 1000, 99), range.bounds(r, 99, 99))
 }
 
-pub fn order_pair_handles_inverted_arguments_test() {
-  let r = range.linear(50, 10)
-  let #(lo, hi) = range.bounds(r, 99, 99)
-  should.be_true(lo <= hi)
-  should.equal(#(lo, hi), #(10, 50))
-}
-
 pub fn random_check_values_within_bounds_test() {
   let r = range.linear(0, 100)
   test_helpers.integers_from(0, 100)
