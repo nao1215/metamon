@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- `generator.string`, `generator.string_ascii`, `generator.string_unicode`,
+  and `generator.list_of` now filter their curated edge values by the
+  user-supplied length `Range`. Previously, edges were appended
+  unconditionally, so `string_ascii(range.constant(5, 8))` emitted `""`,
+  `" "`, `"OAuth2Token"` (length 11) and other lengths outside the
+  documented window — a property assuming `5 <= len(s) <= 8` could fail
+  spuriously on the very first edge run. The string variants additionally
+  dedupe their per-layer edge list (`""` no longer appears multiple
+  times within a single source). (#3)
+
 ### Added
 - `metamon.with_runs_or_panic`, `with_max_size_or_panic`,
   `with_shrink_limit_or_panic`, `with_max_edges_or_panic`, and
