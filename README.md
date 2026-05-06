@@ -52,6 +52,28 @@ end-of-life in April 2026. Node 22 is the current minimum.
 gleam add metamon --dev
 ```
 
+### Dependency footprint
+
+metamon ships as a single package and has three runtime dependencies:
+
+- `gleam_stdlib` — required, used everywhere.
+- `simplifile` — only reached through `metamon.with_regression_file`
+  (the TOML regression-replay feature). If you never call
+  `with_regression_file`, the runtime cost is just the resolve step.
+- `gleam_json` — only reached through
+  `metamon.with_output_format(config.Json)` (the JSON failure-report
+  format used by CI / LLM consumers). Same story: never called means
+  no runtime overhead, only a transitive entry in the dep graph.
+
+If you need a leaner test-only dep set, `gleam_qcheck` ships with
+`gleam_stdlib` alone and may be a better fit. metamon's design
+choice is the single-package install experience
+(`gleam add metamon --dev` and that's the whole story) over a
+multi-package split (`metamon` core / `metamon_persistence` /
+`metamon_json`); both options were considered. See
+[#20](https://github.com/nao1215/metamon/issues/20) for the
+discussion.
+
 ## Quick start
 
 The smallest useful test states a metamorphic relation. `string.trim`
