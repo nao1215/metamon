@@ -107,7 +107,7 @@ pub fn forall_round_trip_panics_on_decode_error_test() {
   case outcome {
     Reason(text) -> {
       should.be_true(string.contains(text, "round_trip[broken]"))
-      should.be_true(string.contains(text, "× property"))
+      should.be_true(string.contains(text, "× property failed"))
     }
     NoPanic -> should.fail()
   }
