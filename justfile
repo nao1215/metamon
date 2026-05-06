@@ -34,7 +34,7 @@ check:
   gleam build --warnings-as-errors
   gleam test
 
-ci: deps check
+all: deps check
 
 clean:
   gleam clean

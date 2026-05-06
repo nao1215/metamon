@@ -20,7 +20,7 @@ jobs:
         with:
           otp-version: ${{ matrix.otp-version }}
           gleam-version: "1.15"
-      - run: just ci
+      - run: just all
 
   test-javascript:
     name: Test (JavaScript, Node ${{ matrix.node-version }})
