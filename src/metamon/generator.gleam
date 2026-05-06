@@ -540,20 +540,35 @@ pub fn unicode_codepoint() -> Generator(Int) {
 pub fn string(char_gen: Generator(String), len: Range) -> Generator(String) {
   list_of(char_gen, len)
   |> map(string.concat)
-  |> with_examples(["", " ", "\n"])
+  |> with_examples(strings_in_length_range(["", " ", "\n"], len))
 }
 
 /// An ASCII string with length in `len`.
 pub fn string_ascii(len: Range) -> Generator(String) {
   string(ascii_printable(), len)
-  |> with_examples(edge_lib.strings_ascii())
+  |> with_examples(strings_in_length_range(edge_lib.strings_ascii(), len))
 }
 
 /// A Unicode-aware string (includes BiDi/emoji/NUL via edges).
 pub fn string_unicode(len: Range) -> Generator(String) {
   let cp_gen = unicode_codepoint() |> map(codepoint_int_to_string)
   string(cp_gen, len)
-  |> with_examples(edge_lib.strings_unicode())
+  |> with_examples(strings_in_length_range(edge_lib.strings_unicode(), len))
+}
+
+/// Filter a candidate string-edge list down to entries whose length lies
+/// inside the user-supplied `Range`, then dedupe so the same value does
+/// not appear multiple times across the merged edge set. Range bounds are
+/// resolved at the maximum size (`size = max_size`) so the full
+/// user-visible window is admitted regardless of how the range scales.
+fn strings_in_length_range(candidates: List(String), len: Range) -> List(String) {
+  let #(lo, hi) = range.bounds(len, 99, 99)
+  candidates
+  |> list.filter(fn(s) {
+    let length = string.length(s)
+    length >= lo && length <= hi
+  })
+  |> list.unique
 }
 
 @external(erlang, "metamon_ffi", "codepoint_to_string")
@@ -569,6 +584,7 @@ fn codepoint_to_string(codepoint: Int) -> String {
 /// A list of values whose length is drawn from `len`. Shrinking removes
 /// elements via `shrink/list_drops` and shrinks each remaining element.
 pub fn list_of(element: Generator(a), len: Range) -> Generator(List(a)) {
+  let #(lo_len, hi_len) = range.bounds(len, 99, 99)
   Generator(
     run: fn(s: Seed, size: Int) {
       let #(s_len, s_items) = seed_module.split(s)
@@ -576,7 +592,7 @@ pub fn list_of(element: Generator(a), len: Range) -> Generator(List(a)) {
       let #(length, _) = seed_module.next_int_in(s_len, lo, hi)
       generate_list_tree(element, s_items, size, length)
     },
-    edges: list_edges(element.edges),
+    edges: list_edges_in_range(element.edges, lo_len, hi_len),
   )
 }
 
@@ -614,11 +630,19 @@ fn prepend_to_shrinks(
   tree.append_shrinks(tree.shrinks_from_list(prepended), existing)
 }
 
-fn list_edges(element_edges: List(a)) -> List(List(a)) {
-  case element_edges {
+fn list_edges_in_range(
+  element_edges: List(a),
+  lo_len: Int,
+  hi_len: Int,
+) -> List(List(a)) {
+  let candidates = case element_edges {
     [] -> [[]]
     [first, ..] -> [[], [first], element_edges]
   }
+  list.filter(candidates, fn(xs) {
+    let length = list.length(xs)
+    length >= lo_len && length <= hi_len
+  })
 }
 
 /// Non-empty list. Wraps `list_of` and rejects empty lists from edges.
