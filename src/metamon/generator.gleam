@@ -463,6 +463,25 @@ pub fn bit_array(len: Range) -> Generator(BitArray) {
   |> map(bytes_to_bit_array)
 }
 
+/// Bit array whose every byte is a printable ASCII codepoint
+/// (`0x20`..`0x7E`). Useful for fuzzing parsers that take `BitArray`
+/// but expect printable input (HTTP headers, MIME types, etc.).
+pub fn bit_array_printable(len: Range) -> Generator(BitArray) {
+  list_of(int(range.constant(32, 126)), len)
+  |> map(bytes_to_bit_array)
+}
+
+/// Bit array that is guaranteed to be valid UTF-8. `len` is the number
+/// of codepoints (not bytes); the byte length will be larger when the
+/// generated string contains multi-byte codepoints.
+pub fn bit_array_utf8(len: Range) -> Generator(BitArray) {
+  string_unicode(len) |> map(string_to_utf8_bit_array)
+}
+
+fn string_to_utf8_bit_array(s: String) -> BitArray {
+  <<s:utf8>>
+}
+
 fn bytes_to_bit_array(bytes: List(Int)) -> BitArray {
   list.fold(bytes, <<>>, fn(acc, b) { <<acc:bits, b:size(8)>> })
 }
@@ -555,6 +574,28 @@ pub fn string(char_gen: Generator(String), len: Range) -> Generator(String) {
 pub fn string_ascii(len: Range) -> Generator(String) {
   string(ascii_printable(), len)
   |> with_examples(strings_in_length_range(edge_lib.strings_ascii(), len))
+}
+
+/// A string of ASCII letters (a-zA-Z) with length in `len`.
+pub fn string_alpha(len: Range) -> Generator(String) {
+  string(ascii_letter(), len)
+}
+
+/// A string of ASCII alphanumerics (a-zA-Z0-9) with length in `len`.
+pub fn string_alphanumeric(len: Range) -> Generator(String) {
+  string(ascii_alphanumeric(), len)
+}
+
+/// A string of ASCII digits (0-9) with length in `len`.
+pub fn string_digit(len: Range) -> Generator(String) {
+  string(ascii_digit(), len)
+}
+
+/// A string of printable ASCII codepoints (`0x20`..`0x7E`) with length
+/// in `len`. Differs from `string_ascii` by skipping the curated edge
+/// cases that include control characters (`\t`, `\n`).
+pub fn string_printable_ascii(len: Range) -> Generator(String) {
+  string(ascii_printable(), len)
 }
 
 /// A Unicode-aware string (includes BiDi/emoji/NUL via edges).

@@ -393,6 +393,12 @@ pub fn shortcut_examples() {
   let _: generator.Generator(Int)       = generator.negative_int()
   let _: generator.Generator(Int)       = generator.byte()
   let _: generator.Generator(BitArray)  = generator.bit_array(range.constant(0, 16))
+  let _: generator.Generator(BitArray)  = generator.bit_array_printable(range.constant(0, 16))
+  let _: generator.Generator(BitArray)  = generator.bit_array_utf8(range.constant(0, 8))
+  let _: generator.Generator(String)    = generator.string_alpha(range.constant(1, 8))
+  let _: generator.Generator(String)    = generator.string_alphanumeric(range.constant(1, 8))
+  let _: generator.Generator(String)    = generator.string_digit(range.constant(1, 4))
+  let _: generator.Generator(String)    = generator.string_printable_ascii(range.constant(0, 16))
   Nil
 }
 ```
@@ -400,6 +406,21 @@ pub fn shortcut_examples() {
 These wrap `generator.int(range.linear(...))` etc. with the most
 useful default ranges. Reach for the underlying `generator.int(...)`
 when you need different bounds or shrink origins.
+
+For single-character generators (`a-zA-Z`, `0-9`, etc.), see the
+`ascii_*` family already documented in the Modules table:
+`ascii_lower`, `ascii_upper`, `ascii_letter`, `ascii_digit`,
+`ascii_alphanumeric`, `ascii_printable`. The `string_*` shortcuts
+above wrap each of those with a length range so callers don't need
+`generator.string(ascii_letter(), range.constant(1, 8))` boilerplate.
+
+`bit_array_printable` constrains every byte to printable ASCII
+(`0x20`..`0x7E`) — useful when fuzzing parsers that take `BitArray`
+but expect printable input (HTTP headers, MIME types, etc.).
+`bit_array_utf8` produces a `BitArray` that is guaranteed to decode
+back to a string; the `len` argument is the codepoint count, so the
+byte length will be larger when the random string contains
+multi-byte codepoints.
 
 #### 3.1. Building record-shaped values with `map2`
 
@@ -892,7 +913,7 @@ know how to work around them.
 |---|---|
 | `metamon` | Top-level API: `forall`, `forall_with`, `forall_observable`, `forall_observable_with`, `forall_morph`, `forall_morph_with`, `forall_morph_n`, `forall_morph_n_with`, `assert_morph`, `forall_morphs`, `forall_round_trip`, `forall_round_trip_with`, `Mr` (opaque), `mr`, `mr_equivariant`, `name_of`, `idempotency_of`, `invariant_under`, `equivariant_under`, `commutativity_of`, `OutputFormat`, `with_output_format`, `seed`, `random_seed`, `default_config` and all `with_*` re-exports |
 | `metamon/config` | `Config`, `ConfigError`, `default_config`, `with_runs`, `with_seed`, `with_max_size`, `with_shrink_limit`, `with_max_edges`, `with_regression_file`, `with_diff_enabled` |
-| `metamon/generator` | `Generator(a)` (opaque), `generate`, `sample`, `statistics`, `with_examples`, `add_edges`, `no_edges`, `return`, `map`, `bind`, `map2`..`map6`, `tuple2`..`tuple5`, `one_of`, `element_of`, `frequency`, `sized`, `resize`, `scale`, `filter`, `recursive`, `int`, `float`, `bool`, `non_negative_int`, `positive_int`, `negative_int`, `byte`, `bit_array`, `ascii_*`, `unicode_codepoint`, `string`, `string_ascii`, `string_unicode`, `list_of`, `non_empty_list_of`, `dict_of`, `set_of`, `option_of`, `result_of` |
+| `metamon/generator` | `Generator(a)` (opaque), `generate`, `sample`, `statistics`, `with_examples`, `add_edges`, `no_edges`, `return`, `map`, `bind`, `map2`..`map6`, `tuple2`..`tuple5`, `one_of`, `element_of`, `frequency`, `sized`, `resize`, `scale`, `filter`, `recursive`, `int`, `float`, `bool`, `non_negative_int`, `positive_int`, `negative_int`, `byte`, `bit_array`, `bit_array_printable`, `bit_array_utf8`, `ascii_*`, `unicode_codepoint`, `string`, `string_ascii`, `string_alpha`, `string_alphanumeric`, `string_digit`, `string_printable_ascii`, `string_unicode`, `list_of`, `non_empty_list_of`, `dict_of`, `set_of`, `option_of`, `result_of` |
 | `metamon/generator/seed` | xorshift32-based `Seed` with `split` (target-portable; identical streams on BEAM and JS) |
 | `metamon/generator/tree` | Lazy rose tree used as the integrated shrink representation |
 | `metamon/generator/range` | `singleton`, `constant`, `linear`, `linear_from`, `exponential` (Hedgehog-style ranges) |
