@@ -150,40 +150,33 @@ pub fn sort_dedupe_idempotent_test() {
 }
 ```
 
-#### 2.2. Round-trip via a custom relation
+#### 2.2. Round-trip: `decode(encode(x)) == Ok(x)`
 
-`f` and `inverse` should round-trip cleanly. Build a `Relation` that
-checks the recovered value:
+`f` and `inverse` should round-trip cleanly. `forall_round_trip` is
+the one-liner — the failure report header is `round_trip[<name>]` so
+it is immediately obvious from the panic which round-trip broke:
 
 ```gleam
 import metamon
 import metamon/generator
 import metamon/generator/range
-import metamon/relation
-import metamon/transform
 import gleam/int
 
 pub fn int_string_round_trip_test() {
-  let r =
-    relation.new("string_int_round_trip", fn(left: Int, right: Int) {
-      left == right
-    })
-  let mr =
-    metamon.mr(
-      name: "int_string_round_trip",
-      transform: transform.identity(),
-      relation: r,
-    )
-  metamon.forall_morph(
-    generator.int(range.constant(-1000, 1000)),
-    mr,
-    fn(n) {
-      let assert Ok(parsed) = int.parse(int.to_string(n))
-      parsed
-    },
+  metamon.forall_round_trip(
+    gen: generator.int(range.constant(-1000, 1000)),
+    name: "int_string_round_trip",
+    encode: int.to_string,
+    decode: int.parse,
   )
 }
 ```
+
+Round-trip is not exposed as an `Mr` template because the relation
+compares the *decoded* output against the *source* input, which the
+two-point `f(source) ⟷ f(transform(source))` shape of an MR cannot
+express directly. `forall_round_trip` wraps `forall` instead, so the
+error reports retain the same shrunk-source rendering.
 
 #### 2.3. Invariance: `f(T(x)) == f(x)`
 
@@ -324,32 +317,7 @@ pub fn add_commutative_test() {
 }
 ```
 
-#### 2.8. Round-trip: `parse(write(x)) == Ok(x)`
-
-Round-trip is intentionally NOT an MR template: the textbook
-`parse(write(x)) == Ok(x)` is a single-input invariant and is more
-direct as a `forall`:
-
-```gleam
-import metamon
-import metamon/generator
-import metamon/generator/range
-import gleam/int
-
-pub fn int_string_round_trip_test() {
-  metamon.forall(
-    generator.int(range.constant(-1000, 1000)),
-    fn(n) {
-      case int.parse(int.to_string(n)) {
-        Ok(parsed) -> parsed == n
-        Error(_) -> False
-      }
-    },
-  )
-}
-```
-
-#### 2.9. `forall_morphs` — multiple MRs against the same `f`
+#### 2.8. `forall_morphs` — multiple MRs against the same `f`
 
 Each MR is exercised independently and the runner reports all
 failures, not just the first:
@@ -891,7 +859,7 @@ know how to work around them.
 
 | Module | Responsibility |
 |---|---|
-| `metamon` | Top-level API: `forall`, `forall_with`, `forall_morph`, `forall_morph_with`, `forall_morph_n`, `forall_morph_n_with`, `assert_morph`, `forall_morphs`, `Mr` (opaque), `mr`, `mr_equivariant`, `name_of`, `idempotency_of`, `invariant_under`, `equivariant_under`, `commutativity_of`, `OutputFormat`, `with_output_format`, `seed`, `random_seed`, `default_config` and all `with_*` re-exports |
+| `metamon` | Top-level API: `forall`, `forall_with`, `forall_morph`, `forall_morph_with`, `forall_morph_n`, `forall_morph_n_with`, `assert_morph`, `forall_morphs`, `forall_round_trip`, `forall_round_trip_with`, `Mr` (opaque), `mr`, `mr_equivariant`, `name_of`, `idempotency_of`, `invariant_under`, `equivariant_under`, `commutativity_of`, `OutputFormat`, `with_output_format`, `seed`, `random_seed`, `default_config` and all `with_*` re-exports |
 | `metamon/config` | `Config`, `ConfigError`, `default_config`, `with_runs`, `with_seed`, `with_max_size`, `with_shrink_limit`, `with_max_edges`, `with_regression_file`, `with_diff_enabled` |
 | `metamon/generator` | `Generator(a)` (opaque), `generate`, `sample`, `statistics`, `with_examples`, `add_edges`, `no_edges`, `return`, `map`, `bind`, `map2`..`map6`, `tuple2`..`tuple5`, `one_of`, `element_of`, `frequency`, `sized`, `resize`, `scale`, `filter`, `recursive`, `int`, `float`, `bool`, `non_negative_int`, `positive_int`, `negative_int`, `byte`, `bit_array`, `ascii_*`, `unicode_codepoint`, `string`, `string_ascii`, `string_unicode`, `list_of`, `non_empty_list_of`, `dict_of`, `set_of`, `option_of`, `result_of` |
 | `metamon/generator/seed` | xorshift32-based `Seed` with `split` (target-portable; identical streams on BEAM and JS) |

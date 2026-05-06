@@ -1,10 +1,10 @@
 //// Metamon top-level public API.
 ////
 //// `metamon` exports the small surface that most tests interact with:
-//// `forall`, `forall_morph`, `assert_morph`, `forall_morphs`, the
-//// `Mr` smart constructors, and a handful of metamorphic-relation
-//// templates (`idempotency_of`, `round_trip_with`,
-//// `invariant_under`, `equivariant_under`).
+//// `forall`, `forall_morph`, `assert_morph`, `forall_morphs`,
+//// `forall_round_trip`, the `Mr` smart constructors, and a handful
+//// of metamorphic-relation templates (`idempotency_of`,
+//// `invariant_under`, `equivariant_under`, `commutativity_of`).
 ////
 //// Configuration lives in `metamon/config`; generators in
 //// `metamon/generator`; transforms in `metamon/transform`; relations
@@ -245,10 +245,13 @@ fn list_map_specs(ms: List(Mr(a, b))) -> List(MorphSpec(a, b)) {
 //   metamon.idempotency_of(name: "trim", of: string.trim)
 //   metamon.invariant_under(name: "len_under_reverse", under: list_t.reverse())
 //
-// Round-trip is intentionally NOT a template: the textbook
-// `parse(write(x)) == Ok(x)` is a single-input invariant and is
-// expressed more directly with `metamon.forall` than as an MR.
-// See README "Round-trip" section for the canonical pattern.
+// Round-trip is not exposed as a Plain MR — MR's two-point output
+// relation cannot express the source-vs-output comparison
+// `decode(encode(x)) == Ok(x)`. Instead, the runner-style helper
+// `forall_round_trip` (below) wraps `forall` with a named header
+// (`round_trip[<name>]`) so the failure report identifies which
+// round-trip broke, which is the discoverability win without forcing
+// a contrived MR shape.
 
 /// `f(f(x)) == f(x)`. Idempotency.
 ///
@@ -296,4 +299,51 @@ pub fn equivariant_under(
 pub fn commutativity_of(name name: String) -> Mr(#(a, a), b) {
   let swap = transform.new("swap", fn(pair: #(a, a)) { #(pair.1, pair.0) })
   mr(name: name, transform: swap, relation: relation.equal())
+}
+
+/// Run a round-trip property over many random inputs:
+/// `decode(encode(x))` must equal `Ok(x)` for every generated `x`.
+///
+/// The failure report header is `round_trip[<name>]` so it is
+/// immediately obvious from the panic which round-trip broke. The
+/// underlying machinery is the same as `forall`, including shrinking
+/// of the source input.
+///
+/// ```gleam
+/// metamon.forall_round_trip(
+///   gen: generator.bit_array(range.constant(0, 16)),
+///   name: "base64",
+///   encode: base64.encode,
+///   decode: base64.decode,
+/// )
+/// ```
+pub fn forall_round_trip(
+  gen gen: Generator(a),
+  name name: String,
+  encode encode: fn(a) -> b,
+  decode decode: fn(b) -> Result(a, e),
+) -> Nil {
+  forall_round_trip_with(
+    cfg: default_config(),
+    gen: gen,
+    name: name,
+    encode: encode,
+    decode: decode,
+  )
+}
+
+/// `forall_round_trip` with an explicit configuration.
+pub fn forall_round_trip_with(
+  cfg cfg: Config,
+  gen gen: Generator(a),
+  name name: String,
+  encode encode: fn(a) -> b,
+  decode decode: fn(b) -> Result(a, e),
+) -> Nil {
+  runner.run_forall(cfg, "round_trip[" <> name <> "]", gen, fn(input) {
+    case decode(encode(input)) {
+      Ok(decoded) -> decoded == input
+      Error(_) -> False
+    }
+  })
 }
