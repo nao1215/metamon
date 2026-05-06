@@ -112,3 +112,23 @@ pub fn forall_round_trip_panics_on_decode_error_test() {
     NoPanic -> should.fail()
   }
 }
+
+pub fn forall_observable_renders_predicate_value_in_failure_test() {
+  let outcome =
+    capture(fn() {
+      metamon.forall_observable(
+        generator.int(range.constant(10, 20)),
+        fn(input) {
+          let doubled = input * 2
+          #(doubled, doubled < 0)
+        },
+      )
+    })
+  case outcome {
+    Reason(text) -> {
+      should.be_true(string.contains(text, "× property failed"))
+      should.be_true(string.contains(text, "predicate value:"))
+    }
+    NoPanic -> should.fail()
+  }
+}

@@ -123,6 +123,37 @@ pub fn reverse_twice_is_identity_test() {
 }
 ```
 
+#### 1.1. `forall_observable` — show the predicate's intermediate value
+
+When the branch in the predicate hinges on an intermediate value
+(`f(input)`), the plain `forall` failure report only shows the shrunk
+source input, not what the predicate was actually inspecting.
+`forall_observable` lets the predicate return `#(observation, holds)`;
+the `observation` is rendered into the failure report under the label
+`predicate value`:
+
+```gleam
+import metamon
+import metamon/generator
+import metamon/generator/range
+import gleam/string
+
+pub fn parse_round_trip_test() {
+  metamon.forall_observable(
+    generator.string_ascii(range.constant(0, 8)),
+    fn(s) {
+      let trimmed = string.trim(s)
+      // `trimmed` is what the property body cares about, so expose it.
+      #(trimmed, string.length(trimmed) <= string.length(s))
+    },
+  )
+}
+```
+
+This is equivalent to a plain `forall` plus a manual
+`annotate.annotate_value("predicate value", trimmed)`; the helper
+saves that one line and makes the intent explicit.
+
 ### 2. Metamorphic relations
 
 A metamorphic relation says "if you transform the input in this
@@ -859,7 +890,7 @@ know how to work around them.
 
 | Module | Responsibility |
 |---|---|
-| `metamon` | Top-level API: `forall`, `forall_with`, `forall_morph`, `forall_morph_with`, `forall_morph_n`, `forall_morph_n_with`, `assert_morph`, `forall_morphs`, `forall_round_trip`, `forall_round_trip_with`, `Mr` (opaque), `mr`, `mr_equivariant`, `name_of`, `idempotency_of`, `invariant_under`, `equivariant_under`, `commutativity_of`, `OutputFormat`, `with_output_format`, `seed`, `random_seed`, `default_config` and all `with_*` re-exports |
+| `metamon` | Top-level API: `forall`, `forall_with`, `forall_observable`, `forall_observable_with`, `forall_morph`, `forall_morph_with`, `forall_morph_n`, `forall_morph_n_with`, `assert_morph`, `forall_morphs`, `forall_round_trip`, `forall_round_trip_with`, `Mr` (opaque), `mr`, `mr_equivariant`, `name_of`, `idempotency_of`, `invariant_under`, `equivariant_under`, `commutativity_of`, `OutputFormat`, `with_output_format`, `seed`, `random_seed`, `default_config` and all `with_*` re-exports |
 | `metamon/config` | `Config`, `ConfigError`, `default_config`, `with_runs`, `with_seed`, `with_max_size`, `with_shrink_limit`, `with_max_edges`, `with_regression_file`, `with_diff_enabled` |
 | `metamon/generator` | `Generator(a)` (opaque), `generate`, `sample`, `statistics`, `with_examples`, `add_edges`, `no_edges`, `return`, `map`, `bind`, `map2`..`map6`, `tuple2`..`tuple5`, `one_of`, `element_of`, `frequency`, `sized`, `resize`, `scale`, `filter`, `recursive`, `int`, `float`, `bool`, `non_negative_int`, `positive_int`, `negative_int`, `byte`, `bit_array`, `ascii_*`, `unicode_codepoint`, `string`, `string_ascii`, `string_unicode`, `list_of`, `non_empty_list_of`, `dict_of`, `set_of`, `option_of`, `result_of` |
 | `metamon/generator/seed` | xorshift32-based `Seed` with `split` (target-portable; identical streams on BEAM and JS) |

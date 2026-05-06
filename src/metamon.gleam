@@ -1,9 +1,9 @@
 //// Metamon top-level public API.
 ////
 //// `metamon` exports the small surface that most tests interact with:
-//// `forall`, `forall_morph`, `assert_morph`, `forall_morphs`,
-//// `forall_round_trip`, the `Mr` smart constructors, and a handful
-//// of metamorphic-relation templates (`idempotency_of`,
+//// `forall`, `forall_observable`, `forall_morph`, `assert_morph`,
+//// `forall_morphs`, `forall_round_trip`, the `Mr` smart constructors,
+//// and a handful of metamorphic-relation templates (`idempotency_of`,
 //// `invariant_under`, `equivariant_under`, `commutativity_of`).
 ////
 //// Configuration lives in `metamon/config`; generators in
@@ -11,6 +11,7 @@
 //// in `metamon/relation`; per-property context in `metamon/annotate`
 //// and `metamon/coverage`; structural diff in `metamon/diff`.
 
+import metamon/annotate
 import metamon/config
 import metamon/generator.{type Generator}
 import metamon/generator/seed as seed_module
@@ -169,6 +170,34 @@ pub fn forall(g: Generator(a), property: fn(a) -> Bool) -> Nil {
 /// Run a property with an explicit configuration.
 pub fn forall_with(cfg: Config, g: Generator(a), property: fn(a) -> Bool) -> Nil {
   runner.run_forall(cfg, "forall", g, property)
+}
+
+/// Run a property whose predicate also exposes its intermediate value.
+///
+/// `predicate` returns `#(observation, holds)`. `holds` decides whether
+/// the property is satisfied (same as `forall`); `observation` is
+/// recorded under the label `predicate value` and shown in the failure
+/// report — no manual `annotate.annotate_value` is needed.
+///
+/// Use this when the predicate's intermediate value (typically `f(input)`)
+/// is what determines the branch. Without it, `forall` failure reports
+/// only show the shrunk source input, which can force a debug round-trip
+/// to recover what `f(input)` actually was.
+pub fn forall_observable(g: Generator(a), predicate: fn(a) -> #(b, Bool)) -> Nil {
+  forall_observable_with(default_config(), g, predicate)
+}
+
+/// `forall_observable` with an explicit configuration.
+pub fn forall_observable_with(
+  cfg: Config,
+  g: Generator(a),
+  predicate: fn(a) -> #(b, Bool),
+) -> Nil {
+  runner.run_forall(cfg, "forall_observable", g, fn(input) {
+    let #(observed, holds) = predicate(input)
+    annotate.annotate_value("predicate value", observed)
+    holds
+  })
 }
 
 /// Run a metamorphic relation over many random inputs.
