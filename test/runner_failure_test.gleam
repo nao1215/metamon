@@ -3,6 +3,7 @@
 //// does not hold. We catch the panic via gleeunit's per-test process
 //// isolation and inspect the panic reason.
 
+import gleam/int
 import gleam/string
 import gleeunit/should
 import metamon
@@ -88,6 +89,25 @@ pub fn assert_morph_panics_on_violation_test() {
   case outcome {
     Reason(text) -> {
       should.be_true(string.contains(text, "fails_for_assert_morph"))
+    }
+    NoPanic -> should.fail()
+  }
+}
+
+pub fn forall_round_trip_panics_on_decode_error_test() {
+  let outcome =
+    capture(fn() {
+      metamon.forall_round_trip(
+        gen: generator.int(range.constant(0, 100)),
+        name: "broken",
+        encode: int.to_string,
+        decode: fn(_value) { Error(Nil) },
+      )
+    })
+  case outcome {
+    Reason(text) -> {
+      should.be_true(string.contains(text, "round_trip[broken]"))
+      should.be_true(string.contains(text, "× property"))
     }
     NoPanic -> should.fail()
   }
