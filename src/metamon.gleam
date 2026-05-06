@@ -82,6 +82,33 @@ pub fn with_diff_enabled(c: Config, enabled: Bool) -> Config {
   config.with_diff_enabled(c, enabled)
 }
 
+/// Re-export of `with_runs_or_panic`. Use in test code where the bound
+/// is statically known and the `let assert Ok(c) = ...` arm would be
+/// dead code.
+pub fn with_runs_or_panic(c: Config, n: Int) -> Config {
+  config.with_runs_or_panic(c, n)
+}
+
+/// Re-export of `with_max_size_or_panic`.
+pub fn with_max_size_or_panic(c: Config, n: Int) -> Config {
+  config.with_max_size_or_panic(c, n)
+}
+
+/// Re-export of `with_shrink_limit_or_panic`.
+pub fn with_shrink_limit_or_panic(c: Config, n: Int) -> Config {
+  config.with_shrink_limit_or_panic(c, n)
+}
+
+/// Re-export of `with_max_edges_or_panic`.
+pub fn with_max_edges_or_panic(c: Config, n: Int) -> Config {
+  config.with_max_edges_or_panic(c, n)
+}
+
+/// Re-export of `with_regression_file_or_panic`.
+pub fn with_regression_file_or_panic(c: Config, path: String) -> Config {
+  config.with_regression_file_or_panic(c, path)
+}
+
 /// Re-export of `OutputFormat` so callers can write
 /// `metamon.OutputFormat`.
 pub type OutputFormat =
