@@ -1,3 +1,4 @@
+import gleam/bit_array
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
@@ -234,6 +235,94 @@ pub fn string_ascii_within_length_bounds_test() {
     let len = string.length(value)
     should.be_true(len >= 3 && len <= 5)
   })
+}
+
+pub fn string_alpha_only_letters_test() {
+  let g = generator.string_alpha(range.constant(1, 6))
+  test_helpers.integers_from(0, 30)
+  |> list.each(fn(i) {
+    let value = generator.generate(g, seed.seed(i), 50).value
+    string.to_utf_codepoints(value)
+    |> list.each(fn(cp) {
+      let n = string.utf_codepoint_to_int(cp)
+      should.be_true({ n >= 65 && n <= 90 } || { n >= 97 && n <= 122 })
+    })
+  })
+}
+
+pub fn string_alphanumeric_only_letters_or_digits_test() {
+  let g = generator.string_alphanumeric(range.constant(1, 6))
+  test_helpers.integers_from(0, 30)
+  |> list.each(fn(i) {
+    let value = generator.generate(g, seed.seed(i), 50).value
+    string.to_utf_codepoints(value)
+    |> list.each(fn(cp) {
+      let n = string.utf_codepoint_to_int(cp)
+      should.be_true(
+        { n >= 48 && n <= 57 }
+        || { n >= 65 && n <= 90 }
+        || { n >= 97 && n <= 122 },
+      )
+    })
+  })
+}
+
+pub fn string_digit_only_digits_test() {
+  let g = generator.string_digit(range.constant(1, 6))
+  test_helpers.integers_from(0, 30)
+  |> list.each(fn(i) {
+    let value = generator.generate(g, seed.seed(i), 50).value
+    string.to_utf_codepoints(value)
+    |> list.each(fn(cp) {
+      let n = string.utf_codepoint_to_int(cp)
+      should.be_true(n >= 48 && n <= 57)
+    })
+  })
+}
+
+pub fn string_printable_ascii_only_printable_test() {
+  let g = generator.string_printable_ascii(range.constant(1, 6))
+  test_helpers.integers_from(0, 30)
+  |> list.each(fn(i) {
+    let value = generator.generate(g, seed.seed(i), 50).value
+    string.to_utf_codepoints(value)
+    |> list.each(fn(cp) {
+      let n = string.utf_codepoint_to_int(cp)
+      should.be_true(n >= 32 && n <= 126)
+    })
+  })
+}
+
+pub fn bit_array_printable_only_printable_bytes_test() {
+  let g = generator.bit_array_printable(range.constant(1, 8))
+  test_helpers.integers_from(0, 30)
+  |> list.each(fn(i) {
+    let value = generator.generate(g, seed.seed(i), 50).value
+    each_byte_in_bit_array(value, fn(b) { should.be_true(b >= 32 && b <= 126) })
+  })
+}
+
+pub fn bit_array_utf8_decodes_back_to_string_test() {
+  let g = generator.bit_array_utf8(range.constant(0, 6))
+  test_helpers.integers_from(0, 30)
+  |> list.each(fn(i) {
+    let value = generator.generate(g, seed.seed(i), 50).value
+    case bit_array.to_string(value) {
+      Ok(_) -> Nil
+      Error(_) -> should.fail()
+    }
+  })
+}
+
+fn each_byte_in_bit_array(bits: BitArray, check: fn(Int) -> Nil) -> Nil {
+  case bits {
+    <<>> -> Nil
+    <<b:size(8), rest:bits>> -> {
+      check(b)
+      each_byte_in_bit_array(rest, check)
+    }
+    _ -> should.fail()
+  }
 }
 
 pub fn statistics_buckets_values_test() {
