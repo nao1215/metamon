@@ -36,11 +36,22 @@ pub type Outcome(model) {
 /// `initial_real`. Commands whose preconditions fail are skipped
 /// (counted but not run). The first real-side `Error(_)` halts the
 /// sequence and is returned as `Failed`.
+///
+/// Passing `[]` is a programming error (vacuous test) and panics with
+/// a structured message — pass at least one Command, or use
+/// `forall(...)` for a non-stateful property.
 pub fn run(
   initial_model: model,
   initial_real: real,
   commands: List(Command(model, real)),
 ) -> Outcome(model) {
+  case commands {
+    [] ->
+      panic_with_message(
+        "metamon.stateful.run: empty commands list (vacuous test). Pass at least one Command or use forall(...) for a non-stateful property.",
+      )
+    _ -> Nil
+  }
   run_loop(initial_model, initial_real, commands, 0, 0)
 }
 
@@ -75,8 +86,17 @@ fn run_loop(
 /// Convenience: assert that the outcome is `Passed`. On `Failed`,
 /// panic with a structured message that mirrors the regular failure
 /// report style.
+///
+/// A `Passed` outcome with `ran == 0 && skipped == 0` is treated as
+/// a vacuous pass and panics with the same "empty commands list"
+/// message that `run([])` produces — even if `run` is somehow given
+/// an empty list via a bug, `assert_passed` will still surface it.
 pub fn assert_passed(outcome: Outcome(model)) -> Nil {
   case outcome {
+    Passed(_, 0, 0) ->
+      panic_with_message(
+        "metamon.stateful.run: empty commands list (vacuous test). Pass at least one Command or use forall(...) for a non-stateful property.",
+      )
     Passed(_, _, _) -> Nil
     Failed(index, name, reason, _) ->
       panic_with_message(
