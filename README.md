@@ -231,6 +231,70 @@ two-point `f(source) ⟷ f(transform(source))` shape of an MR cannot
 express directly. `forall_round_trip` wraps `forall` instead, so the
 error reports retain the same shrunk-source rendering.
 
+#### 2.2.1. Round-trip when the types don't line up
+
+`forall_round_trip` requires `encode: a -> b` and `decode: b -> Result(a, _)`.
+Real codec libraries often produce `encode: a -> Result(b, _)` (when
+not every input is valid for the codec) or have a source type whose
+decoded form does not compare equal under structural `==`. Two named
+variants cover both cases without a hand-rolled shim.
+
+##### A. Partial encoder — `forall_round_trip_partial`
+
+Inputs the encoder rejects are skipped (treated as out of scope, not
+failures). Useful for codecs with structural preconditions
+(byte-alignment, version range, hrp / variant constraints, etc.).
+
+```gleam
+import metamon
+import metamon/generator
+import metamon/generator/range
+import gleam/int
+
+pub fn readme_round_trip_partial_test() {
+  // Stand-in for a real partial encoder: only encodes even integers.
+  metamon.forall_round_trip_partial(
+    gen: generator.int(range.constant(-50, 50)),
+    name: "even_only_round_trip",
+    encode: fn(n) {
+      case n % 2 == 0 {
+        True -> Ok(int.to_string(n))
+        False -> Error(Nil)
+      }
+    },
+    decode: fn(s) { int.parse(s) },
+  )
+}
+```
+
+##### B. Custom equality — `forall_round_trip_under`
+
+Pass a `Relation(a)` instead of structural `==`. Useful for opaque
+types whose decoded form normalises (multipart `Part` re-deriving its
+`name` / `filename` cache, MIME types whose essence lowercases, etc.).
+Combine with `relation.equivalent_under(via, name)` to compare on a
+projection.
+
+```gleam
+import metamon
+import metamon/generator
+import metamon/generator/range
+import metamon/relation
+import gleam/string
+
+pub fn readme_round_trip_under_test() {
+  let case_insensitive =
+    relation.equivalent_under(string.lowercase, "case_insensitive")
+  metamon.forall_round_trip_under(
+    gen: generator.string_alpha(range.constant(0, 8)),
+    name: "case_insensitive_round_trip",
+    encode: string.lowercase,
+    decode: fn(s) { Ok(s) },
+    equality: case_insensitive,
+  )
+}
+```
+
 #### 2.3. Invariance: `f(T(x)) == f(x)`
 
 The function is unaffected by the transformation. `list.length` is
