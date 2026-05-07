@@ -226,6 +226,9 @@ pub fn assert_morph(input: a, m: Mr(a, b), f: fn(a) -> b) -> Nil {
 /// `relation`. Useful when the property requires comparing more than
 /// two outputs in one shot (e.g. `(a, b, c) ↦ op(op(a,b), c)` and its
 /// re-associations all agree).
+///
+/// Passing `[]` for `transforms` is a programming error (vacuous test)
+/// and panics with a structured message.
 pub fn forall_morph_n(
   g: Generator(a),
   transforms: List(Transform(a)),
@@ -249,6 +252,9 @@ pub fn forall_morph_n_with(
 /// Run multiple metamorphic relations against the same generator.
 /// Each MR is tried independently; failures are collected and reported
 /// together at the end.
+///
+/// Passing `[]` is a programming error (vacuous test) and panics with
+/// a structured message — use `forall(...)` for a single-input property.
 pub fn forall_morphs(g: Generator(a), ms: List(Mr(a, b)), f: fn(a) -> b) -> Nil {
   runner.run_forall_morphs(
     default_config(),

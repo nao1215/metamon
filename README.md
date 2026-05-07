@@ -1048,6 +1048,11 @@ know what failure / surprise to expect and how to work around it.
 | "this one specific input must always pass this MR" | `metamon.assert_morph` |
 | "all of these MRs must hold for the same `f`" | `metamon.forall_morphs` |
 
+`forall_morphs` requires ≥ 1 MR; passing `[]` panics with a structured
+"empty MR list (vacuous test)" message — use `forall(...)` for the
+no-MR case. Same applies to `forall_morph_n` and `forall_morph_n_with`
+with an empty `transforms` list.
+
 ## Development
 
 This project uses [mise](https://mise.jdx.dev/) to manage Gleam and

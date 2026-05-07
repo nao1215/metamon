@@ -132,3 +132,40 @@ pub fn forall_observable_renders_predicate_value_in_failure_test() {
     NoPanic -> should.fail()
   }
 }
+
+pub fn forall_morphs_panics_on_empty_mr_list_test() {
+  let outcome =
+    capture(fn() {
+      metamon.forall_morphs(generator.int(range.constant(0, 100)), [], fn(n) {
+        n
+      })
+    })
+  case outcome {
+    Reason(text) -> {
+      should.be_true(string.contains(text, "metamon.forall_morphs"))
+      should.be_true(string.contains(text, "empty MR list"))
+      should.be_true(string.contains(text, "vacuous test"))
+    }
+    NoPanic -> should.fail()
+  }
+}
+
+pub fn forall_morph_n_panics_on_empty_transforms_test() {
+  let outcome =
+    capture(fn() {
+      metamon.forall_morph_n(
+        generator.int(range.constant(0, 100)),
+        [],
+        relation.all_equal(),
+        fn(n) { n },
+      )
+    })
+  case outcome {
+    Reason(text) -> {
+      should.be_true(string.contains(text, "metamon.forall_morph_n"))
+      should.be_true(string.contains(text, "empty transforms list"))
+      should.be_true(string.contains(text, "vacuous test"))
+    }
+    NoPanic -> should.fail()
+  }
+}
