@@ -1,9 +1,14 @@
 import gleam/int
 import gleam/string
+import gleeunit/should
 import metamon
 import metamon/generator
 import metamon/generator/range
 import metamon/relation
+
+@external(erlang, "metamon_ffi", "capture_panic")
+@external(javascript, "./metamon_ffi.mjs", "capture_panic")
+fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
 
 pub fn forall_round_trip_int_to_string_test() {
   metamon.forall_round_trip(
@@ -114,4 +119,23 @@ pub fn forall_round_trip_under_with_explicit_config_test() {
     decode: fn(s) { Ok(s) },
     equality: case_insensitive,
   )
+}
+
+pub fn forall_round_trip_partial_panics_when_every_input_rejected_test() {
+  // Encoder rejects every input. Without the auto-coverage gate, the
+  // test would silently pass "100/100" with zero round-trips actually
+  // exercised — exactly the foot-gun #49 calls out. The cover_at_least
+  // requirement now panics with a "coverage shortfall" message.
+  let #(panicked, message) =
+    capture_panic(fn() {
+      metamon.forall_round_trip_partial(
+        gen: generator.int(range.constant(0, 100)),
+        name: "always_rejected",
+        encode: fn(_n) { Error(Nil) },
+        decode: fn(s) { int.parse(s) },
+      )
+    })
+  should.be_true(panicked)
+  should.be_true(string.contains(message, "coverage shortfall"))
+  should.be_true(string.contains(message, "encoder_accepted"))
 }

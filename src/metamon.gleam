@@ -13,6 +13,7 @@
 
 import metamon/annotate
 import metamon/config
+import metamon/coverage
 import metamon/generator.{type Generator}
 import metamon/generator/seed as seed_module
 import metamon/internal/runner.{type MorphSpec}
@@ -431,6 +432,15 @@ pub fn forall_round_trip_partial(
 }
 
 /// `forall_round_trip_partial` with an explicit configuration.
+///
+/// The runner automatically registers a `coverage.cover_at_least(1,
+/// "encoder_accepted", ok)` requirement so a property whose generator
+/// is so wide that the encoder rejects every sample fails the test
+/// with a structured "coverage shortfall" message rather than passing
+/// silently. To enforce a stricter floor (e.g. "at least 50% of
+/// inputs must round-trip"), call
+/// `coverage.cover(50.0, "encoder_accepted", ok)` inside your own
+/// property body — coverage labels accumulate across calls.
 pub fn forall_round_trip_partial_with(
   cfg cfg: Config,
   gen gen: Generator(a),
@@ -442,14 +452,21 @@ pub fn forall_round_trip_partial_with(
     case encode(input) {
       // The encoder declared this input out of scope. Skip it: the
       // property is vacuously true for inputs the codec does not
-      // accept. Compose with a stricter generator if you want every
-      // input exercised.
-      Error(_) -> True
-      Ok(encoded) ->
+      // accept. The cover_at_least(1, ...) requirement below ensures
+      // the runner panics with a "coverage shortfall" if every input
+      // is rejected, so a 100%-rejection generator does not silently
+      // pass.
+      Error(_) -> {
+        coverage.cover_at_least(1, "encoder_accepted", False)
+        True
+      }
+      Ok(encoded) -> {
+        coverage.cover_at_least(1, "encoder_accepted", True)
         case decode(encoded) {
           Ok(decoded) -> decoded == input
           Error(_) -> False
         }
+      }
     }
   })
 }
