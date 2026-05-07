@@ -508,6 +508,21 @@ back to a string; the `len` argument is the codepoint count, so the
 byte length will be larger when the random string contains
 multi-byte codepoints.
 
+`generator.string_unicode(len)` and `generator.unicode_codepoint()`
+produce **valid UTF-8 scalar values only**. The surrogate range
+`[0xD800, 0xDFFF]` is intentionally excluded because Gleam strings are
+UTF-8 — lone surrogates would not survive `string.from_utf_codepoints`.
+Lone surrogates, overlong encodings, truncated continuation bytes, and
+other malformed UTF-8 byte sequences cannot exist inside a Gleam
+`String`, so a parser-hardening property that must accept *or reject*
+malformed UTF-8 input cannot reach those bytes through `string_unicode`.
+Drop down to `bit_array(byte_len)` and operate at the byte level
+instead. There is also no built-in bias toward Unicode normalisation
+boundaries (NFC vs NFD); equivalent forms like `"é" (U+00E9)` and
+`"e\u{0301}" (U+0065 U+0301)` are sampled independently — pre-compose
+equivalence-class edges via `with_examples` if your property depends on
+them.
+
 `generator.float(lo, hi)` is **finite-only**: it never emits `NaN`,
 `±Infinity`, or denormal values. For codec / serialisation work
 where IEEE 754 special values are part of the input space (and where

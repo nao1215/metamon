@@ -673,6 +673,18 @@ pub fn ascii_printable() -> Generator(String) {
 }
 
 /// A Unicode scalar value (excluding surrogates).
+///
+/// Draws from `[0, 0xD7FF] ∪ [0xE000, 0x10FFFF]`. The surrogate range
+/// `[0xD800, 0xDFFF]` is intentionally excluded because Gleam strings
+/// are UTF-8: lone surrogates would not survive
+/// `string.from_utf_codepoints`.
+///
+/// To fuzz codecs / parsers that must handle malformed UTF-8 byte
+/// sequences (lone surrogates, overlong encodings, truncated
+/// continuation bytes, …), drop down to `bit_array(byte_len)` and
+/// exercise the parser at the byte level instead — those inputs
+/// cannot exist inside a Gleam `String` and so cannot reach a
+/// property whose generator is `string_unicode`.
 pub fn unicode_codepoint() -> Generator(Int) {
   one_of([int(range.constant(0, 0xD7FF)), int(range.constant(0xE000, 0x10FFFF))])
   |> override_edges([0, 32, 65, 0x4E00, 0x1F600])
@@ -744,6 +756,19 @@ pub fn string_printable_ascii(len: Range) -> Generator(String) {
 }
 
 /// A Unicode-aware string (includes BiDi/emoji/NUL via edges).
+///
+/// Produces **valid UTF-8 scalar values only** — see
+/// `unicode_codepoint` for the codepoint set. Lone surrogates and
+/// other malformed UTF-8 byte sequences are not reachable through
+/// this generator because they cannot exist inside a Gleam `String`.
+/// To fuzz parsers that must accept or reject malformed UTF-8 input,
+/// use `bit_array(byte_len)` and operate at the byte level.
+///
+/// No bias toward Unicode normalisation boundaries (NFC vs NFD) is
+/// built in: equivalent forms like `"é" (U+00E9)` and
+/// `"e\u{0301}" (U+0065 U+0301)` are sampled independently. Pre-compose
+/// any equivalence-class edges via `with_examples` if your property
+/// depends on them.
 pub fn string_unicode(len: Range) -> Generator(String) {
   let cp_gen = unicode_codepoint() |> map(codepoint_int_to_string)
   string(cp_gen, len)

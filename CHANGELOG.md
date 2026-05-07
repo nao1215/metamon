@@ -93,6 +93,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (#51)
 
 ### Documentation
+- `generator.unicode_codepoint` and `generator.string_unicode`
+  docstrings now spell out the surrogate exclusion: lone surrogates
+  (`0xD800–0xDFFF`) and other malformed UTF-8 byte sequences are not
+  reachable through these generators because Gleam strings are UTF-8.
+  A parser-hardening property that must accept or reject malformed
+  UTF-8 input has to drop down to `bit_array(byte_len)` and operate
+  at the byte level. The docstrings also note the absence of a
+  built-in NFC-vs-NFD normalisation bias — equivalent codepoint
+  sequences (`"é"` as `U+00E9` vs `U+0065 U+0301`) are sampled
+  independently. README §3.0 carries the same note in one paragraph.
+  (#59)
 - `metamon.seed/1` (and the underlying `metamon/generator/seed.seed`)
   docstring now describes the full normalisation: the integer is
   masked to a 32-bit non-negative window, and a masked-to-zero value
