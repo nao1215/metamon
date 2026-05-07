@@ -456,26 +456,29 @@ pub fn byte() -> Generator(Int) {
   int(range.constant(0, 255))
 }
 
-/// Bit array of byte-length within `len`. Each byte is generated
-/// uniformly.
-pub fn bit_array(len: Range) -> Generator(BitArray) {
-  list_of(byte(), len)
+/// Bit array whose total length in **bytes** lies inside `byte_len`.
+/// Each byte is generated uniformly. Output is always byte-aligned
+/// (no sub-byte tail).
+pub fn bit_array(byte_len: Range) -> Generator(BitArray) {
+  list_of(byte(), byte_len)
   |> map(bytes_to_bit_array)
 }
 
 /// Bit array whose every byte is a printable ASCII codepoint
-/// (`0x20`..`0x7E`). Useful for fuzzing parsers that take `BitArray`
-/// but expect printable input (HTTP headers, MIME types, etc.).
-pub fn bit_array_printable(len: Range) -> Generator(BitArray) {
-  list_of(int(range.constant(32, 126)), len)
+/// (`0x20`..`0x7E`). `byte_len` is, like `bit_array`, the number of
+/// **bytes** in the resulting array. Useful for fuzzing parsers that
+/// take `BitArray` but expect printable input (HTTP headers, MIME
+/// types, etc.).
+pub fn bit_array_printable(byte_len: Range) -> Generator(BitArray) {
+  list_of(int(range.constant(32, 126)), byte_len)
   |> map(bytes_to_bit_array)
 }
 
-/// Bit array that is guaranteed to be valid UTF-8. `len` is the number
-/// of codepoints (not bytes); the byte length will be larger when the
-/// generated string contains multi-byte codepoints.
-pub fn bit_array_utf8(len: Range) -> Generator(BitArray) {
-  string_unicode(len) |> map(string_to_utf8_bit_array)
+/// Bit array that is guaranteed to be valid UTF-8. `codepoint_len` is
+/// the number of Unicode codepoints; the resulting byte length will
+/// be larger when the random string contains multi-byte codepoints.
+pub fn bit_array_utf8(codepoint_len: Range) -> Generator(BitArray) {
+  string_unicode(codepoint_len) |> map(string_to_utf8_bit_array)
 }
 
 fn string_to_utf8_bit_array(s: String) -> BitArray {
