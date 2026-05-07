@@ -50,6 +50,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   placeholder slot must now drop the entry instead. (#48)
 
 ### Added
+- `metamon.forall_round_trip_partial` and
+  `forall_round_trip_partial_with` now register an automatic
+  `coverage.cover_at_least(1, "encoder_accepted", ...)` requirement
+  for each input. When the user's encoder rejects every input the
+  generator produces, the runner panics with a structured "coverage
+  shortfall" message naming the `encoder_accepted` label, instead of
+  passing silently as `100 / 100`. This catches the #28 follow-up
+  foot-gun (a generator-vs-encoder mismatch produces a green test
+  with zero round-trips actually exercised). Callers who need a
+  stricter floor (e.g. "≥ 50% of inputs must round-trip") can stack
+  a `coverage.cover(50.0, "encoder_accepted", ...)` call inside their
+  own property body — coverage labels accumulate. (#49)
 - `command.no_precondition` is a clearer-named synonym for
   `command.always`. The "no precondition" reading matches the
   constructor's actual contract (the precondition arm is `fn(_m) {
