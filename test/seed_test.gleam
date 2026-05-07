@@ -1,8 +1,11 @@
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/set
 import gleeunit/should
 import metamon/generator/seed.{type Seed}
 import test_helpers
+
+const default_state: Int = 0xDEADBEEF
 
 pub fn seed_is_deterministic_test() {
   let s = seed.seed(42)
@@ -46,6 +49,40 @@ pub fn split_yields_independent_streams_test() {
   let #(a, _) = seed.next_int(left)
   let #(b, _) = seed.next_int(right)
   should.not_equal(a, b)
+}
+
+pub fn seed_zero_is_rerouted_to_default_state_test() {
+  // The xorshift family has 0 as a fixed point, so seed(0) is silently
+  // replaced with 0xDEADBEEF.
+  should.equal(seed.state(seed.seed(0)), default_state)
+}
+
+pub fn seed_negative_one_is_non_zero_test() {
+  should.not_equal(seed.state(seed.seed(-1)), 0)
+}
+
+pub fn seed_overflow_collapses_to_default_state_test() {
+  // 0x100000000 (= 2^32) masks to 0, which the rerouting then maps to
+  // the default. seed(0) and seed(2^32) thus exercise the same stream.
+  should.equal(seed.state(seed.seed(0x100000000)), default_state)
+  should.equal(seed.state(seed.seed(0x100000000)), seed.state(seed.seed(0)))
+}
+
+pub fn original_input_records_user_value_test() {
+  should.equal(seed.original_input(seed.seed(0)), Some(0))
+  should.equal(seed.original_input(seed.seed(42)), Some(42))
+  should.equal(seed.original_input(seed.seed(0x100000000)), Some(0x100000000))
+}
+
+pub fn original_input_is_none_for_advanced_seeds_test() {
+  // Advancement (next_int / split) does not preserve the original
+  // user input — only the seed handed to seed/1 has it.
+  let s = seed.seed(42)
+  let #(_, s2) = seed.next_int(s)
+  should.equal(seed.original_input(s2), None)
+  let #(left, right) = seed.split(s)
+  should.equal(seed.original_input(left), None)
+  should.equal(seed.original_input(right), None)
 }
 
 pub fn long_run_distribution_is_spread_test() {
