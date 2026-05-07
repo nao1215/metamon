@@ -38,6 +38,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   "fail visibly on misconfiguration" stance as `relation.approximately`
   (#34) and `Range.linear_from` (#35). (#52)
 
+### Changed
+- **Breaking:** `generator.frequency` now panics with a structured
+  message (`"metamon.frequency: weight must be >= 1 (got <w> at
+  position <n>)"`) when any pair carries a weight of `0` or a
+  negative weight. The previous behaviour silently coerced
+  `weight < 1` to `1`, so `frequency([(0, gen_a), (1, gen_b)])`
+  was a 50/50 split rather than the intended "always pick `gen_b`",
+  and a `weight = max(0, computed)` defensive pattern lost its
+  safety net. Test authors who used `weight = 0` to keep a
+  placeholder slot must now drop the entry instead. (#48)
+
 ## [0.4.0] - 2026-05-07
 
 ### Documentation
