@@ -113,6 +113,11 @@ unwrap_used = "error"
 # structured message so test code does not need `let assert Ok(c)`
 # for statically-known literals.
 "src/metamon/config.gleam" = ["avoid_panic"]
+# `coverage.cover` / `cover_at_least` panic on a malformed target
+# (target_pct outside [0.0, 100.0] or NaN, min_hits < 0) — the same
+# "fail visibly on misconfiguration" stance as relation.approximately
+# (negative epsilon) and Range constructors (inverted bounds).
+"src/metamon/coverage.gleam" = ["avoid_panic"]
 # Process-dictionary FFI shims (BEAM + JS) intentionally form the
 # metamon-FFI seam.
 "src/metamon/internal/process_state.gleam" = ["ffi_usage"]

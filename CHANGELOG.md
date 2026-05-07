@@ -28,6 +28,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   one command fires; silently passing previously hid precondition /
   initial-model bugs (model never advanced, `precondition` always
   returned `False`, etc.). Companion to #54. (#55)
+- `metamon/coverage.cover` validates `target_pct` at the call site
+  and panics with `"metamon.coverage.cover: target_pct must be in
+  [0.0, 100.0] (got <value>)"` for values outside that range or for
+  `NaN`. Out-of-range targets previously slid through and turned a
+  copy-paste typo (`50.0` → `500.0`) into a confusing coverage
+  shortfall on every run. The companion `cover_at_least` rejects
+  negative `min_hits` with a similar structured message. Same
+  "fail visibly on misconfiguration" stance as `relation.approximately`
+  (#34) and `Range.linear_from` (#35). (#52)
 
 ## [0.4.0] - 2026-05-07
 

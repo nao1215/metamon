@@ -10,6 +10,7 @@
 
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -77,7 +78,15 @@ pub fn classify(label: String, condition: Bool) -> Nil {
 
 /// Like `classify` but also asserts that the label hits at least
 /// `target_pct` percent of all inputs in the run.
+///
+/// `target_pct` must be a finite number in `[0.0, 100.0]`. Values
+/// outside that range — and `NaN` — are programming errors (an
+/// off-by-percent typo turns a target of 50 into 500, a negative
+/// target trivially passes for zero hits) and panic with a structured
+/// message so the misconfiguration surfaces immediately rather than
+/// as a confusing coverage shortfall.
 pub fn cover(target_pct: Float, label: String, condition: Bool) -> Nil {
+  validate_target_pct(target_pct)
   bump_total()
   ensure_pct_requirement(label, target_pct)
   case condition {
@@ -90,12 +99,47 @@ pub fn cover(target_pct: Float, label: String, condition: Bool) -> Nil {
 /// at least `min_hits` times across the entire run. Useful when you
 /// know the exact number of edge cases that should fire (e.g. "at
 /// least 3 inputs trigger the empty-list path").
+///
+/// `min_hits` must be `>= 0`. A negative threshold is trivially
+/// satisfied (zero hits clear a negative bar) and almost always a
+/// sign mistake on the caller's part, so it panics with a structured
+/// message at the call site.
 pub fn cover_at_least(min_hits: Int, label: String, condition: Bool) -> Nil {
+  validate_min_hits(min_hits)
   bump_total()
   ensure_count_requirement(label, min_hits)
   case condition {
     False -> Nil
     True -> bump_count(counts_key, label)
+  }
+}
+
+fn validate_target_pct(target_pct: Float) -> Nil {
+  // The combined `>=. 0.0 && <=. 100.0` check rejects out-of-range
+  // values *and* NaN in one step: NaN compares False against every
+  // operand, so the conjunction is False and the panic fires. We
+  // include the value via `float.to_string` so the report shows
+  // both the offending value and the valid range.
+  case target_pct >=. 0.0 && target_pct <=. 100.0 {
+    True -> Nil
+    False ->
+      panic as {
+        "metamon.coverage.cover: target_pct must be in [0.0, 100.0] (got "
+        <> float.to_string(target_pct)
+        <> ")"
+      }
+  }
+}
+
+fn validate_min_hits(min_hits: Int) -> Nil {
+  case min_hits < 0 {
+    True ->
+      panic as {
+        "metamon.coverage.cover_at_least: min_hits must be >= 0 (got "
+        <> int.to_string(min_hits)
+        <> ")"
+      }
+    False -> Nil
   }
 }
 
