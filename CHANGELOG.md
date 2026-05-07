@@ -30,6 +30,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   must handle control bytes never explored those branches. Reach for
   `string_printable_ascii` if your property depends on printable-only
   input. (#33)
+- **Breaking:** parameter renames on the BitArray generators to
+  disambiguate the unit:
+  - `generator.bit_array(len)` → `generator.bit_array(byte_len)`
+  - `generator.bit_array_printable(len)` → `generator.bit_array_printable(byte_len)`
+  - `generator.bit_array_utf8(len)` → `generator.bit_array_utf8(codepoint_len)`
+  Positional callers are unaffected; only call sites that used the
+  labelled form (`bit_array(len: ...)`) need updating. The new names
+  make the unit obvious at the call site. (#30)
 
 ## [0.3.0] - 2026-05-06
 
