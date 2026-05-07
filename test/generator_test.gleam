@@ -237,6 +237,44 @@ pub fn string_ascii_within_length_bounds_test() {
   })
 }
 
+pub fn string_ascii_codepoints_within_full_ascii_range_test() {
+  let g = generator.string_ascii(range.constant(1, 8))
+  // Every codepoint in every sample must lie in [0, 127]. Random
+  // sampling now covers the full 7-bit window — control bytes
+  // included — so the upper bound is what protects against accidental
+  // leakage past ASCII.
+  test_helpers.integers_from(0, 60)
+  |> list.each(fn(i) {
+    let value = generator.generate(g, seed.seed(i), 99).value
+    string.to_utf_codepoints(value)
+    |> list.each(fn(cp) {
+      let n = string.utf_codepoint_to_int(cp)
+      should.be_true(n >= 0 && n <= 127)
+    })
+  })
+}
+
+pub fn string_ascii_random_sampling_includes_control_bytes_test() {
+  // Pin the new behaviour: with the sampler covering 0..127 (and a
+  // generous sample budget), at least one control byte (< 32 or 127)
+  // must show up. Previously this never happened — the bug closed
+  // by this test was that random sampling skipped 33/128 of the
+  // alphabet.
+  let g = generator.string_ascii(range.constant(1, 8))
+  let samples =
+    test_helpers.integers_from(0, 200)
+    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 50).value })
+  let any_control =
+    list.any(samples, fn(value) {
+      string.to_utf_codepoints(value)
+      |> list.any(fn(cp) {
+        let n = string.utf_codepoint_to_int(cp)
+        n < 32 || n == 127
+      })
+    })
+  should.be_true(any_control)
+}
+
 pub fn string_alpha_only_letters_test() {
   let g = generator.string_alpha(range.constant(1, 6))
   test_helpers.integers_from(0, 30)

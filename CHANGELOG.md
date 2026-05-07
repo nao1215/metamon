@@ -22,6 +22,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   This matched neither `Range.linear`'s automatic in-bounds origin
   selection nor the `Range` contract that values stay inside the
   configured interval. Failing visibly catches the misuse early. (#35)
+- **Breaking:** `generator.string_ascii(len)` now samples the full
+  ASCII range (`0x00`..`0x7F`) at random, including control bytes
+  (`0x00`..`0x1F`, `0x7F`). Previously the random sampler used
+  `ascii_printable` (`0x20`..`0x7E`) and control characters were
+  reachable only via curated edges — properties fuzzing parsers that
+  must handle control bytes never explored those branches. Reach for
+  `string_printable_ascii` if your property depends on printable-only
+  input. (#33)
 
 ## [0.3.0] - 2026-05-06
 
