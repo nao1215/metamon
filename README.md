@@ -508,6 +508,29 @@ back to a string; the `len` argument is the codepoint count, so the
 byte length will be larger when the random string contains
 multi-byte codepoints.
 
+`generator.float(lo, hi)` is **finite-only**: it never emits `NaN`,
+`±Infinity`, or denormal values. For codec / serialisation work
+where IEEE 754 special values are part of the input space (and where
+the failure modes — `NaN != NaN` breaking round-trips, `Infinity`
+formatting as `"Infinity"` in `f64.to_string`, `-0.0` round-tripping
+differently than `0.0`) must be exercised, reach for
+`generator.float_special()` or splice the eight special values into a
+range generator via
+`with_examples(my_float_gen, generator.float_special_edges())`.
+Compose with `forall_round_trip_under` and a NaN-aware relation if
+your property body needs to ignore NaN inputs explicitly.
+
+> Target asymmetry: on JavaScript, `float_special` emits genuine
+> `NaN` / `±Infinity` from `Number.{NaN, POSITIVE_INFINITY,
+> NEGATIVE_INFINITY}`. On the BEAM, the same slots return finite
+> sentinels (largest finite double, with the appropriate sign)
+> because the BEAM has no portable way to construct non-finite IEEE
+> 754 doubles from pure Erlang — `<<F/float>>` patterns,
+> `binary_to_term/1` with NEW_FLOAT_EXT, and `binary_to_float/1` all
+> reject NaN / ±Infinity bit patterns. Properties that strictly
+> require genuine non-finite inputs must run on the JavaScript
+> target; the BEAM run will exercise the finite anchors only.
+
 #### 3.1. Building record-shaped values with `map2`
 
 ```gleam
@@ -1034,7 +1057,7 @@ know what failure / surprise to expect and how to work around it.
 |---|---|
 | `metamon` | Top-level API: `forall`, `forall_with`, `forall_observable`, `forall_observable_with`, `forall_morph`, `forall_morph_with`, `forall_morph_n`, `forall_morph_n_with`, `assert_morph`, `forall_morphs`, `forall_round_trip`, `forall_round_trip_with`, `forall_round_trip_partial`, `forall_round_trip_partial_with`, `forall_round_trip_under`, `forall_round_trip_under_with`, `Mr` (opaque), `mr`, `mr_equivariant`, `name_of`, `idempotency_of`, `invariant_under`, `equivariant_under`, `commutativity_of`, `OutputFormat`, `with_output_format`, `seed`, `random_seed`, `default_config` and all `with_*` re-exports |
 | `metamon/config` | `Config`, `ConfigError`, `default_config`, `with_runs`, `with_seed`, `with_max_size`, `with_shrink_limit`, `with_max_edges`, `with_regression_file`, `with_diff_enabled` |
-| `metamon/generator` | `Generator(a)` (opaque), `generate`, `sample`, `statistics`, `with_examples`, `add_edges`, `no_edges`, `return`, `map`, `bind`, `map2`..`map6`, `tuple2`..`tuple5`, `one_of`, `element_of`, `frequency`, `sized`, `resize`, `scale`, `filter`, `recursive`, `int`, `float`, `bool`, `non_negative_int`, `positive_int`, `negative_int`, `byte`, `bit_array`, `bit_array_printable`, `bit_array_utf8`, `ascii_*`, `unicode_codepoint`, `string`, `string_ascii`, `string_alpha`, `string_alphanumeric`, `string_digit`, `string_printable_ascii`, `string_unicode`, `list_of`, `non_empty_list_of`, `dict_of`, `set_of`, `option_of`, `result_of` |
+| `metamon/generator` | `Generator(a)` (opaque), `generate`, `sample`, `statistics`, `with_examples`, `add_edges`, `no_edges`, `return`, `map`, `bind`, `map2`..`map6`, `tuple2`..`tuple5`, `one_of`, `element_of`, `frequency`, `sized`, `resize`, `scale`, `filter`, `recursive`, `int`, `float`, `float_special`, `float_special_edges`, `bool`, `non_negative_int`, `positive_int`, `negative_int`, `byte`, `bit_array`, `bit_array_printable`, `bit_array_utf8`, `ascii_*`, `unicode_codepoint`, `string`, `string_ascii`, `string_alpha`, `string_alphanumeric`, `string_digit`, `string_printable_ascii`, `string_unicode`, `list_of`, `non_empty_list_of`, `dict_of`, `set_of`, `option_of`, `result_of` |
 | `metamon/generator/seed` | xorshift32-based `Seed` with `split` (target-portable; identical streams on BEAM and JS) |
 | `metamon/generator/tree` | Lazy rose tree used as the integrated shrink representation |
 | `metamon/generator/range` | `singleton`, `constant`, `linear`, `linear_from`, `exponential` (Hedgehog-style ranges) |

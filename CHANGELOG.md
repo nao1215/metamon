@@ -49,6 +49,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   safety net. Test authors who used `weight = 0` to keep a
   placeholder slot must now drop the entry instead. (#48)
 
+### Added
+- `generator.float_special()` and `generator.float_special_edges()`
+  expose the IEEE 754 special-value edges that the regular
+  `generator.float(lo, hi)` never emits: `NaN`, `+Infinity`,
+  `-Infinity`, the smallest positive denormal, the largest finite
+  double, and the anchors `0.0`, `-0.0`, `1.0`. Codec / serialisation
+  properties that need to exercise these edges (`NaN != NaN`
+  breaking round-trips, `Infinity` formatting issues, `-0.0`
+  round-trip drift) can use the new generator directly or splice
+  `float_special_edges()` into an existing range generator via
+  `with_examples`. The `float/2` docstring now states explicitly
+  that it is finite-only and points at `float_special` for IEEE
+  edges.
+
+  Target asymmetry: on JavaScript the non-finite slots return
+  genuine `NaN` / `±Infinity` via `Number.{NaN, POSITIVE_INFINITY,
+  NEGATIVE_INFINITY}`. On the BEAM they return finite sentinels
+  (largest finite double, signed for `-Infinity`) because the
+  standard `<<F/float>>` pattern, `binary_to_term/1` with
+  NEW_FLOAT_EXT, and `binary_to_float/1` all reject non-finite IEEE
+  754 bit patterns — there is no portable way to construct NaN /
+  ±Infinity from pure Erlang. Properties that strictly require
+  genuine non-finite inputs must run on the JavaScript target.
+  (#51)
+
 ### Documentation
 - `metamon.seed/1` (and the underlying `metamon/generator/seed.seed`)
   docstring now describes the full normalisation: the integer is

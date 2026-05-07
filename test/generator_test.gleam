@@ -5,6 +5,7 @@ import gleam/option.{None, Some}
 import gleam/set
 import gleam/string
 import gleeunit/should
+import metamon
 import metamon/generator
 import metamon/generator/range
 import metamon/generator/seed
@@ -157,6 +158,44 @@ pub fn frequency_panics_on_negative_weight_test() {
 @external(erlang, "metamon_ffi", "capture_panic")
 @external(javascript, "./metamon_ffi.mjs", "capture_panic")
 fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+
+// ---------- float_special ----------
+
+pub fn float_special_edges_has_eight_values_test() {
+  // NaN, +Inf, -Inf, 0.0, -0.0, 1.0, smallest_denormal, largest_finite.
+  should.equal(list.length(generator.float_special_edges()), 8)
+}
+
+pub fn float_special_edges_includes_finite_anchors_test() {
+  // Easy structural check: 0.0 and 1.0 are the predictable anchors.
+  let edges = generator.float_special_edges()
+  should.be_true(list.contains(edges, 0.0))
+  should.be_true(list.contains(edges, 1.0))
+}
+
+pub fn float_special_edges_largest_is_max_double_test() {
+  // 1.7976931348623157e308 is the largest finite IEEE 754 double.
+  // Comparisons with NaN return False on both BEAM and JS (no
+  // badarith), so the `>.` chain below ignores NaN entries even
+  // without a NaN-aware filter.
+  let edges = generator.float_special_edges()
+  let big = list.any(edges, fn(x) { x >. 1.0e300 })
+  should.be_true(big)
+}
+
+pub fn float_special_edges_includes_negative_infinity_test() {
+  let edges = generator.float_special_edges()
+  let neg_huge = list.any(edges, fn(x) { x <. -1.0e300 })
+  should.be_true(neg_huge)
+}
+
+pub fn float_special_runs_through_metamon_test() {
+  // Smoke: the runner must accept the special values and pass them
+  // to the property without arithmetic intervention. The property
+  // returns True for every input — this just verifies that no edge
+  // value crashes the runner pipeline (e.g. via badarith on the BEAM).
+  metamon.forall(generator.float_special(), fn(_x) { True })
+}
 
 pub fn list_of_within_length_bounds_test() {
   let g =
