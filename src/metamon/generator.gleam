@@ -278,27 +278,45 @@ pub fn element_of(values: List(a)) -> Generator(a) {
 }
 
 /// Weighted choice over a non-empty list of `(weight, generator)` pairs.
-/// Weights must be positive integers; non-positive weights are treated
-/// as `1`.
+///
+/// Weights must be `>= 1`. A weight of `0` or a negative weight is a
+/// programming error (a "disabled" branch silently re-enabled by the
+/// previous coercion to `1`, or a `weight = max(0, computed)`
+/// defensive pattern losing its safety net) and panics with a
+/// structured message naming the offending position. Pass at least
+/// `1` for any branch you want to keep, or remove the entry entirely
+/// to opt it out.
 pub fn frequency(weighted: List(#(Int, Generator(a)))) -> Generator(a) {
   let assert [#(_, first), ..] = weighted as "metamon.frequency: empty list"
-  let normalised =
-    list.map(weighted, fn(pair) {
-      case pair.0 < 1 {
-        True -> #(1, pair.1)
-        False -> pair
-      }
-    })
-  let total = list.fold(normalised, 0, fn(acc, pair) { acc + pair.0 })
+  validate_weights(weighted, 0)
+  let total = list.fold(weighted, 0, fn(acc, pair) { acc + pair.0 })
   Generator(
     run: fn(s: Seed, size: Int) {
       let #(roll, s_rest) = seed_module.next_int_in(s, 0, total - 1)
-      let chosen = pick_by_weight(normalised, roll, first)
+      let chosen = pick_by_weight(weighted, roll, first)
       chosen.run(s_rest, size)
     },
-    edges: list.flat_map(normalised, fn(pair) { pair.1.edges })
+    edges: list.flat_map(weighted, fn(pair) { pair.1.edges })
       |> take(default_max_edges),
   )
+}
+
+fn validate_weights(pairs: List(#(Int, Generator(a))), index: Int) -> Nil {
+  case pairs {
+    [] -> Nil
+    [#(w, _), ..rest] ->
+      case w < 1 {
+        True ->
+          panic as {
+            "metamon.frequency: weight must be >= 1 (got "
+            <> int.to_string(w)
+            <> " at position "
+            <> int.to_string(index)
+            <> ")"
+          }
+        False -> validate_weights(rest, index + 1)
+      }
+  }
 }
 
 fn pick_by_weight(

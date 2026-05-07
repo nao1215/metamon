@@ -121,6 +121,43 @@ pub fn frequency_respects_weights_test() {
   should.be_true(hot_count > 150)
 }
 
+pub fn frequency_panics_on_zero_weight_test() {
+  let #(panicked, message) =
+    capture_panic(fn() {
+      let _ =
+        generator.frequency([
+          #(0, generator.return("never_pick_me")),
+          #(1, generator.return("always_pick_me")),
+        ])
+      Nil
+    })
+  should.be_true(panicked)
+  should.be_true(string.contains(message, "metamon.frequency"))
+  should.be_true(string.contains(message, "weight must be >= 1"))
+  should.be_true(string.contains(message, "got 0"))
+  should.be_true(string.contains(message, "position 0"))
+}
+
+pub fn frequency_panics_on_negative_weight_test() {
+  let #(panicked, message) =
+    capture_panic(fn() {
+      let _ =
+        generator.frequency([
+          #(10, generator.return("a")),
+          #(-5, generator.return("b")),
+        ])
+      Nil
+    })
+  should.be_true(panicked)
+  should.be_true(string.contains(message, "metamon.frequency"))
+  should.be_true(string.contains(message, "got -5"))
+  should.be_true(string.contains(message, "position 1"))
+}
+
+@external(erlang, "metamon_ffi", "capture_panic")
+@external(javascript, "./metamon_ffi.mjs", "capture_panic")
+fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+
 pub fn list_of_within_length_bounds_test() {
   let g =
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(2, 5))
