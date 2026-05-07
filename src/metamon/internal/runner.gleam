@@ -774,15 +774,11 @@ fn record_regression_for(
         Ok(c) -> c
         Error(_) -> ""
       }
-      let separator = case existing {
-        "" -> ""
-        _ -> "\n"
+      let prefix = case existing {
+        "" -> regression.version_header() <> "\n\n"
+        _ -> existing <> "\n"
       }
-      let _ =
-        simplifile.write(
-          path,
-          existing <> separator <> regression.render(entry),
-        )
+      let _ = simplifile.write(path, prefix <> regression.render(entry))
       Nil
     }
   }
