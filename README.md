@@ -908,9 +908,15 @@ pub fn counter_increments_test() {
 }
 ```
 
-`command.always` skips the precondition; use `command.new` to gate
-commands on the current model. `stateful.assert_passed` panics with
-a structured failure message when a command's `run` returns `Error`.
+`command.no_precondition` (alias: `command.always`) skips the
+precondition; use `command.new` to gate commands on the current
+model. "No precondition" is *not* the same as "always runs" — the
+command's `run` step can still return `Error(reason)`, which halts
+the sequence and reports `Failed`. `stateful.assert_passed` panics
+with a structured failure message when that happens. Prefer the
+`no_precondition` name in new code; the `always` alias is kept for
+backward compatibility but reads as "always runs", which overstates
+the contract.
 
 `stateful.run` requires at least one `Command`; passing `[]` is a
 programming error (vacuous test) and panics with a structured message.
@@ -1083,7 +1089,7 @@ know what failure / surprise to expect and how to work around it.
 | `metamon/diff` | Structural diff used in failure reports: `diff`, `diff_string`, `render`, `Same`/`Differ`/`ListDiff`/`TupleDiff`/`StringDiff` |
 | `metamon/annotate` | `annotate`, `annotate_value`, `footnote`, `reset`, `current_annotations`, `current_footnotes` |
 | `metamon/coverage` | `classify`, `cover`, `cover_at_least`, `classify_in_bucket`, `collect`, `snapshot`, `shortfalls`, `actual_pct`, `target_pct_of`, `requirements_of`, `collected_of`, `hits_for`, `first_shortfall`, `Pct`/`Count` requirement kinds |
-| `metamon/command` | `Command(model, real)`, `new`, `always`, `name_of` (model-based testing primitive) |
+| `metamon/command` | `Command(model, real)`, `new`, `no_precondition`, `always` (alias of `no_precondition`), `name_of` (model-based testing primitive) |
 | `metamon/stateful` | `run(initial_model, initial_real, commands)`, `assert_passed`, `Outcome` (model-based test runner) |
 
 ## Choosing PBT vs MT vs `assert_morph`

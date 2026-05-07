@@ -186,3 +186,29 @@ pub fn names_of_returns_in_order_test() {
     ])
   should.equal(names, ["increment", "always_fails", "increment"])
 }
+
+pub fn no_precondition_is_alias_for_always_test() {
+  // The new canonical name and the legacy alias must produce the
+  // same command shape — equal name, identical-behaviour
+  // precondition (a no-op that returns True), and equivalent
+  // next_model thunks.
+  let cmd_always =
+    command.always(
+      name: "tick",
+      next_model: fn(m: Model) { Model(value: m.value + 1) },
+      run: fn(_r: Real) { Ok(Nil) },
+    )
+  let cmd_no_pre =
+    command.no_precondition(
+      name: "tick",
+      next_model: fn(m: Model) { Model(value: m.value + 1) },
+      run: fn(_r: Real) { Ok(Nil) },
+    )
+  should.equal(command.name_of(cmd_always), command.name_of(cmd_no_pre))
+  should.equal(cmd_always.precondition(Model(value: 0)), True)
+  should.equal(cmd_no_pre.precondition(Model(value: 0)), True)
+  should.equal(cmd_always.precondition(Model(value: 99)), True)
+  should.equal(cmd_no_pre.precondition(Model(value: 99)), True)
+  should.equal(cmd_always.next_model(Model(value: 5)), Model(value: 6))
+  should.equal(cmd_no_pre.next_model(Model(value: 5)), Model(value: 6))
+}

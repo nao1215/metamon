@@ -38,13 +38,38 @@ pub fn new(
   Command(name: name, precondition: pre, next_model: next, run: run)
 }
 
-/// A command that always passes its precondition.
-pub fn always(
+/// Construct a command with no precondition — the precondition arm is
+/// fixed to `fn(_m) { True }`, so the command's gating step is a
+/// no-op.
+///
+/// "No precondition" is **not** the same as "always runs": if the
+/// command's `run` returns `Error(reason)`, the runner halts the
+/// sequence with `Failed`, and any later commands in the list are
+/// skipped. Use `command.new` when the command should be gated on the
+/// current model state.
+///
+/// `command.always` is a synonym for `no_precondition` kept for
+/// backward compatibility; new code should prefer this name because
+/// it reads correctly at the call site.
+pub fn no_precondition(
   name name: String,
   next_model next: fn(model) -> model,
   run run: fn(real) -> Result(Nil, String),
 ) -> Command(model, real) {
   Command(name: name, precondition: fn(_m) { True }, next_model: next, run: run)
+}
+
+/// Synonym for `no_precondition`. The name reads as "always runs",
+/// which overstates the contract — the command's `run` can still
+/// return `Error`, halting the sequence. Prefer `no_precondition` in
+/// new code; this constructor is retained as an alias so existing
+/// call sites continue to compile.
+pub fn always(
+  name name: String,
+  next_model next: fn(model) -> model,
+  run run: fn(real) -> Result(Nil, String),
+) -> Command(model, real) {
+  no_precondition(name: name, next_model: next, run: run)
 }
 
 /// Get the command's user-facing name.
