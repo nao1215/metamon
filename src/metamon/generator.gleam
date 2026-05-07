@@ -20,6 +20,7 @@ import metamon/generator/range.{type Range}
 import metamon/generator/seed.{type Seed} as seed_module
 import metamon/generator/shrink as shrink_lib
 import metamon/generator/tree.{type Tree, Tree}
+import metamon/internal/float_special
 
 const default_max_edges: Int = 16
 
@@ -538,8 +539,16 @@ fn attach_known_root(
   }
 }
 
-/// Float in the closed interval `[lo, hi]`. Shrinking moves toward the
-/// closest endpoint (no fancy mantissa shrinking yet).
+/// Generates finite Float values uniformly in the closed interval
+/// `[lo, hi]`. Shrinking moves toward the closest endpoint (no fancy
+/// mantissa shrinking yet).
+///
+/// This generator does **not** emit `NaN`, `±Infinity`, or denormal
+/// values. Use `float_special` (or splice `float_special_edges()` via
+/// `with_examples`) when codec correctness depends on those edges —
+/// `f64.to_string(NaN)` formats as `"NaN"` but a parser may not accept
+/// the token, `-0.0` round-trips differently than `0.0` through some
+/// encoders, etc.
 pub fn float(lo: Float, hi: Float) -> Generator(Float) {
   let #(low, high) = case lo >. hi {
     True -> #(hi, lo)
@@ -554,6 +563,73 @@ pub fn float(lo: Float, hi: Float) -> Generator(Float) {
     },
     edges: edge_lib.floats_in(low, high),
   )
+}
+
+/// IEEE 754 special-value generator: emits values that the regular
+/// `float` generator never produces — `NaN`, `+Infinity`, `-Infinity`,
+/// the smallest positive denormal, the largest finite double, plus the
+/// "ordinary" anchors `0.0`, `-0.0`, `1.0`. Every value is also an
+/// edge, so the runner tries each one before falling back to random.
+///
+/// Use this when codec / serialisation correctness depends on IEEE
+/// edges (`f64.to_string(NaN)` formats as `"NaN"`, but a parser may not
+/// accept that token; `-0.0` round-trips differently than `0.0` through
+/// some encoders, etc.). The values pass through metamon's edge pipeline
+/// unchanged because the runner does not perform arithmetic on edge
+/// values — but downstream user code that does arithmetic on the
+/// generated value will raise `badarith` on the BEAM, exactly as
+/// IEEE 754 expects.
+///
+/// Target asymmetry: on JavaScript, the non-finite slots return
+/// genuine `NaN` / `±Infinity`. On the BEAM, they return finite
+/// sentinels (largest finite double for `NaN` / `+Infinity`, the
+/// negation thereof for `-Infinity`) because the BEAM has no portable
+/// way to construct a non-finite double from pure Erlang. Properties
+/// that strictly require genuine non-finite values must run on the
+/// JavaScript target.
+pub fn float_special() -> Generator(Float) {
+  let edges = float_special_edges()
+  Generator(
+    run: fn(s: Seed, _size: Int) {
+      let #(idx, _) = seed_module.next_int_in(s, 0, 7)
+      let value = pick_special(edges, idx)
+      tree.singleton(value)
+    },
+    edges: edges,
+  )
+}
+
+/// The list of values emitted by `float_special`. Exposed so callers
+/// can splice them into a custom range generator via
+/// `with_examples(my_float_gen, generator.float_special_edges())`.
+pub fn float_special_edges() -> List(Float) {
+  [
+    float_special.nan(),
+    float_special.positive_infinity(),
+    float_special.negative_infinity(),
+    0.0,
+    negative_zero(),
+    1.0,
+    float_special.smallest_positive_denormal(),
+    float_special.largest_finite(),
+  ]
+}
+
+fn negative_zero() -> Float {
+  // -0.0 is structurally distinct from 0.0 on the JS target (and on
+  // some encoders' output); on the BEAM the two are indistinguishable
+  // by `==` but the IEEE bit pattern differs. We construct it by
+  // negation rather than literal so the pattern is uniform across
+  // targets.
+  0.0 *. -1.0
+}
+
+fn pick_special(values: List(Float), index: Int) -> Float {
+  case values, index {
+    [], _ -> 0.0
+    [first, ..], 0 -> first
+    [_, ..rest], n -> pick_special(rest, n - 1)
+  }
 }
 
 // ---------- string / codepoint ----------

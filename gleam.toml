@@ -121,6 +121,11 @@ unwrap_used = "error"
 # Process-dictionary FFI shims (BEAM + JS) intentionally form the
 # metamon-FFI seam.
 "src/metamon/internal/process_state.gleam" = ["ffi_usage"]
+# IEEE 754 special-value constructors (NaN, ±Infinity, smallest
+# denormal, largest finite) cannot be built portably from pure Gleam
+# — Erlang arithmetic raises badarith for non-finite results, so the
+# FFI constructs them via binary syntax. JS uses Number.* constants.
+"src/metamon/internal/float_special.gleam" = ["ffi_usage"]
 # The JS FFI module imports `Ok` / `Error` constructors from
 # `gleam.mjs` to interop with Gleam-shaped Results. There is no
 # stable replacement for this on the JS target.

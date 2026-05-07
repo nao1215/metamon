@@ -81,3 +81,27 @@ export function state_keys() {
     { head: undefined, tail: undefined, isEmpty: true },
   );
 }
+
+// IEEE 754 special-value constructors used by `generator.float_special`.
+// JavaScript's Number type is a 64-bit IEEE 754 double, so the standard
+// library exposes these directly.
+
+export function ieee_nan() {
+  return Number.NaN;
+}
+
+export function ieee_positive_infinity() {
+  return Number.POSITIVE_INFINITY;
+}
+
+export function ieee_negative_infinity() {
+  return Number.NEGATIVE_INFINITY;
+}
+
+export function ieee_smallest_positive_denormal() {
+  return Number.MIN_VALUE;
+}
+
+export function ieee_largest_finite() {
+  return Number.MAX_VALUE;
+}
