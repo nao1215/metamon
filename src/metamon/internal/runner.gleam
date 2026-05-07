@@ -231,6 +231,13 @@ pub fn run_forall_morph_n(
   rel: relation.RelationN(b),
   f: fn(a) -> b,
 ) -> Nil {
+  case transforms {
+    [] ->
+      panic_with(
+        "metamon.forall_morph_n: empty transforms list (vacuous test). Pass at least one Transform or use forall(...) for a single-input property.",
+      )
+    _ -> Nil
+  }
   reset_state()
   case
     iterate_inputs(cfg, gen, fn(input, source, run_index) {
@@ -325,6 +332,13 @@ pub fn run_forall_morphs(
   specs: List(MorphSpec(a, b)),
   f: fn(a) -> b,
 ) -> Nil {
+  case specs {
+    [] ->
+      panic_with(
+        "metamon.forall_morphs: empty MR list (vacuous test). Pass at least one MR or use forall(...) for a single-input property.",
+      )
+    _ -> Nil
+  }
   let collected =
     list.fold(specs, [], fn(reports, spec) {
       reset_state()

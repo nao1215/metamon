@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- `metamon.forall_morphs([], ...)` and `metamon.forall_morph_n` /
+  `forall_morph_n_with` with an empty `transforms` list no longer pass
+  vacuously. The runner panics with a structured "empty MR list /
+  empty transforms list (vacuous test)" message that points users at
+  `forall(...)` for the no-MR case. This matches the existing
+  empty-list rejection in `frequency` / `one_of` / `element_of`. (#50)
+
 ## [0.4.0] - 2026-05-07
 
 ### Documentation
