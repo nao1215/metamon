@@ -1,6 +1,11 @@
 import gleam/dict
+import gleam/string
 import gleeunit/should
 import metamon/coverage
+
+@external(erlang, "metamon_ffi", "capture_panic")
+@external(javascript, "./metamon_ffi.mjs", "capture_panic")
+fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
 
 pub fn snapshot_starts_empty_test() {
   coverage.reset()
@@ -118,4 +123,56 @@ pub fn classify_in_bucket_groups_labels_test() {
   let snap = coverage.snapshot()
   should.equal(coverage.hits_for(snap, "size=small"), 2)
   should.equal(coverage.hits_for(snap, "size=large"), 1)
+}
+
+// ---------- target_pct / min_hits validation ----------
+
+pub fn cover_panics_on_negative_target_pct_test() {
+  coverage.reset()
+  let #(panicked, message) =
+    capture_panic(fn() { coverage.cover(-1.0, "neg", True) })
+  should.be_true(panicked)
+  should.be_true(string.contains(message, "metamon.coverage.cover"))
+  should.be_true(string.contains(message, "[0.0, 100.0]"))
+}
+
+pub fn cover_panics_just_over_100_test() {
+  coverage.reset()
+  let #(panicked, message) =
+    capture_panic(fn() { coverage.cover(100.0000001, "over", True) })
+  should.be_true(panicked)
+  should.be_true(string.contains(message, "metamon.coverage.cover"))
+  should.be_true(string.contains(message, "[0.0, 100.0]"))
+}
+
+pub fn cover_accepts_zero_boundary_test() {
+  coverage.reset()
+  // 0.0 is the lower boundary and must be accepted.
+  coverage.cover(0.0, "edge_lo", True)
+  let snap = coverage.snapshot()
+  should.equal(coverage.hits_for(snap, "edge_lo"), 1)
+}
+
+pub fn cover_accepts_100_boundary_test() {
+  coverage.reset()
+  // 100.0 is the upper boundary and must be accepted.
+  coverage.cover(100.0, "edge_hi", True)
+  let snap = coverage.snapshot()
+  should.equal(coverage.hits_for(snap, "edge_hi"), 1)
+}
+
+pub fn cover_at_least_panics_on_negative_min_hits_test() {
+  coverage.reset()
+  let #(panicked, message) =
+    capture_panic(fn() { coverage.cover_at_least(-1, "neg", True) })
+  should.be_true(panicked)
+  should.be_true(string.contains(message, "metamon.coverage.cover_at_least"))
+  should.be_true(string.contains(message, ">= 0"))
+}
+
+pub fn cover_at_least_accepts_zero_test() {
+  coverage.reset()
+  coverage.cover_at_least(0, "edge", True)
+  let snap = coverage.snapshot()
+  should.equal(coverage.hits_for(snap, "edge"), 1)
 }
