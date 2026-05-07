@@ -1,4 +1,5 @@
 import gleam/list
+import gleam/string
 import gleeunit/should
 import metamon/generator/range
 import test_helpers
@@ -37,6 +38,59 @@ pub fn linear_from_uses_explicit_origin_test() {
   should.equal(range.origin(r), 2000)
   should.equal(range.bounds(r, 0, 99), #(2000, 2000))
   should.equal(range.bounds(r, 99, 99), #(1900, 2100))
+}
+
+pub fn linear_from_accepts_origin_at_boundaries_test() {
+  // Origin equal to lo and to hi are inclusive endpoints.
+  let r_lo = range.linear_from(0, 0, 10)
+  should.equal(range.origin(r_lo), 0)
+  let r_hi = range.linear_from(10, 0, 10)
+  should.equal(range.origin(r_hi), 10)
+}
+
+pub fn linear_from_panics_when_origin_below_lo_test() {
+  let outcome =
+    capture_panic(fn() {
+      let _ = range.linear_from(-5, 0, 10)
+      Nil
+    })
+  case outcome {
+    PanickedWith(message) -> {
+      should.be_true(string.contains(message, "origin must lie inside [lo, hi]"))
+    }
+    DidNotPanic -> should.fail()
+  }
+}
+
+pub fn linear_from_panics_when_origin_above_hi_test() {
+  let outcome =
+    capture_panic(fn() {
+      let _ = range.linear_from(100, 0, 10)
+      Nil
+    })
+  case outcome {
+    PanickedWith(message) -> {
+      should.be_true(string.contains(message, "origin must lie inside [lo, hi]"))
+    }
+    DidNotPanic -> should.fail()
+  }
+}
+
+pub type PanicOutcome {
+  PanickedWith(message: String)
+  DidNotPanic
+}
+
+@external(erlang, "metamon_ffi", "capture_panic")
+@external(javascript, "./metamon_ffi.mjs", "capture_panic")
+fn capture_panic_raw(thunk: fn() -> Nil) -> #(Bool, String)
+
+fn capture_panic(thunk: fn() -> Nil) -> PanicOutcome {
+  let #(panicked, message) = capture_panic_raw(thunk)
+  case panicked {
+    True -> PanickedWith(message: message)
+    False -> DidNotPanic
+  }
 }
 
 pub fn exponential_grows_quadratically_test() {
