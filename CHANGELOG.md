@@ -14,6 +14,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   bignum bit walks, and parsers that must reject (or handle) sub-byte
   tails. The byte-aligned `bit_array(byte_len)` remains the right
   default for byte-oriented properties. (#31)
+- `metamon.forall_round_trip_under` and
+  `forall_round_trip_under_with` accept a caller-supplied
+  `Relation(a)` instead of structural `==` for the round-trip
+  comparison. Use this when the source type has an opaque or
+  normalising shape (multipart `Part` with re-derived caches, MIME
+  types whose essence lowercases, etc.). Compose with
+  `relation.equivalent_under(via, name)` to compare on a projection.
+  (#29)
 - `metamon.forall_round_trip_partial` and
   `forall_round_trip_partial_with` for codecs whose encoder is partial
   (`encode: fn(a) -> Result(b, e)`). Inputs the encoder rejects with

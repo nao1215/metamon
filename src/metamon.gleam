@@ -447,3 +447,65 @@ pub fn forall_round_trip_partial_with(
     }
   })
 }
+
+/// Run a round-trip property using a caller-supplied equality
+/// `Relation(a)` instead of structural `==`. The decoded value must
+/// satisfy `equality.holds(decoded, input)`.
+///
+/// Use this when the source type carries values that are not
+/// preserved verbatim across encode → decode: opaque types whose
+/// decoded form normalises (e.g. multipart `Part` with re-derived
+/// convenience fields), MIME types that lowercase the essence, JSON
+/// values whose key order is implementation-defined. Composing with
+/// `relation.equivalent_under(via, name)` lets you compare on a
+/// projection (e.g. `headers + body` ignoring derived caches).
+///
+/// The failure report header is `round_trip[<name>]`. The relation's
+/// own `name` appears under `relation:` in the failure block, just
+/// like `forall_morph` failures.
+///
+/// ```gleam
+/// metamon.forall_round_trip_under(
+///   gen: parts_gen(),
+///   name: "multipart_round_trip",
+///   encode: fn(parts) { multipartkit.encode(boundary, parts) },
+///   decode: fn(body) { multipartkit.parse(body, content_type) },
+///   equality: relation.equivalent_under(
+///     fn(parts) { list.map(parts, part_payload) },
+///     "wire_payload",
+///   ),
+/// )
+/// ```
+pub fn forall_round_trip_under(
+  gen gen: Generator(a),
+  name name: String,
+  encode encode: fn(a) -> b,
+  decode decode: fn(b) -> Result(a, e),
+  equality equality: Relation(a),
+) -> Nil {
+  forall_round_trip_under_with(
+    cfg: default_config(),
+    gen: gen,
+    name: name,
+    encode: encode,
+    decode: decode,
+    equality: equality,
+  )
+}
+
+/// `forall_round_trip_under` with an explicit configuration.
+pub fn forall_round_trip_under_with(
+  cfg cfg: Config,
+  gen gen: Generator(a),
+  name name: String,
+  encode encode: fn(a) -> b,
+  decode decode: fn(b) -> Result(a, e),
+  equality equality: Relation(a),
+) -> Nil {
+  runner.run_forall(cfg, "round_trip[" <> name <> "]", gen, fn(input) {
+    case decode(encode(input)) {
+      Ok(decoded) -> equality.holds(decoded, input)
+      Error(_) -> False
+    }
+  })
+}
