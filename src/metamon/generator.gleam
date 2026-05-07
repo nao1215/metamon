@@ -214,6 +214,53 @@ pub fn map6(
   )
 }
 
+/// Seven-way applicative map. Like `map6` but accepts a seventh
+/// generator. Use this for record types with seven fields when you
+/// want to keep integrated shrinking on every component (the `bind`-
+/// based workaround in the README's Limitations section shrinks
+/// shallowly).
+pub fn map7(
+  g1: Generator(a),
+  g2: Generator(b),
+  g3: Generator(c),
+  g4: Generator(d),
+  g5: Generator(e),
+  g6: Generator(g),
+  g7: Generator(h),
+  f: fn(a, b, c, d, e, g, h) -> i,
+) -> Generator(i) {
+  map2(
+    map6(g1, g2, g3, g4, g5, g6, fn(a, b, c, d, e, g) { #(a, b, c, d, e, g) }),
+    g7,
+    fn(sext, x) { f(sext.0, sext.1, sext.2, sext.3, sext.4, sext.5, x) },
+  )
+}
+
+/// Eight-way applicative map. Like `map7` but accepts an eighth
+/// generator. Stops at eight because nine is comfortably above every
+/// record arity in the audited workload; reach for nested `map2` /
+/// `bind` (and accept the shallow-shrinking caveat) if you genuinely
+/// need more.
+pub fn map8(
+  g1: Generator(a),
+  g2: Generator(b),
+  g3: Generator(c),
+  g4: Generator(d),
+  g5: Generator(e),
+  g6: Generator(g),
+  g7: Generator(h),
+  g8: Generator(i),
+  f: fn(a, b, c, d, e, g, h, i) -> j,
+) -> Generator(j) {
+  map2(
+    map7(g1, g2, g3, g4, g5, g6, g7, fn(a, b, c, d, e, g, h) {
+      #(a, b, c, d, e, g, h)
+    }),
+    g8,
+    fn(sept, x) { f(sept.0, sept.1, sept.2, sept.3, sept.4, sept.5, sept.6, x) },
+  )
+}
+
 /// Pair two independent generators.
 pub fn tuple2(g1: Generator(a), g2: Generator(b)) -> Generator(#(a, b)) {
   map2(g1, g2, fn(a, b) { #(a, b) })
@@ -247,6 +294,49 @@ pub fn tuple5(
   g5: Generator(e),
 ) -> Generator(#(a, b, c, d, e)) {
   map5(g1, g2, g3, g4, g5, fn(a, b, c, d, e) { #(a, b, c, d, e) })
+}
+
+/// Sextuple of independent generators.
+pub fn tuple6(
+  g1: Generator(a),
+  g2: Generator(b),
+  g3: Generator(c),
+  g4: Generator(d),
+  g5: Generator(e),
+  g6: Generator(g),
+) -> Generator(#(a, b, c, d, e, g)) {
+  map6(g1, g2, g3, g4, g5, g6, fn(a, b, c, d, e, g) { #(a, b, c, d, e, g) })
+}
+
+/// Septuple of independent generators.
+pub fn tuple7(
+  g1: Generator(a),
+  g2: Generator(b),
+  g3: Generator(c),
+  g4: Generator(d),
+  g5: Generator(e),
+  g6: Generator(g),
+  g7: Generator(h),
+) -> Generator(#(a, b, c, d, e, g, h)) {
+  map7(g1, g2, g3, g4, g5, g6, g7, fn(a, b, c, d, e, g, h) {
+    #(a, b, c, d, e, g, h)
+  })
+}
+
+/// Octuple of independent generators.
+pub fn tuple8(
+  g1: Generator(a),
+  g2: Generator(b),
+  g3: Generator(c),
+  g4: Generator(d),
+  g5: Generator(e),
+  g6: Generator(g),
+  g7: Generator(h),
+  g8: Generator(i),
+) -> Generator(#(a, b, c, d, e, g, h, i)) {
+  map8(g1, g2, g3, g4, g5, g6, g7, g8, fn(a, b, c, d, e, g, h, i) {
+    #(a, b, c, d, e, g, h, i)
+  })
 }
 
 // ---------- choice and weighting ----------
