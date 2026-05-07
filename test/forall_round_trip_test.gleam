@@ -1,7 +1,9 @@
 import gleam/int
+import gleam/string
 import metamon
 import metamon/generator
 import metamon/generator/range
+import metamon/relation
 
 pub fn forall_round_trip_int_to_string_test() {
   metamon.forall_round_trip(
@@ -79,5 +81,37 @@ pub fn forall_round_trip_partial_with_explicit_config_test() {
       }
     },
     decode: fn(s) { int.parse(s) },
+  )
+}
+
+pub fn forall_round_trip_under_with_custom_equality_test() {
+  // The "encoder" lowercases. The decoder is identity. Structural ==
+  // would fail for any input with uppercase letters; under
+  // case-insensitive equality the round-trip holds.
+  let case_insensitive =
+    relation.equivalent_under(string.lowercase, "case_insensitive")
+  metamon.forall_round_trip_under(
+    gen: generator.string_alpha(range.constant(0, 8)),
+    name: "case_insensitive_round_trip",
+    encode: string.lowercase,
+    decode: fn(s) { Ok(s) },
+    equality: case_insensitive,
+  )
+}
+
+pub fn forall_round_trip_under_with_explicit_config_test() {
+  let cfg =
+    metamon.default_config()
+    |> metamon.with_seed(metamon.seed(11))
+    |> metamon.with_runs_or_panic(30)
+  let case_insensitive =
+    relation.equivalent_under(string.lowercase, "case_insensitive")
+  metamon.forall_round_trip_under_with(
+    cfg: cfg,
+    gen: generator.string_alpha(range.constant(0, 8)),
+    name: "case_insensitive_seeded",
+    encode: string.lowercase,
+    decode: fn(s) { Ok(s) },
+    equality: case_insensitive,
   )
 }
