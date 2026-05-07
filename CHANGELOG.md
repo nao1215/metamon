@@ -14,6 +14,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   needs a custom equality (`forall_round_trip_under`). Both snippets
   are exercised by `gleam test` via `test/readme_test.gleam` and
   cannot drift out of sync with the API. (#32)
+- README *Limitations* section restructured: each caveat now carries
+  an explicit **What you'll observe** narrative and a
+  **Workaround** entry, and the section gains coverage of two
+  caveats that previously had no doc anchor: `generator.filter` panics
+  after 100 consecutive rejections, and `with_examples` accumulates
+  without deduplication. The five existing caveats (`Transform(a)`
+  type, `Relation(b)` arity, `bind` shrink shallowness, `recursive`
+  branch-swap, JS parallel runner state) were rewritten in the same
+  format. (#36)
 
 ### Added
 - `generator.bit_array_unaligned(bit_len)` produces a `BitArray` whose

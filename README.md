@@ -965,33 +965,57 @@ gives you two ways to keep failing inputs around:
 ## Limitations
 
 These are deliberate scope cuts, not bugs. They are listed so you
-know how to work around them.
+know what failure / surprise to expect and how to work around it.
 
-- `Transform(a)` is `a -> a`. Type-changing transformations
+- **`Transform(a)` is `a -> a`.** Type-changing transformations
   (`String -> Result(Spec, Error)`) cannot live inside the input
-  transform of an MR. Encode them as `f` instead and use the
-  output side of an Equivariant MR (or a plain `forall`) to assert
-  the relation.
-- `Relation(b)` compares two `b` values. Heterogeneous relations
+  transform of an MR.
+  - *Workaround:* encode the type change as `f` itself and use the
+    output side of an Equivariant MR (or a plain `forall`) to assert
+    the relation.
+- **`Relation(b)` compares two `b` values.** Heterogeneous relations
   `(a, b) -> Bool` (e.g. "the output is bounded by the input") are
-  expressed with `metamon.forall` and a hand-written predicate
-  that closes over both values.
-- `bind` shrinks shallowly. Generators built with `bind` keep the
+  not directly expressible.
+  - *Workaround:* use `metamon.forall` with a hand-written predicate
+    that closes over both values.
+- **`bind` shrinks shallowly.** Generators built with `bind` keep the
   outer shrink tree but the inner shrinks reflect only the first
-  inner generator metamon saw. Prefer applicative composition
-  (`map2..6`, `tuple2..5`) over monadic chains when both shapes
-  fit.
-- `recursive` does not swap branches during shrinking. A failing
-  `Node(left, right)` does not automatically reduce to either
-  `left` or `right`; only the contained leaves shrink. Add
-  `with_examples` listing the small base shapes when you need them
-  tried explicitly.
-- JavaScript-target parallel runners. `metamon/annotate` and
+  inner generator metamon saw — the shrunk failure may show an inner
+  value that is not minimal.
+  - *Workaround:* prefer applicative composition (`map2..6`,
+    `tuple2..5`) over monadic chains when both shapes fit. Reach for
+    `bind` only when the inner shape genuinely depends on the outer
+    value.
+- **`recursive` does not swap branches during shrinking.** A failing
+  `Node(left, right)` does not automatically reduce to either `left`
+  or `right`; only the contained leaves shrink toward their origins.
+  - *Workaround:* add `with_examples` listing the small base shapes
+    (`Leaf(0)`, `Node(Leaf(0), Leaf(0))`, etc.) so the runner tries
+    them explicitly before random sampling.
+- **`generator.filter` panics after 100 consecutive rejections.**
+  The `filter_retry_limit` is hard-coded; predicates that accept less
+  than ~1% of generated values will hit the panic with the message
+  `metamon.filter: predicate rejected the configured number of
+  candidates in a row; the predicate is too strict`.
+  - *Workaround:* tighten the underlying generator instead of
+    filtering downstream — e.g. `int(range.constant(0, 9))` rather
+    than `int(range.constant(-100, 100)) |> filter(fn(n) { n >= 0 && n <= 9 })`.
+- **`with_examples` accumulates and does not deduplicate.** Calling
+  it twice with overlapping lists yields duplicate edges; the runner
+  will try each duplicate separately before falling through to random
+  sampling.
+  - *Workaround:* dedupe the example list yourself before passing it
+    in, or use `add_edges` with a single known-unique set. (The
+    accumulation behaviour is intentional: composing a child
+    generator's edges with its parent's needs append, not merge.)
+- **JavaScript-target parallel runners.** `metamon/annotate` and
   `metamon/coverage` use a module-level `Map` on the JS target.
-  Vitest / jest workers run each test file in an isolated worker
-  thread, so parallelism *between files* is fine. Within a single
-  file, do not call `metamon.forall*` concurrently — start one,
-  wait for it, start the next.
+  Vitest / Jest workers run each test file in an isolated worker
+  thread, so parallelism *between files* is fine.
+  - *Workaround:* within a single file, do not call `metamon.forall*`
+    concurrently — start one, wait for it, start the next. On the
+    BEAM target every test runs in its own process, so the issue
+    does not arise.
 
 ## Modules
 
