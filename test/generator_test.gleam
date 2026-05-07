@@ -197,6 +197,128 @@ pub fn float_special_runs_through_metamon_test() {
   metamon.forall(generator.float_special(), fn(_x) { True })
 }
 
+// ---------- map7 / map8 / tuple6 / tuple7 / tuple8 ----------
+
+pub fn map7_combines_seven_generators_test() {
+  let g =
+    generator.map7(
+      generator.return(1),
+      generator.return(2),
+      generator.return(3),
+      generator.return(4),
+      generator.return(5),
+      generator.return(6),
+      generator.return(7),
+      fn(a, b, c, d, e, f, g) { a + b + c + d + e + f + g },
+    )
+  should.equal(generator.generate(g, seed.seed(0), 10).value, 28)
+}
+
+pub fn map8_combines_eight_generators_test() {
+  let g =
+    generator.map8(
+      generator.return(1),
+      generator.return(2),
+      generator.return(3),
+      generator.return(4),
+      generator.return(5),
+      generator.return(6),
+      generator.return(7),
+      generator.return(8),
+      fn(a, b, c, d, e, f, g, h) { a + b + c + d + e + f + g + h },
+    )
+  should.equal(generator.generate(g, seed.seed(0), 10).value, 36)
+}
+
+pub fn tuple6_packs_six_components_test() {
+  let g =
+    generator.tuple6(
+      generator.return(1),
+      generator.return(2),
+      generator.return(3),
+      generator.return(4),
+      generator.return(5),
+      generator.return(6),
+    )
+  should.equal(generator.generate(g, seed.seed(0), 10).value, #(
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+  ))
+}
+
+pub fn tuple7_packs_seven_components_test() {
+  let g =
+    generator.tuple7(
+      generator.return(1),
+      generator.return(2),
+      generator.return(3),
+      generator.return(4),
+      generator.return(5),
+      generator.return(6),
+      generator.return(7),
+    )
+  should.equal(generator.generate(g, seed.seed(0), 10).value, #(
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+  ))
+}
+
+pub fn tuple8_packs_eight_components_test() {
+  let g =
+    generator.tuple8(
+      generator.return(1),
+      generator.return(2),
+      generator.return(3),
+      generator.return(4),
+      generator.return(5),
+      generator.return(6),
+      generator.return(7),
+      generator.return(8),
+    )
+  should.equal(generator.generate(g, seed.seed(0), 10).value, #(
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+  ))
+}
+
+pub fn map7_uses_random_components_test() {
+  // Real generators (not constants) — sanity check that all seven
+  // components are exercised independently. The property should hold
+  // for every sample because each component is in [0, 9].
+  let g =
+    generator.map7(
+      generator.int(range.constant(0, 9)),
+      generator.int(range.constant(0, 9)),
+      generator.int(range.constant(0, 9)),
+      generator.int(range.constant(0, 9)),
+      generator.int(range.constant(0, 9)),
+      generator.int(range.constant(0, 9)),
+      generator.int(range.constant(0, 9)),
+      fn(a, b, c, d, e, f, g) { #(a, b, c, d, e, f, g) },
+    )
+  test_helpers.integers_from(0, 30)
+  |> list.each(fn(i) {
+    let value = generator.generate(g, seed.seed(i), 50).value
+    should.be_true(value.0 >= 0 && value.0 <= 9)
+    should.be_true(value.6 >= 0 && value.6 <= 9)
+  })
+}
+
 pub fn list_of_within_length_bounds_test() {
   let g =
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(2, 5))

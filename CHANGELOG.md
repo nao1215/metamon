@@ -50,6 +50,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   placeholder slot must now drop the entry instead. (#48)
 
 ### Added
+- `generator.map7`, `generator.map8`, `generator.tuple6`,
+  `generator.tuple7`, and `generator.tuple8` extend the existing
+  applicative-map / tupling family up to arity eight. Records with
+  six to eight fields (HTTP `Request`, multipart `Part`, OpenAPI
+  `Operation`, etc.) can now be built with a single applicative
+  composition that preserves integrated shrinking, instead of the
+  `bind`-based workaround whose shallow-shrinking caveat is
+  documented in the Limitations section. Stops at eight because
+  arity nine is comfortably above every record in the audited
+  workload; reach for nested `map2` / `bind` (and accept the caveat)
+  for higher arities. (#57)
 - `metamon.forall_round_trip_partial` and
   `forall_round_trip_partial_with` now register an automatic
   `coverage.cover_at_least(1, "encoder_accepted", ...)` requirement
