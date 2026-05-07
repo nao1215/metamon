@@ -14,6 +14,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   bignum bit walks, and parsers that must reject (or handle) sub-byte
   tails. The byte-aligned `bit_array(byte_len)` remains the right
   default for byte-oriented properties. (#31)
+- `metamon.forall_round_trip_partial` and
+  `forall_round_trip_partial_with` for codecs whose encoder is partial
+  (`encode: fn(a) -> Result(b, e)`). Inputs the encoder rejects with
+  `Error(_)` are treated as out of scope and skipped — the property is
+  vacuously satisfied for them. Use this when wrapping codecs with
+  structural preconditions (byte-alignment requirements, value-range
+  checks, hrp / version constraints) without the boilerplate
+  `let assert Ok(s) = encode(...)` shim. (#28)
 
 ### Changed
 - **Breaking:** `relation.approximately(epsilon)` now panics at
