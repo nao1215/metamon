@@ -87,15 +87,28 @@ fn run_loop(
 /// panic with a structured message that mirrors the regular failure
 /// report style.
 ///
-/// A `Passed` outcome with `ran == 0 && skipped == 0` is treated as
-/// a vacuous pass and panics with the same "empty commands list"
-/// message that `run([])` produces — even if `run` is somehow given
-/// an empty list via a bug, `assert_passed` will still surface it.
+/// A `Passed` outcome with `ran == 0` is treated as a vacuous pass
+/// and panics:
+///
+/// - `ran == 0 && skipped == 0` — "empty commands list" (matches the
+///   panic from `run([])`).
+/// - `ran == 0 && skipped > 0` — every command's `precondition`
+///   returned `False` for the model the runner walked. The test
+///   never compared model and real, so silently passing would hide
+///   precondition / initial-model bugs.
 pub fn assert_passed(outcome: Outcome(model)) -> Nil {
   case outcome {
     Passed(_, 0, 0) ->
       panic_with_message(
         "metamon.stateful.run: empty commands list (vacuous test). Pass at least one Command or use forall(...) for a non-stateful property.",
+      )
+    Passed(_, 0, skipped) ->
+      panic_with_message(
+        string.concat([
+          "metamon.stateful.assert_passed: 0 commands ran (all ",
+          int.to_string(skipped),
+          " skipped). Adjust preconditions or initial model so at least one command fires.",
+        ]),
       )
     Passed(_, _, _) -> Nil
     Failed(index, name, reason, _) ->

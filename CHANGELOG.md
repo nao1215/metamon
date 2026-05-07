@@ -20,6 +20,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `assert_passed` panics with the same message when handed an
   `Outcome` with `ran == 0 && skipped == 0`, so a vacuous outcome
   produced by other means still surfaces. Companion to #50. (#54)
+- `metamon/stateful.assert_passed` panics when handed an `Outcome`
+  with `ran == 0 && skipped > 0` — i.e. every command's
+  `precondition` returned `False` for the model the runner walked.
+  The message names the API and the skipped count and asks the
+  caller to adjust preconditions or the initial model so at least
+  one command fires; silently passing previously hid precondition /
+  initial-model bugs (model never advanced, `precondition` always
+  returned `False`, etc.). Companion to #54. (#55)
 
 ## [0.4.0] - 2026-05-07
 
