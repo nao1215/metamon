@@ -57,9 +57,15 @@ pub fn linear(lo: Int, hi: Int) -> Range {
 /// natural shrink target is not `0` (e.g. years near `2000` shrinking to
 /// `2000`).
 ///
-/// Panics at construction if `lo > hi`.
+/// Panics at construction if `lo > hi` or if `origin` is outside
+/// `[lo, hi]`. An origin outside the interval would silently emit
+/// out-of-range values at small sizes (`size = 0` collapses both
+/// bounds to `origin`), so failing visibly catches the misuse. This
+/// matches the invariant `linear` upholds automatically (its origin
+/// is always either `0` when inside the interval, or `lo`).
 pub fn linear_from(origin: Int, lo: Int, hi: Int) -> Range {
   let _ = assert_ordered(lo, hi)
+  let _ = assert_origin_in_bounds(origin, lo, hi)
   Range(origin: origin, kind: Linear(lo: lo, hi: hi))
 }
 
@@ -109,6 +115,14 @@ pub fn bounds(range: Range, size: Int, max_size: Int) -> #(Int, Int) {
 fn assert_ordered(lo: Int, hi: Int) -> Nil {
   case lo > hi {
     True -> panic as "range: lo must be <= hi (got inverted bounds)"
+    False -> Nil
+  }
+}
+
+fn assert_origin_in_bounds(origin: Int, lo: Int, hi: Int) -> Nil {
+  case origin < lo || origin > hi {
+    True ->
+      panic as "range.linear_from: origin must lie inside [lo, hi] (an out-of-range origin would emit values outside the documented interval at small sizes)"
     False -> Nil
   }
 }

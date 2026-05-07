@@ -14,6 +14,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   almost always a sign mistake on the caller's part. Failing visibly
   matches the project's posture for malformed numeric inputs in
   `Range.constant` / `Range.linear`. (#34)
+- **Breaking:** `Range.linear_from(origin, lo, hi)` now panics at
+  construction when `origin` lies outside `[lo, hi]`. The previous
+  behaviour silently emitted `origin` (and only `origin`) at small
+  sizes — for `linear_from(100, 0, 10)`, every value generated at
+  `size = 0` was `100`, outside the documented `[0, 10]` interval.
+  This matched neither `Range.linear`'s automatic in-bounds origin
+  selection nor the `Range` contract that values stay inside the
+  configured interval. Failing visibly catches the misuse early. (#35)
 
 ## [0.3.0] - 2026-05-06
 
