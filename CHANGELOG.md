@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Documentation
+- README §2.2.1 (new) walks through round-trip recipes for codecs
+  whose `encode` / `decode` types don't line up with the
+  `forall_round_trip` happy path: partial encoders
+  (`forall_round_trip_partial`) and source types whose decoded form
+  needs a custom equality (`forall_round_trip_under`). Both snippets
+  are exercised by `gleam test` via `test/readme_test.gleam` and
+  cannot drift out of sync with the API. (#32)
+
 ### Added
 - `generator.bit_array_unaligned(bit_len)` produces a `BitArray` whose
   total length in bits is in the configured range and may be sub-byte

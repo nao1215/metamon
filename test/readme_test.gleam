@@ -92,6 +92,42 @@ pub fn readme_round_trip_test() {
   })
 }
 
+// 2.2.1.A. Round-trip when the encoder is partial: encoder returns
+// Result(b, _), so use forall_round_trip_partial to skip encoder
+// rejections instead of writing a `let assert Ok(s) = encode(...)`
+// shim that turns documented partiality into a runtime panic.
+pub fn readme_round_trip_partial_test() {
+  // Stand-in for a real partial encoder: only encodes even integers.
+  metamon.forall_round_trip_partial(
+    gen: generator.int(range.constant(-50, 50)),
+    name: "even_only_round_trip",
+    encode: fn(n) {
+      case n % 2 == 0 {
+        True -> Ok(int.to_string(n))
+        False -> Error(Nil)
+      }
+    },
+    decode: fn(s) { int.parse(s) },
+  )
+}
+
+// 2.2.1.B. Round-trip with a caller-supplied equality. Use this when
+// the source type's decoded form normalises (multipart Part with
+// re-derived caches, MIME types whose essence lowercases, etc.). The
+// example below uses a lowercasing "encoder" to demonstrate that
+// uppercase letters round-trip under case-insensitive equality.
+pub fn readme_round_trip_under_test() {
+  let case_insensitive =
+    relation.equivalent_under(string.lowercase, "case_insensitive")
+  metamon.forall_round_trip_under(
+    gen: generator.string_alpha(range.constant(0, 8)),
+    name: "case_insensitive_round_trip",
+    encode: string.lowercase,
+    decode: fn(s) { Ok(s) },
+    equality: case_insensitive,
+  )
+}
+
 // 2.3. Invariance: f(T(x)) == f(x) — the function is unaffected by T.
 pub fn readme_invariance_test() {
   // list.length is invariant under reverse.
