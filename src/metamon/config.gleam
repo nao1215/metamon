@@ -91,6 +91,20 @@ pub fn with_max_edges(c: Config, n: Int) -> Result(Config, ConfigError) {
 
 /// Set a regression file path. The file is created on first failure
 /// and read on every subsequent run.
+///
+/// File format (TOML-flavoured, schema version 1) is documented in
+/// `metamon/internal/regression`. A version mismatch (a file written
+/// by a newer metamon) makes the runner skip replay rather than
+/// silently mis-parse forward-incompatible content; legacy v0 files
+/// without a `schema_version` header are still accepted.
+///
+/// Concurrency: each call to `record_regression_for` reads the file,
+/// appends one entry, and writes back. Concurrent test workers
+/// pointed at the same path can lose entries; use distinct paths per
+/// worker if you run properties in parallel within the same process
+/// (especially on the JavaScript target — on the BEAM, gleeunit's
+/// per-test process isolation already serialises file access for the
+/// tests themselves, but custom drivers should still split paths).
 pub fn with_regression_file(
   c: Config,
   path: String,

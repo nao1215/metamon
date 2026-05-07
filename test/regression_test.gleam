@@ -69,3 +69,83 @@ pub fn parse_skips_malformed_blocks_test() {
   let parsed = regression.parse(raw)
   should.equal(parsed, [])
 }
+
+pub fn parse_accepts_v0_legacy_files_without_version_header_test() {
+  // Files written before schema_version was introduced have no
+  // header line. The parser must still accept them.
+  let entry =
+    Entry(
+      mr_name: "legacy",
+      config_seed: 7,
+      run_index: 0,
+      size: 0,
+      edge_index: None,
+      note: None,
+      recorded: "ts",
+    )
+  let raw = regression.render(entry)
+  let parsed = regression.parse(raw)
+  case parsed {
+    [got] -> should.equal(got.mr_name, "legacy")
+    _ -> should.fail()
+  }
+}
+
+pub fn parse_accepts_v1_files_with_version_header_test() {
+  let entry =
+    Entry(
+      mr_name: "v1",
+      config_seed: 1,
+      run_index: 0,
+      size: 0,
+      edge_index: None,
+      note: None,
+      recorded: "ts",
+    )
+  let raw = regression.version_header() <> "\n\n" <> regression.render(entry)
+  let parsed = regression.parse(raw)
+  case parsed {
+    [got] -> should.equal(got.mr_name, "v1")
+    _ -> should.fail()
+  }
+}
+
+pub fn parse_with_version_rejects_unknown_schema_version_test() {
+  // A future v99 file written by a newer metamon must be rejected
+  // by the current parser, not silently mis-parsed.
+  let raw = "schema_version = 99\n\n[[failures]]\nmr = \"future\"\n"
+  case regression.parse_with_version(raw) {
+    Ok(_) -> should.fail()
+    Error(regression.UnsupportedSchemaVersion(found)) -> should.equal(found, 99)
+    Error(_) -> should.fail()
+  }
+}
+
+pub fn parse_with_version_rejects_malformed_version_test() {
+  let raw = "schema_version = not_a_number\n\n[[failures]]\nmr = \"x\"\n"
+  case regression.parse_with_version(raw) {
+    Ok(_) -> should.fail()
+    Error(regression.MalformedSchemaVersion(_)) -> Nil
+    Error(_) -> should.fail()
+  }
+}
+
+pub fn parse_lenient_returns_empty_on_unknown_version_test() {
+  // The lenient `parse` wrapper used by the runner returns [] (skip
+  // replay) instead of bubbling the error so a stale checked-in
+  // file does not abort the test run.
+  let raw = "schema_version = 99\n\n[[failures]]\n"
+  should.equal(regression.parse(raw), [])
+}
+
+pub fn version_header_exposes_current_value_test() {
+  should.equal(
+    regression.version_header(),
+    "schema_version = "
+      <> { regression.current_schema_version |> int_to_string },
+  )
+}
+
+@external(erlang, "erlang", "integer_to_binary")
+@external(javascript, "./metamon_ffi.mjs", "integer_to_string")
+fn int_to_string(n: Int) -> String

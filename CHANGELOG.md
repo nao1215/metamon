@@ -50,6 +50,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   placeholder slot must now drop the entry instead. (#48)
 
 ### Added
+- Regression-file format gains a `schema_version = 1` header line.
+  Newly written files always carry the header; legacy v0 files
+  (without the header) are still accepted by the parser. A future
+  schema bump (v2+) is rejected with a structured `ParseError`
+  (`UnsupportedSchemaVersion` / `MalformedSchemaVersion`) returned
+  from a new `regression.parse_with_version/1`. The lenient
+  `regression.parse/1` used by the runner returns `[]` (skip replay)
+  on version mismatch instead of aborting the run, so a stale
+  checked-in regression file from a newer metamon does not break a
+  downgrade. The schema is documented in the
+  `metamon/internal/regression` module docstring; the
+  `with_regression_file` config builder docstring points at it and
+  spells out the concurrency contract (each call reads-appends-writes
+  the file, so parallel workers should split paths). (#58)
 - `generator.map7`, `generator.map8`, `generator.tuple6`,
   `generator.tuple7`, and `generator.tuple8` extend the existing
   applicative-map / tupling family up to arity eight. Records with
