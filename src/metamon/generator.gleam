@@ -571,9 +571,39 @@ pub fn string(char_gen: Generator(String), len: Range) -> Generator(String) {
 }
 
 /// An ASCII string with length in `len`.
+///
+/// Random sampling spans the full ASCII range (`0x00`..`0x7F`),
+/// including control characters (`0x00`..`0x1F`, `0x7F`). Reach for
+/// `string_printable_ascii` if your property cannot tolerate control
+/// bytes; this function is for fuzzing parsers / serialisers that
+/// must handle the whole 7-bit space.
+///
+/// Curated edges include both control bytes (`\t`, `\n`) and
+/// printable boundaries (`" "`, `"~"`).
 pub fn string_ascii(len: Range) -> Generator(String) {
-  string(ascii_printable(), len)
+  string(ascii_full(), len)
   |> with_examples(strings_in_length_range(edge_lib.strings_ascii(), len))
+}
+
+/// A single ASCII codepoint generator (`0x00`..`0x7F`). Includes
+/// control characters; for printable-only output use
+/// `ascii_printable`. Curated edges cover the most useful
+/// boundaries: NUL, `\t`, `\n`, space, digit `0`, letters `A` / `z`,
+/// `~`, and DEL.
+fn ascii_full() -> Generator(String) {
+  let cp_gen = int(range.constant(0, 127))
+  map(cp_gen, codepoint_to_string)
+  |> override_edges([
+    "\u{0000}",
+    "\t",
+    "\n",
+    " ",
+    "0",
+    "A",
+    "z",
+    "~",
+    "\u{007F}",
+  ])
 }
 
 /// A string of ASCII letters (a-zA-Z) with length in `len`.
