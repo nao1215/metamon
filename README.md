@@ -879,6 +879,13 @@ a structured failure message when a command's `run` returns `Error`.
 programming error (vacuous test) and panics with a structured message.
 Use `forall(...)` if you need a non-stateful property instead.
 
+`stateful.assert_passed` also panics when every command's
+`precondition` returned `False` — i.e. the outcome is
+`Passed(_, ran: 0, skipped: N)` with `N > 0`. The test never compared
+model and real, so silently passing would hide precondition or
+initial-model bugs. Adjust the preconditions or initial model so at
+least one command fires.
+
 ### 6. Configuration
 
 Override the defaults via `with_*` builders. Validation errors

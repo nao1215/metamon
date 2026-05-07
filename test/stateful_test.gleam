@@ -89,6 +89,31 @@ pub fn assert_passed_panics_on_empty_passed_test() {
   should.be_true(string.contains(message, "empty commands list"))
 }
 
+pub fn all_preconditions_false_panics_test() {
+  let unreachable =
+    command.new(
+      name: "always_skipped",
+      precondition: fn(_m: Model) { False },
+      next_model: fn(m: Model) { m },
+      run: fn(_r) { Ok(Nil) },
+    )
+  let #(m, r) = fresh()
+  let outcome = stateful.run(m, r, [unreachable, unreachable, unreachable])
+  case outcome {
+    stateful.Passed(_, ran, skipped) -> {
+      should.equal(ran, 0)
+      should.equal(skipped, 3)
+    }
+    stateful.Failed(_, _, _, _) -> should.fail()
+  }
+  let #(panicked, message) =
+    capture_panic(fn() { stateful.assert_passed(outcome) })
+  should.be_true(panicked)
+  should.be_true(string.contains(message, "metamon.stateful.assert_passed"))
+  should.be_true(string.contains(message, "0 commands ran"))
+  should.be_true(string.contains(message, "all 3 skipped"))
+}
+
 pub fn good_command_sequence_passes_test() {
   let #(m, r) = fresh()
   let outcome =
