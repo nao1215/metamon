@@ -352,6 +352,30 @@ pub fn bit_array_utf8_decodes_back_to_string_test() {
   })
 }
 
+pub fn bit_array_unaligned_total_bits_within_range_test() {
+  // Every sample's bit_size must lie inside the configured range.
+  let g = generator.bit_array_unaligned(range.constant(0, 13))
+  test_helpers.integers_from(0, 30)
+  |> list.each(fn(i) {
+    let value = generator.generate(g, seed.seed(i), 50).value
+    let bits = bit_array.bit_size(value)
+    should.be_true(bits >= 0 && bits <= 13)
+  })
+}
+
+pub fn bit_array_unaligned_can_produce_sub_byte_lengths_test() {
+  // Sample widely; at least one value must have bit_size NOT divisible
+  // by 8. Without sub-byte support every sample would be byte-aligned
+  // and this assertion would fail — that's the property that pins the
+  // new behaviour.
+  let g = generator.bit_array_unaligned(range.constant(1, 23))
+  let any_unaligned =
+    test_helpers.integers_from(0, 60)
+    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 50).value })
+    |> list.any(fn(value) { bit_array.bit_size(value) % 8 != 0 })
+  should.be_true(any_unaligned)
+}
+
 fn each_byte_in_bit_array(bits: BitArray, check: fn(Int) -> Nil) -> Nil {
   case bits {
     <<>> -> Nil

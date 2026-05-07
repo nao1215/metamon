@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `generator.bit_array_unaligned(bit_len)` produces a `BitArray` whose
+  total length in bits is in the configured range and may be sub-byte
+  (i.e. not a multiple of 8). Use it to fuzz code paths that take an
+  arbitrary `BitArray`: codec internals, length-prefixed framing,
+  bignum bit walks, and parsers that must reject (or handle) sub-byte
+  tails. The byte-aligned `bit_array(byte_len)` remains the right
+  default for byte-oriented properties. (#31)
+
 ### Changed
 - **Breaking:** `relation.approximately(epsilon)` now panics at
   construction when `epsilon < 0.0`. The previous behaviour silently
