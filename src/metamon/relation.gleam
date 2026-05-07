@@ -105,9 +105,28 @@ fn remove_one_loop(
   }
 }
 
-/// `left` is a sub-multiset of `right`.
+/// Multiset subset: every element of `left` is matched against a
+/// *distinct* element of `right` (one-to-one, by structural equality).
+/// `subset_of([1, 1], [1])` is `False`; `subset_of([1, 1], [1, 1, 2])`
+/// is `True`. This matches the semantics of `permutation_of` (which is
+/// also multiset-based).
+///
+/// For the set-style interpretation that ignores multiplicity, use
+/// `set_subset_of()` instead.
 pub fn subset_of() -> Relation(List(a)) {
   Relation(name: "subset_of", holds: fn(left, right) { is_subset(left, right) })
+}
+
+/// Set subset: every element of `left` is contained somewhere in
+/// `right`, ignoring multiplicity. `set_subset_of([1, 1], [1])` is
+/// `True` because the only distinct value `1` is present.
+///
+/// For the multiset interpretation that requires distinct matches
+/// per occurrence, use `subset_of()` instead.
+pub fn set_subset_of() -> Relation(List(a)) {
+  Relation(name: "set_subset_of", holds: fn(left, right) {
+    is_set_subset(left, right)
+  })
 }
 
 fn is_subset(left: List(a), right: List(a)) -> Bool {
@@ -117,6 +136,17 @@ fn is_subset(left: List(a), right: List(a)) -> Bool {
       case remove_one(first, right) {
         Ok(remaining) -> is_subset(rest, remaining)
         Error(_) -> False
+      }
+  }
+}
+
+fn is_set_subset(left: List(a), right: List(a)) -> Bool {
+  case left {
+    [] -> True
+    [first, ..rest] ->
+      case list.contains(right, first) {
+        True -> is_set_subset(rest, right)
+        False -> False
       }
   }
 }

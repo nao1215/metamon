@@ -50,6 +50,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   placeholder slot must now drop the entry instead. (#48)
 
 ### Added
+- `relation.set_subset_of()` is a set-semantics counterpart to
+  `relation.subset_of()` (which is multiset). `set_subset_of([1, 1],
+  [1])` is `True`; `subset_of([1, 1], [1])` remains `False`. The
+  multiset version's docstring is rewritten to make the multiset
+  contract explicit and to point at `set_subset_of` for the
+  alternative; the README modules table tags both with `(multiset)`
+  / `(set)` so readers don't have to guess. Reach for `set_subset_of`
+  on header-style lists where presence matters but count does not;
+  reach for `subset_of` (multiset) when matching with multiplicity is
+  the intent. (#53)
 - `generator.float_special()` and `generator.float_special_edges()`
   expose the IEEE 754 special-value edges that the regular
   `generator.float(lo, hi)` never emits: `NaN`, `+Infinity`,

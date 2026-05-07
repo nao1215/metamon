@@ -91,6 +91,26 @@ pub fn subset_of_test() {
   should.be_false(r.holds([1, 2, 4], [1, 2, 3]))
 }
 
+pub fn subset_of_uses_multiset_semantics_test() {
+  // Cases the audit (#53) called out: the multiset interpretation is
+  // the existing behaviour; pin it explicitly so the contract is
+  // visible in the test suite.
+  let r = relation.subset_of()
+  should.be_true(r.holds([1, 2], [1, 2, 3]))
+  should.be_false(r.holds([1, 1], [1]))
+  should.be_true(r.holds([1, 1], [1, 1, 2]))
+}
+
+pub fn set_subset_of_uses_set_semantics_test() {
+  let r = relation.set_subset_of()
+  should.be_true(r.holds([1, 1], [1]))
+  should.be_true(r.holds([2, 3], [1, 2, 3, 4]))
+  should.be_false(r.holds([1, 4], [1, 2, 3]))
+  // Empty left is trivially a subset of anything.
+  should.be_true(r.holds([], [1, 2, 3]))
+  should.be_true(r.holds([], []))
+}
+
 pub fn monotone_test() {
   let r =
     relation.monotone(fn(a, b) {
