@@ -481,6 +481,24 @@ pub fn bit_array_utf8(codepoint_len: Range) -> Generator(BitArray) {
   string_unicode(codepoint_len) |> map(string_to_utf8_bit_array)
 }
 
+/// Bit array of arbitrary bit length, possibly NOT byte-aligned.
+/// `bit_len` is the total number of bits in the result.
+///
+/// Use this generator to fuzz code paths that take a `BitArray` whose
+/// total length is not necessarily a multiple of 8: codec internals,
+/// length-prefixed framing, bignum bit walks, and any parser that
+/// must reject (or handle) sub-byte tails. Reach for `bit_array` when
+/// byte-aligned input is sufficient — it is faster and the size
+/// metric matches byte-oriented properties more naturally.
+pub fn bit_array_unaligned(bit_len: Range) -> Generator(BitArray) {
+  list_of(int(range.constant(0, 1)), bit_len)
+  |> map(bits_to_bit_array)
+}
+
+fn bits_to_bit_array(bits: List(Int)) -> BitArray {
+  list.fold(bits, <<>>, fn(acc, b) { <<acc:bits, b:size(1)>> })
+}
+
 fn string_to_utf8_bit_array(s: String) -> BitArray {
   <<s:utf8>>
 }
