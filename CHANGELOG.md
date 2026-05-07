@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Breaking:** `relation.approximately(epsilon)` now panics at
+  construction when `epsilon < 0.0`. The previous behaviour silently
+  produced a degenerate "always false" relation that broke reflexivity
+  (a value was no longer "approximately equal" to itself), which is
+  almost always a sign mistake on the caller's part. Failing visibly
+  matches the project's posture for malformed numeric inputs in
+  `Range.constant` / `Range.linear`. (#34)
+
 ## [0.3.0] - 2026-05-06
 
 ### Added

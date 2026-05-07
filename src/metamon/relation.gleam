@@ -37,17 +37,29 @@ pub fn equivalent_under(via: fn(b) -> c, name: String) -> Relation(b) {
 }
 
 /// Floats within `epsilon` of each other.
+///
+/// Panics at construction if `epsilon` is negative. A negative epsilon
+/// would silently yield a degenerate "always false" relation (the
+/// absolute difference is always non-negative, so `diff <=. epsilon`
+/// can never hold). Failing visibly on a sign mistake matches the
+/// project's posture for malformed numeric inputs in `Range.constant`,
+/// `Range.linear`, etc.
 pub fn approximately(epsilon: Float) -> Relation(Float) {
-  Relation(
-    name: "approximately(" <> float.to_string(epsilon) <> ")",
-    holds: fn(left, right) {
-      let diff = case left >=. right {
-        True -> left -. right
-        False -> right -. left
-      }
-      diff <=. epsilon
-    },
-  )
+  case epsilon <. 0.0 {
+    True ->
+      panic as "metamon.approximately: epsilon must be >= 0.0 (a negative epsilon would make every pair compare False, including a value with itself)"
+    False ->
+      Relation(
+        name: "approximately(" <> float.to_string(epsilon) <> ")",
+        holds: fn(left, right) {
+          let diff = case left >=. right {
+            True -> left -. right
+            False -> right -. left
+          }
+          diff <=. epsilon
+        },
+      )
+  }
 }
 
 /// Two lists are permutations of each other (same multiset).
