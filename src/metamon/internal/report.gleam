@@ -32,6 +32,14 @@ pub type FailureReport {
     mr_name: String,
     test_name: String,
     config_seed: Int,
+    /// `Some(n)` when the user passed `metamon.seed(n)` and the
+    /// runner normalised it into a different canonical state (e.g.
+    /// `seed(0)` → `0xDEADBEEF`). The header annotates with
+    /// "originally seed(n)" so a user pinning `seed(0)` in source
+    /// can map it back to the reported `config seed`. `None` when
+    /// the seed was clock-derived (`random_seed`) or already
+    /// matched its canonical state.
+    config_seed_original: Option(Int),
     runs_done: Int,
     runs_total: Int,
     shrinks_done: Int,
@@ -48,6 +56,26 @@ pub type FailureReport {
     footnotes: List(String),
     coverage_snapshot: Option(coverage.Snapshot),
   )
+}
+
+/// Render the `config seed:` header value. The canonical state is
+/// always shown; when normalisation kicked in (the user passed
+/// `seed(n)` whose normalised form differs from `n`), the original
+/// integer is appended in parentheses so the user can map the report
+/// back to source.
+pub fn format_config_seed(state: Int, original: Option(Int)) -> String {
+  case original {
+    None -> int.to_string(state)
+    Some(n) ->
+      case n == state {
+        True -> int.to_string(state)
+        False ->
+          int.to_string(state)
+          <> " (originally seed("
+          <> int.to_string(n)
+          <> "))"
+      }
+  }
 }
 
 /// Render a failure report as a single-line JSON object. Stable
@@ -86,10 +114,15 @@ pub fn render_json(report: FailureReport) -> String {
     None -> json.null()
     Some(snap) -> coverage_to_json(snap)
   }
+  let config_seed_original_field = case report.config_seed_original {
+    None -> json.null()
+    Some(n) -> json.int(n)
+  }
   json.object([
     #("mr_name", json.string(report.mr_name)),
     #("test_name", json.string(report.test_name)),
     #("config_seed", json.int(report.config_seed)),
+    #("config_seed_original", config_seed_original_field),
     #("runs_done", json.int(report.runs_done)),
     #("runs_total", json.int(report.runs_total)),
     #("shrinks_done", json.int(report.shrinks_done)),
@@ -169,7 +202,8 @@ fn header_lines(report: FailureReport) -> List(String) {
     title,
     "  test:        " <> report.test_name,
     "  source:      " <> source,
-    "  config seed: " <> int.to_string(report.config_seed),
+    "  config seed: "
+      <> format_config_seed(report.config_seed, report.config_seed_original),
     "  runs:        "
       <> int.to_string(report.runs_done)
       <> " / "

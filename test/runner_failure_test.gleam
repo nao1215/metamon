@@ -150,6 +150,26 @@ pub fn forall_morphs_panics_on_empty_mr_list_test() {
   }
 }
 
+pub fn config_seed_zero_renders_with_originally_annotation_test() {
+  // Pin seed(0) so the runner's normalisation maps it to 0xDEADBEEF.
+  // The failure header should annotate the canonical state with the
+  // original "seed(0)" the user wrote in source.
+  let cfg = metamon.with_seed(metamon.default_config(), metamon.seed(0))
+  let outcome =
+    capture(fn() {
+      metamon.forall_with(cfg, generator.int(range.constant(0, 100)), fn(_n) {
+        False
+      })
+    })
+  case outcome {
+    Reason(text) -> {
+      should.be_true(string.contains(text, "config seed:"))
+      should.be_true(string.contains(text, "originally seed(0)"))
+    }
+    NoPanic -> should.fail()
+  }
+}
+
 pub fn forall_morph_n_panics_on_empty_transforms_test() {
   let outcome =
     capture(fn() {

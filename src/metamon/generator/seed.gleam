@@ -13,6 +13,7 @@
 //// statistical.
 
 import gleam/int
+import gleam/option.{type Option, None, Some}
 
 const mask_32: Int = 0xFFFFFFFF
 
@@ -23,21 +24,34 @@ const default_state: Int = 0xDEADBEEF
 /// Internal state of the PRNG. Always non-negative and ≤ `0xFFFFFFFF`.
 /// The xorshift family has `0` as a fixed point, so a masked-to-zero
 /// input is silently replaced with a non-zero default.
+///
+/// `original_input` records the integer the user originally passed to
+/// `seed/1` (if any) so failure reports can annotate the canonical
+/// state with the user-visible value when normalisation kicked in.
 pub opaque type Seed {
-  Seed(state: Int)
+  Seed(state: Int, original_input: Option(Int))
 }
 
-/// Construct a seed from an integer. Negative or out-of-range values
-/// are normalised by masking to the 32-bit positive window so the
-/// stream stays target-portable.
+/// Construct a seed from an integer.
+///
+/// The integer is masked to a 32-bit non-negative window so the
+/// stream stays target-portable. A masked-to-zero value is silently
+/// replaced with `0xDEADBEEF` because the xorshift family has `0` as
+/// a fixed point — emitting it would degenerate the stream.
+///
+/// Both normalisation steps mean `seed(0)`, `seed(0x100000000)` (= 2^32),
+/// and any other `value` whose 32-bit-masked form is `0` collapse to
+/// the same canonical state. Failure reports annotate the canonical
+/// state with the original input when normalisation kicked in (see
+/// `original_input/1`).
 pub fn seed(value: Int) -> Seed {
-  Seed(state: normalise(value))
+  Seed(state: normalise(value), original_input: Some(value))
 }
 
 /// Construct a seed from the system clock. Useful for ad-hoc local
 /// runs; CI should pin a value via `metamon.with_seed(metamon.seed(_))`.
 pub fn random_seed() -> Seed {
-  Seed(state: normalise(now_microseconds()))
+  Seed(state: normalise(now_microseconds()), original_input: None)
 }
 
 /// The raw integer state. Used by the regression-file format to
@@ -46,11 +60,21 @@ pub fn state(s: Seed) -> Int {
   s.state
 }
 
+/// The integer the user passed to `seed/1`, if any.
+///
+/// `None` for seeds derived from the system clock, from `next_int` /
+/// `next_int_in` advancement, or from `split`. `Some(n)` for seeds
+/// constructed via `seed(n)`. Failure reports compare this against
+/// `state/1` to decide whether to annotate "originally seed(n)".
+pub fn original_input(s: Seed) -> Option(Int) {
+  s.original_input
+}
+
 /// Advance the seed once and return the next non-negative integer
 /// alongside the advanced seed.
 pub fn next_int(s: Seed) -> #(Int, Seed) {
   let next_state = step(s.state)
-  #(next_state, Seed(state: next_state))
+  #(next_state, Seed(state: next_state, original_input: None))
 }
 
 /// Return an integer uniformly in the closed interval `[lo, hi]`.
@@ -85,8 +109,11 @@ pub fn split(s: Seed) -> #(Seed, Seed) {
   let #(left_state, _) = next_int(s)
   let xored =
     int.bitwise_and(int.bitwise_exclusive_or(left_state, split_xor), mask_32)
-  let #(right_state, _) = next_int(Seed(state: xored))
-  #(Seed(state: left_state), Seed(state: right_state))
+  let #(right_state, _) = next_int(Seed(state: xored, original_input: None))
+  #(
+    Seed(state: left_state, original_input: None),
+    Seed(state: right_state, original_input: None),
+  )
 }
 
 fn step(state: Int) -> Int {

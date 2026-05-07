@@ -49,6 +49,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   safety net. Test authors who used `weight = 0` to keep a
   placeholder slot must now drop the entry instead. (#48)
 
+### Documentation
+- `metamon.seed/1` (and the underlying `metamon/generator/seed.seed`)
+  docstring now describes the full normalisation: the integer is
+  masked to a 32-bit non-negative window, and a masked-to-zero value
+  is silently replaced with `0xDEADBEEF` because the xorshift family
+  has `0` as a fixed point. Failure-report headers annotate the
+  canonical state with the original input when normalisation kicked
+  in (e.g. `config seed: 3735928559 (originally seed(0))`), so a
+  user who pins `seed(0)` in source can map the report back to that
+  source line. The seed module also exposes a new `original_input/1`
+  accessor returning `Option(Int)` for downstream tools that want
+  the user-visible value. The JSON failure report gains a matching
+  `config_seed_original` field. (#47)
+
 ## [0.4.0] - 2026-05-07
 
 ### Documentation
