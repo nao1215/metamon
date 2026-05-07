@@ -376,3 +376,74 @@ pub fn forall_round_trip_with(
     }
   })
 }
+
+/// Run a round-trip property where the encoder is partial: the
+/// encoder returns `Result(b, e_enc)` because not every generated
+/// input is a valid input for the codec. Inputs the encoder rejects
+/// (`Error(_)`) are treated as out of scope and skipped — the
+/// property succeeds for them.
+///
+/// Use this variant for codecs whose encoder has structural
+/// preconditions: byte-alignment requirements, value-range checks,
+/// hrp / version constraints, etc. A typical pattern is to combine
+/// `forall_round_trip_partial` with a generator that produces the
+/// surrounding inputs (e.g. arbitrary `BitArray` plus arbitrary
+/// version bytes); the encoder filters down to the valid subset and
+/// the property checks the round-trip on that subset.
+///
+/// The failure report header is `round_trip[<name>]` so it is
+/// immediately obvious from the panic which round-trip broke. The
+/// underlying machinery is the same as `forall`, including shrinking
+/// of the source input.
+///
+/// ```gleam
+/// metamon.forall_round_trip_partial(
+///   gen: generator.tuple2(byte_gen, payload_gen),
+///   name: "base58check",
+///   encode: fn(pair) { base58check.encode(pair.0, pair.1) },
+///   decode: fn(s) {
+///     case base58check.decode(s) {
+///       Ok(decoded) -> Ok(#(decoded.version, decoded.payload))
+///       Error(e) -> Error(e)
+///     }
+///   },
+/// )
+/// ```
+pub fn forall_round_trip_partial(
+  gen gen: Generator(a),
+  name name: String,
+  encode encode: fn(a) -> Result(b, e_enc),
+  decode decode: fn(b) -> Result(a, e_dec),
+) -> Nil {
+  forall_round_trip_partial_with(
+    cfg: default_config(),
+    gen: gen,
+    name: name,
+    encode: encode,
+    decode: decode,
+  )
+}
+
+/// `forall_round_trip_partial` with an explicit configuration.
+pub fn forall_round_trip_partial_with(
+  cfg cfg: Config,
+  gen gen: Generator(a),
+  name name: String,
+  encode encode: fn(a) -> Result(b, e_enc),
+  decode decode: fn(b) -> Result(a, e_dec),
+) -> Nil {
+  runner.run_forall(cfg, "round_trip[" <> name <> "]", gen, fn(input) {
+    case encode(input) {
+      // The encoder declared this input out of scope. Skip it: the
+      // property is vacuously true for inputs the codec does not
+      // accept. Compose with a stricter generator if you want every
+      // input exercised.
+      Error(_) -> True
+      Ok(encoded) ->
+        case decode(encoded) {
+          Ok(decoded) -> decoded == input
+          Error(_) -> False
+        }
+    }
+  })
+}
