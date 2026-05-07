@@ -875,6 +875,10 @@ pub fn counter_increments_test() {
 commands on the current model. `stateful.assert_passed` panics with
 a structured failure message when a command's `run` returns `Error`.
 
+`stateful.run` requires at least one `Command`; passing `[]` is a
+programming error (vacuous test) and panics with a structured message.
+Use `forall(...)` if you need a non-stateful property instead.
+
 ### 6. Configuration
 
 Override the defaults via `with_*` builders. Validation errors

@@ -2,9 +2,18 @@
 //// Gleam, with command sequences executed against both worlds.
 
 import gleam/dict.{type Dict}
+import gleam/string
 import gleeunit/should
 import metamon/command
 import metamon/stateful
+
+@external(erlang, "metamon_ffi", "capture_panic")
+@external(javascript, "./metamon_ffi.mjs", "capture_panic")
+fn capture_panic_raw(thunk: fn() -> Nil) -> #(Bool, String)
+
+fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String) {
+  capture_panic_raw(thunk)
+}
 
 // ---------- model + real ----------
 
@@ -53,16 +62,31 @@ fn always_failing_command() -> command.Command(Model, Real) {
 
 // ---------- tests ----------
 
-pub fn empty_command_list_passes_test() {
+pub fn empty_command_list_panics_test() {
   let #(m, r) = fresh()
-  let outcome = stateful.run(m, r, [])
-  case outcome {
-    stateful.Passed(_, ran, skipped) -> {
-      should.equal(ran, 0)
-      should.equal(skipped, 0)
-    }
-    stateful.Failed(_, _, _, _) -> should.fail()
-  }
+  let #(panicked, message) =
+    capture_panic(fn() {
+      let _ = stateful.run(m, r, [])
+      Nil
+    })
+  should.be_true(panicked)
+  should.be_true(string.contains(message, "metamon.stateful.run"))
+  should.be_true(string.contains(message, "empty commands list"))
+  should.be_true(string.contains(message, "vacuous test"))
+}
+
+pub fn assert_passed_panics_on_empty_passed_test() {
+  let #(panicked, message) =
+    capture_panic(fn() {
+      stateful.assert_passed(stateful.Passed(
+        final_model: Model(value: 0),
+        ran: 0,
+        skipped: 0,
+      ))
+    })
+  should.be_true(panicked)
+  should.be_true(string.contains(message, "metamon.stateful.run"))
+  should.be_true(string.contains(message, "empty commands list"))
 }
 
 pub fn good_command_sequence_passes_test() {

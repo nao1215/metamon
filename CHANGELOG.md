@@ -13,6 +13,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   empty transforms list (vacuous test)" message that points users at
   `forall(...)` for the no-MR case. This matches the existing
   empty-list rejection in `frequency` / `one_of` / `element_of`. (#50)
+- `metamon/stateful.run(model, real, [])` no longer returns
+  `Passed(ran: 0, skipped: 0)` silently. The function panics with a
+  structured "empty commands list (vacuous test)" message that points
+  users at `forall(...)` for the non-stateful case. The companion
+  `assert_passed` panics with the same message when handed an
+  `Outcome` with `ran == 0 && skipped == 0`, so a vacuous outcome
+  produced by other means still surfaces. Companion to #50. (#54)
 
 ## [0.4.0] - 2026-05-07
 
