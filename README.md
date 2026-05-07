@@ -713,9 +713,23 @@ pub fn permutation_of_test() {
 }
 
 pub fn subset_of_test() {
-  // subset_of: every element of the left list appears in the right.
+  // subset_of: multiset subset — every element of left is matched
+  // against a *distinct* element of right (so [1, 1] is not a
+  // subset of [1] because the second 1 has no match left).
   let sub = relation.subset_of()
   should.be_true(sub.holds([2, 3], [1, 2, 3, 4]))
+  should.be_false(sub.holds([1, 1], [1]))
+  should.be_true(sub.holds([1, 1], [1, 1, 2]))
+}
+
+pub fn set_subset_of_test() {
+  // set_subset_of: set subset — every element of left is contained
+  // somewhere in right, ignoring multiplicity. Reach for this when
+  // the lists are header-style (presence matters, count does not).
+  let sub = relation.set_subset_of()
+  should.be_true(sub.holds([1, 1], [1]))
+  should.be_true(sub.holds([2, 3], [1, 2, 3, 4]))
+  should.be_false(sub.holds([1, 4], [1, 2, 3]))
 }
 
 pub fn monotone_test() {
@@ -1065,7 +1079,7 @@ know what failure / surprise to expect and how to work around it.
 | `metamon/transform/list`   | `reverse`, `dedupe`, `prepend`, `append`, `shuffle` |
 | `metamon/transform/string` | `reverse`, `lowercase`, `uppercase`, `trim`, `prepend`, `append` |
 | `metamon/transform/dict`   | `insert`, `remove`, `shuffle_keys` |
-| `metamon/relation` | `Relation(b)`, `new`, `equal`, `not_equal`, `equivalent_under`, `approximately`, `permutation_of`, `subset_of`, `monotone`, `implies`, `and`, `or`, `invert`, `rename`, `RelationN(b)`, `n_new`, `all_equal`, `pairwise` (N-ary relations for `forall_morph_n`) |
+| `metamon/relation` | `Relation(b)`, `new`, `equal`, `not_equal`, `equivalent_under`, `approximately`, `permutation_of`, `subset_of` (multiset), `set_subset_of` (set), `monotone`, `implies`, `and`, `or`, `invert`, `rename`, `RelationN(b)`, `n_new`, `all_equal`, `pairwise` (N-ary relations for `forall_morph_n`) |
 | `metamon/diff` | Structural diff used in failure reports: `diff`, `diff_string`, `render`, `Same`/`Differ`/`ListDiff`/`TupleDiff`/`StringDiff` |
 | `metamon/annotate` | `annotate`, `annotate_value`, `footnote`, `reset`, `current_annotations`, `current_footnotes` |
 | `metamon/coverage` | `classify`, `cover`, `cover_at_least`, `classify_in_bucket`, `collect`, `snapshot`, `shortfalls`, `actual_pct`, `target_pct_of`, `requirements_of`, `collected_of`, `hits_for`, `first_shortfall`, `Pct`/`Count` requirement kinds |
