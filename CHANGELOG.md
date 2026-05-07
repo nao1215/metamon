@@ -50,6 +50,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   placeholder slot must now drop the entry instead. (#48)
 
 ### Added
+- `command.no_precondition` is a clearer-named synonym for
+  `command.always`. The "no precondition" reading matches the
+  constructor's actual contract (the precondition arm is `fn(_m) {
+  True }`); "always" reads as "always runs", which overstates the
+  guarantee — the command's `run` step can still return `Error`,
+  halting the sequence. `command.always` is kept as a non-deprecated
+  alias so existing call sites continue to compile. Prefer
+  `no_precondition` in new code. (#56)
 - `relation.set_subset_of()` is a set-semantics counterpart to
   `relation.subset_of()` (which is multiset). `set_subset_of([1, 1],
   [1])` is `True`; `subset_of([1, 1], [1])` remains `False`. The
