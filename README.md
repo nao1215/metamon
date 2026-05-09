@@ -375,6 +375,32 @@ pub fn sum_multi_mr_test() {
 
 ## Round-trip variants
 
+> **Tip — encoder / decoder libraries.** If your library exposes a
+> paired `encode` / `decode`, a single `forall_round_trip` call
+> exercises a useful first invariant with no per-input handwriting.
+> Drop this into `test/` as a starter property:
+>
+> ```gleam
+> import metamon
+> import metamon/generator
+> import metamon/generator/range
+>
+> pub fn encode_decode_round_trip_test() {
+>   metamon.forall_round_trip(
+>     gen: generator.bit_array(range.constant(0, 64)),
+>     name: "my_codec",
+>     encode: my_codec.encode,
+>     decode: my_codec.decode,
+>   )
+> }
+> ```
+>
+> The two variants below
+> (`forall_round_trip_partial` and `forall_round_trip_under`) cover
+> the common shapes a real codec hits — partial encoders that reject
+> some inputs, and decoded forms that compare equal only under a
+> normalising projection.
+
 `forall_round_trip` requires `encode: a -> b` and
 `decode: b -> Result(a, _)`. Real codec libraries often produce
 `encode: a -> Result(b, _)` (when not every input is valid for the

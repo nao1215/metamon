@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Documentation
+
+- README's `## Round-trip variants` section now opens with a short
+  "Tip — encoder / decoder libraries" callout that shows the canonical
+  starter property for any package that owns a paired `encode` /
+  `decode`. The callout is intentionally a copy-pasteable
+  `forall_round_trip` snippet so codec authors see the recipe before
+  diving into the partial / custom-equality variants. (#75)
+
 ### Added
 
 - Property-based self-tests in
