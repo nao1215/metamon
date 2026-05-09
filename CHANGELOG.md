@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Property-based self-tests in
+  `test/metamon_self_property_test.gleam` that exercise `transform`,
+  `relation`, and `generator` laws against metamon-generated inputs
+  rather than the point fixtures the existing per-feature test files
+  use. Highlights: `transform.then` is associative with `identity` as
+  a two-sided neutral and `repeat(t, n)` equals n compositions;
+  `relation.and` / `or` / `invert` match the corresponding boolean
+  operations and `invert ∘ invert == identity`; `relation.equal` is
+  reflexive and symmetric; `relation.permutation_of` and
+  `subset_of` hold on every list compared with itself and on the
+  reverse pair; `generator.non_negative_int` / `positive_int` /
+  `negative_int` / `byte` produce values in their documented ranges;
+  `generator.list_of(_, range.constant(0, n))` produces lists of
+  length in `[0, n]` and `non_empty_list_of` always produces at
+  least one element.
+
 ## [0.5.0] - 2026-05-07
 
 ### Fixed
