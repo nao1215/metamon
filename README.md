@@ -32,6 +32,7 @@ sync with the API.
 - [JSON output](#json-output)
 - [N-ary metamorphic relations](#n-ary-metamorphic-relations)
 - [Stateful / model-based testing](#stateful--model-based-testing)
+- [Case study: CRDT algebraic laws](#case-study-crdt-algebraic-laws)
 - [Configuration](#configuration)
 - [Reading a failure report](#reading-a-failure-report)
 - [Choosing PBT vs MT vs `assert_morph`](#choosing-pbt-vs-mt-vs-assert_morph)
@@ -913,6 +914,97 @@ Use `forall(...)` if you need a non-stateful property instead.
 model and real, so silently passing would hide precondition or
 initial-model bugs. Adjust the preconditions or initial model so at
 least one command fires.
+
+## Case study: CRDT algebraic laws
+
+CRDTs (conflict-free replicated data types) are characterised by
+three laws on their `merge` operator:
+
+| Law | Statement |
+|-----|-----------|
+| Idempotency | `merge(a, a) == a` |
+| Commutativity | `merge(a, b) == merge(b, a)` |
+| Associativity | `merge(merge(a, b), c) == merge(a, merge(b, c))` |
+
+A G-Counter (grow-only counter) is the simplest CRDT: each replica
+holds a per-node counter, and `merge` takes the per-key max. Here is
+the implementation alongside the three laws expressed in metamon:
+
+```gleam
+import gleam/dict.{type Dict}
+import gleam/list
+import metamon
+import metamon/generator
+import metamon/generator/range
+
+type GCounter =
+  Dict(String, Int)
+
+fn merge(left: GCounter, right: GCounter) -> GCounter {
+  dict.fold(right, left, fn(acc, key, value) {
+    case dict.get(acc, key) {
+      Ok(current) if current >= value -> acc
+      _ -> dict.insert(acc, key, value)
+    }
+  })
+}
+
+fn make_gcounter(pairs: List(#(String, Int))) -> GCounter {
+  list.fold(pairs, dict.new(), fn(acc, pair) {
+    dict.insert(acc, pair.0, pair.1)
+  })
+}
+
+pub fn readme_gcounter_idempotent_test() {
+  metamon.forall(generator.int(range.constant(0, 100)), fn(seed) {
+    let counter =
+      make_gcounter([
+        #("node-A", seed),
+        #("node-B", seed * 2),
+        #("node-C", seed * 3),
+      ])
+    merge(counter, counter) == counter
+  })
+}
+
+pub fn readme_gcounter_commutative_test() {
+  metamon.forall(generator.int(range.constant(0, 100)), fn(seed) {
+    let left = make_gcounter([#("node-A", seed), #("node-B", seed * 2)])
+    let right = make_gcounter([#("node-A", seed + 1), #("node-C", seed * 3)])
+    merge(left, right) == merge(right, left)
+  })
+}
+
+pub fn readme_gcounter_associative_test() {
+  metamon.forall(generator.int(range.constant(0, 100)), fn(seed) {
+    let a = make_gcounter([#("X", seed), #("Y", seed + 1)])
+    let b = make_gcounter([#("X", seed + 5), #("Z", seed + 7)])
+    let c = make_gcounter([#("Y", seed + 9), #("Z", seed + 11)])
+    merge(merge(a, b), c) == merge(a, merge(b, c))
+  })
+}
+```
+
+Three things to note:
+
+1. **`forall` is the right primitive when the property is a binary or
+   ternary equation.** `idempotency_of` and `commutativity_of` are
+   metamorphic-relation templates over a unary `f: a -> a`, so they
+   do not directly express `merge(a, a) == a` or `merge(a, b, c)`-style
+   laws. Falling back to `forall` is the idiomatic way to test n-ary
+   operators.
+2. **Per-replica state is generated indirectly via a seed.** The
+   generator produces an `Int`, and the test body uses it to derive
+   deterministic counter snapshots. This keeps the generator simple
+   while still exercising the laws across many shapes.
+3. **Failure of any one law is a Byzantine-style bug.** If
+   associativity fails, replicas that received the same operations
+   in different orders will diverge silently — exactly the class of
+   bug that property-based testing catches and unit testing misses.
+
+The three test functions above are mirrored in
+`test/readme_test.gleam` so the example cannot drift from the actual
+API.
 
 ## Configuration
 
