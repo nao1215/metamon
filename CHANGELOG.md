@@ -18,6 +18,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   cases in one module makes it obvious which builder × boundary
   pairs are pinned and prevents the per-builder leakage pattern
   that produced #35 and #52. (#83)
+- New `test/json_schema_contract_test.gleam` module pins the JSON
+  failure-report schema declared stable in README §JSON output.
+  Triggers each public failure shape that emits JSON
+  (`forall`, `forall_morph`, `forall_round_trip`) and asserts that
+  every one of the 17 README-listed top-level keys is present, plus
+  the documented value-type for `config_seed` / `runs_done` /
+  `runs_total` / `shrinks_done` (Int), `shrink_capped` (Bool),
+  `annotations` / `footnotes` (Array), and `coverage` (Object or
+  null). Locks down the contract that downstream `jq` pipelines,
+  GitHub Actions annotations, and LLM-driven analysis steps depend
+  on. (#82)
 
 ## [0.7.0] - 2026-05-11
 
