@@ -29,6 +29,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   null). Locks down the contract that downstream `jq` pipelines,
   GitHub Actions annotations, and LLM-driven analysis steps depend
   on. (#82)
+- New `test/regression_robustness_test.gleam` module pins the
+  deviation behaviour of `regression.parse` /
+  `parse_with_version`: malformed TOML, truncated blocks,
+  unknown future schema_version, malformed schema_version line,
+  bad value types, missing required fields, CRLF line endings,
+  UTF-8 BOM, large multi-block files, and duplicate keys in one
+  block. Adds three PBT-style fuzz tests using metamon's own
+  `string_printable_ascii` and `string_unicode` generators that
+  assert "no panic" across 200 iterations each — the only public
+  surface ingesting user-controlled file content gets the same
+  fuzz discipline metamon applies to its other public surface.
+  Companion to #58 (which pinned the format); #84 pins the
+  format-deviation behaviour. (#84)
 
 ## [0.7.0] - 2026-05-11
 
