@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Documentation
+
+- README adds a **"Case study: CRDT algebraic laws"** section between
+  Stateful / model-based testing and Configuration. The case study
+  shows how a single user-defined type (G-Counter) can be tested
+  against three algebraic laws — idempotency, commutativity,
+  associativity — using `metamon.forall`. Demonstrates the idiomatic
+  fallback to `forall` when properties are n-ary equations that don't
+  fit the unary `idempotency_of` / `commutativity_of` MR templates.
+  The example pitches metamon as a natural fit for distributed-systems
+  / state-replication library authors who reach for property-based
+  testing first. The three test functions in the example are mirrored
+  in `test/readme_test.gleam` so the sample cannot drift from the
+  actual API. Table of contents updated to link the new section. (#79)
+
 ## [0.6.0] - 2026-05-09
 
 ### Documentation
