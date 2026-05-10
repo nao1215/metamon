@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Tests
+
+- New `test/config_boundary_test.gleam` module pins the validation
+  contracts of every `with_*` config builder (`with_runs`,
+  `with_max_size`, `with_shrink_limit`, `with_max_edges`,
+  `with_regression_file`) and every `range` constructor
+  (`singleton`, `constant`, `linear`, `linear_from`,
+  `exponential`) for negative, zero, smallest-valid, very-large,
+  inverted-bounds, and singleton-pair inputs. Centralising these
+  cases in one module makes it obvious which builder × boundary
+  pairs are pinned and prevents the per-builder leakage pattern
+  that produced #35 and #52. (#83)
+
 ## [0.7.0] - 2026-05-11
 
 ### Documentation
