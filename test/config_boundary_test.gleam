@@ -10,36 +10,9 @@
 //// already uses for `linear_from`.
 
 import gleam/option.{None}
-import gleam/string
 import gleeunit/should
 import metamon/config
 import metamon/generator/range
-
-// ---------- shared panic-capture helper ----------
-
-pub type PanicOutcome {
-  PanickedWith(message: String)
-  DidNotPanic
-}
-
-@external(erlang, "metamon_ffi", "capture_panic")
-@external(javascript, "./metamon_ffi.mjs", "capture_panic")
-fn capture_panic_raw(thunk: fn() -> Nil) -> #(Bool, String)
-
-fn capture_panic(thunk: fn() -> Nil) -> PanicOutcome {
-  let #(panicked, message) = capture_panic_raw(thunk)
-  case panicked {
-    True -> PanickedWith(message: message)
-    False -> DidNotPanic
-  }
-}
-
-fn assert_panic_contains(outcome: PanicOutcome, fragment: String) -> Nil {
-  case outcome {
-    PanickedWith(message) -> should.be_true(string.contains(message, fragment))
-    DidNotPanic -> should.fail()
-  }
-}
 
 // ---------- with_runs ----------
 
@@ -209,17 +182,12 @@ pub fn range_constant_singleton_pair_is_constant_test() {
   should.equal(range.bounds(r, 99, 99), #(5, 5))
 }
 
-pub fn range_constant_inverted_bounds_panic_test() {
-  // Pin: inverted bounds panic at construction. The implementation
-  // chose "fail visibly" over "swap" or "Error" because a swapped
-  // pair almost always indicates a caller bug, and silently
-  // normalising would mask the misuse.
-  let outcome =
-    capture_panic(fn() {
-      let _ = range.constant(10, 0)
-      Nil
-    })
-  assert_panic_contains(outcome, "lo must be <= hi")
+pub fn range_constant_inverted_bounds_auto_swap_test() {
+  // Pin: as of #89, inverted bounds are auto-swapped to match the
+  // `generator.float` lenient convention rather than panicking. The
+  // resulting bounds are normalised to `[hi, lo]`.
+  let r = range.constant(10, 0)
+  should.equal(range.bounds(r, 0, 99), #(0, 10))
 }
 
 pub fn range_constant_extreme_bounds_no_overflow_test() {
@@ -232,13 +200,9 @@ pub fn range_constant_extreme_bounds_no_overflow_test() {
 
 // ---------- range.linear ----------
 
-pub fn range_linear_inverted_bounds_panic_test() {
-  let outcome =
-    capture_panic(fn() {
-      let _ = range.linear(10, 0)
-      Nil
-    })
-  assert_panic_contains(outcome, "lo must be <= hi")
+pub fn range_linear_inverted_bounds_auto_swap_test() {
+  let r = range.linear(10, 0)
+  should.equal(range.bounds(r, 99, 99), #(0, 10))
 }
 
 pub fn range_linear_extreme_bounds_no_overflow_at_size_zero_test() {
@@ -251,27 +215,20 @@ pub fn range_linear_extreme_bounds_no_overflow_at_size_zero_test() {
 
 // ---------- range.linear_from ----------
 
-pub fn range_linear_from_inverted_bounds_panic_test() {
-  // The existing range_test.gleam pins origin-out-of-range; this
-  // pins the lo > hi sibling case (which is checked first and so
-  // produces a different message).
-  let outcome =
-    capture_panic(fn() {
-      let _ = range.linear_from(5, 10, 0)
-      Nil
-    })
-  assert_panic_contains(outcome, "lo must be <= hi")
+pub fn range_linear_from_inverted_bounds_auto_swap_test() {
+  // #89 auto-swaps inverted `lo > hi` pairs. With swapping, an
+  // origin of 5 lies inside the normalised [0, 10] bounds and the
+  // range is constructed successfully.
+  let r = range.linear_from(5, 10, 0)
+  should.equal(range.origin(r), 5)
+  should.equal(range.bounds(r, 99, 99), #(0, 10))
 }
 
 // ---------- range.exponential ----------
 
-pub fn range_exponential_inverted_bounds_panic_test() {
-  let outcome =
-    capture_panic(fn() {
-      let _ = range.exponential(10, 0)
-      Nil
-    })
-  assert_panic_contains(outcome, "lo must be <= hi")
+pub fn range_exponential_inverted_bounds_auto_swap_test() {
+  let r = range.exponential(10, 0)
+  should.equal(range.bounds(r, 99, 99), #(0, 10))
 }
 
 pub fn range_exponential_singleton_pair_is_constant_test() {
