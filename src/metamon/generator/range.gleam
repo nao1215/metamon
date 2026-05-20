@@ -28,11 +28,11 @@ pub fn singleton(value: Int) -> Range {
 /// A range that ignores `size` and always uses `[lo, hi]`. Origin is `lo`
 /// (or `0` if `0` lies inside the interval, which usually shrinks better).
 ///
-/// Panics at construction if `lo > hi`. An inverted pair is almost always
-/// a bug (swapped arguments), so failing visibly catches it earlier than
-/// silently normalising.
+/// Inverted bounds (`lo > hi`) are auto-swapped to match the lenient
+/// policy `generator.float` already uses. Use `singleton` when both
+/// values are intentionally equal.
 pub fn constant(lo: Int, hi: Int) -> Range {
-  let _ = assert_ordered(lo, hi)
+  let #(lo, hi) = order_bounds(lo, hi)
   let chosen_origin = case lo <= 0 && 0 <= hi {
     True -> 0
     False -> lo
@@ -43,9 +43,9 @@ pub fn constant(lo: Int, hi: Int) -> Range {
 /// A range that scales linearly: at `size = 0` returns `[origin, origin]`
 /// and at `size = max_size` returns the full `[lo, hi]`.
 ///
-/// Panics at construction if `lo > hi`.
+/// Inverted bounds (`lo > hi`) are auto-swapped.
 pub fn linear(lo: Int, hi: Int) -> Range {
-  let _ = assert_ordered(lo, hi)
+  let #(lo, hi) = order_bounds(lo, hi)
   let chosen_origin = case lo <= 0 && 0 <= hi {
     True -> 0
     False -> lo
@@ -57,14 +57,15 @@ pub fn linear(lo: Int, hi: Int) -> Range {
 /// natural shrink target is not `0` (e.g. years near `2000` shrinking to
 /// `2000`).
 ///
-/// Panics at construction if `lo > hi` or if `origin` is outside
-/// `[lo, hi]`. An origin outside the interval would silently emit
+/// Inverted bounds (`lo > hi`) are auto-swapped. After that swap, the
+/// function still panics if `origin` is outside the resulting
+/// `[lo, hi]` — an origin outside the interval would silently emit
 /// out-of-range values at small sizes (`size = 0` collapses both
 /// bounds to `origin`), so failing visibly catches the misuse. This
 /// matches the invariant `linear` upholds automatically (its origin
 /// is always either `0` when inside the interval, or `lo`).
 pub fn linear_from(origin: Int, lo: Int, hi: Int) -> Range {
-  let _ = assert_ordered(lo, hi)
+  let #(lo, hi) = order_bounds(lo, hi)
   let _ = assert_origin_in_bounds(origin, lo, hi)
   Range(origin: origin, kind: Linear(lo: lo, hi: hi))
 }
@@ -72,9 +73,9 @@ pub fn linear_from(origin: Int, lo: Int, hi: Int) -> Range {
 /// Exponential scaling: bounds grow roughly like `size^2 / max_size`,
 /// well-suited for ranges spanning many orders of magnitude.
 ///
-/// Panics at construction if `lo > hi`.
+/// Inverted bounds (`lo > hi`) are auto-swapped.
 pub fn exponential(lo: Int, hi: Int) -> Range {
-  let _ = assert_ordered(lo, hi)
+  let #(lo, hi) = order_bounds(lo, hi)
   let chosen_origin = case lo <= 0 && 0 <= hi {
     True -> 0
     False -> lo
@@ -112,10 +113,13 @@ pub fn bounds(range: Range, size: Int, max_size: Int) -> #(Int, Int) {
   }
 }
 
-fn assert_ordered(lo: Int, hi: Int) -> Nil {
+/// Normalise a pair of bounds so that `lo <= hi`. Inverted pairs are
+/// swapped silently to match the convention `generator.float` uses;
+/// equal pairs pass through unchanged.
+fn order_bounds(lo: Int, hi: Int) -> #(Int, Int) {
   case lo > hi {
-    True -> panic as "range: lo must be <= hi (got inverted bounds)"
-    False -> Nil
+    True -> #(hi, lo)
+    False -> #(lo, hi)
   }
 }
 
