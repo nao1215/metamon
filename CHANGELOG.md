@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-20
+
 ### Changed
 
 - `metamon/generator/range`: `range.constant`, `range.linear`, `range.linear_from`, and `range.exponential` now silently swap inverted `lo > hi` bounds instead of panicking. This matches the lenient convention `generator.float` already uses for its `(min, max)` arguments — a property-based testing surface should not pick whichever crash policy was wired into a particular constructor when both halves accept the same arithmetic. `range.linear_from` continues to panic when the supplied `origin` falls outside the (post-swap) `[lo, hi]` interval, because an out-of-range origin would emit values outside the documented bounds at small sizes; that diagnostic is preserved verbatim. (#89)
