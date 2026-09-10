@@ -169,7 +169,11 @@ pub fn forall(g: Generator(a), property: fn(a) -> Bool) -> Nil {
 }
 
 /// Run a property with an explicit configuration.
-pub fn forall_with(cfg: Config, g: Generator(a), property: fn(a) -> Bool) -> Nil {
+pub fn forall_with(
+  cfg: Config,
+  g: Generator(a),
+  property: fn(a) -> Bool,
+) -> Nil {
   runner.run_forall(cfg, "forall", g, property)
 }
 
@@ -184,7 +188,10 @@ pub fn forall_with(cfg: Config, g: Generator(a), property: fn(a) -> Bool) -> Nil
 /// is what determines the branch. Without it, `forall` failure reports
 /// only show the shrunk source input, which can force a debug round-trip
 /// to recover what `f(input)` actually was.
-pub fn forall_observable(g: Generator(a), predicate: fn(a) -> #(b, Bool)) -> Nil {
+pub fn forall_observable(
+  g: Generator(a),
+  predicate: fn(a) -> #(b, Bool),
+) -> Nil {
   forall_observable_with(default_config(), g, predicate)
 }
 
@@ -256,7 +263,11 @@ pub fn forall_morph_n_with(
 ///
 /// Passing `[]` is a programming error (vacuous test) and panics with
 /// a structured message — use `forall(...)` for a single-input property.
-pub fn forall_morphs(g: Generator(a), ms: List(Mr(a, b)), f: fn(a) -> b) -> Nil {
+pub fn forall_morphs(
+  g: Generator(a),
+  ms: List(Mr(a, b)),
+  f: fn(a) -> b,
+) -> Nil {
   runner.run_forall_morphs(
     default_config(),
     "forall_morphs",
@@ -299,7 +310,10 @@ pub fn idempotency_of(name name: String, of f: fn(a) -> a) -> Mr(a, a) {
 }
 
 /// `f(T(x)) == f(x)` — `f` is invariant under the input transform.
-pub fn invariant_under(name name: String, under under: Transform(a)) -> Mr(a, b) {
+pub fn invariant_under(
+  name name: String,
+  under under: Transform(a),
+) -> Mr(a, b) {
   mr(name: name, transform: under, relation: relation.equal())
 }
 

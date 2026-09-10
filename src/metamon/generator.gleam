@@ -870,7 +870,10 @@ pub fn string_unicode(len: Range) -> Generator(String) {
 /// not appear multiple times across the merged edge set. Range bounds are
 /// resolved at the maximum size (`size = max_size`) so the full
 /// user-visible window is admitted regardless of how the range scales.
-fn strings_in_length_range(candidates: List(String), len: Range) -> List(String) {
+fn strings_in_length_range(
+  candidates: List(String),
+  len: Range,
+) -> List(String) {
   let #(lo, hi) = range.bounds(len, 99, 99)
   candidates
   |> list.filter(fn(s) {
@@ -1003,7 +1006,10 @@ fn option_edges(inner_edges: List(a)) -> List(Option(a)) {
 }
 
 /// `Ok` / `Error` of two inner generators.
-pub fn result_of(ok: Generator(a), err: Generator(e)) -> Generator(Result(a, e)) {
+pub fn result_of(
+  ok: Generator(a),
+  err: Generator(e),
+) -> Generator(Result(a, e)) {
   frequency([
     #(3, map(ok, Ok)),
     #(1, map(err, Error)),
