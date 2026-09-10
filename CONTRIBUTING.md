@@ -8,7 +8,7 @@ Thank you for considering contributing to the metamon project! This document exp
 
 ### Prerequisites
 
-- [Gleam](https://gleam.run/) 1.15 or later
+- [Gleam](https://gleam.run/) 1.14 or later (`.mise.toml` pins the version CI uses for formatting)
 - [Erlang/OTP](https://www.erlang.org/) 27 or later
 - [just](https://just.systems/) (task runner)
 - [mise](https://mise.jdx.dev/) (recommended for managing Gleam and Erlang versions)

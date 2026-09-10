@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/nao1215/metamon/actions/workflows/ci.yml/badge.svg)](https://github.com/nao1215/metamon/actions/workflows/ci.yml)
 [![Hex.pm](https://img.shields.io/hexpm/v/metamon)](https://hex.pm/packages/metamon)
+[![Hex Downloads](https://img.shields.io/hexpm/dt/metamon)](https://hex.pm/packages/metamon)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/metamon/)
 
 Property-based testing and metamorphic testing combinator library for
 Gleam.
@@ -49,7 +51,7 @@ sync with the API.
 gleam add metamon --dev
 ```
 
-Requirements: Gleam 1.15+, Erlang/OTP 27+, Node.js 22+.
+Requirements: Gleam 1.14+, Erlang/OTP 27+, Node.js 22+.
 
 See [doc/targets.md](doc/targets.md) for target details and the
 runtime dependency footprint.
@@ -1130,9 +1132,9 @@ with an empty `transforms` list.
 
 ## Compatibility
 
-- Gleam 1.15+
-- BEAM target: Erlang/OTP 27 or later (CI covers OTP 27 and 28).
-- JavaScript target: Node.js 22 or later (CI covers Node 22 and 24).
+- Gleam 1.14+ (CI covers 1.14.0 and the latest 1.x).
+- BEAM target: Erlang/OTP 27 or later (CI covers OTP 27, 28 and 29).
+- JavaScript target: Node.js 22 or later (CI covers Node 22 and the current LTS).
 
 See [doc/targets.md](doc/targets.md) for the full target story,
 runtime dependency footprint, and behavioural differences between
