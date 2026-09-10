@@ -165,7 +165,10 @@ pub fn monotone(cmp: fn(a, a) -> order.Order) -> Relation(a) {
 /// Conditional relation: if `antecedent(left, right)` is `True`, the
 /// inner relation must hold. Otherwise the relation is trivially
 /// satisfied.
-pub fn implies(antecedent: fn(b, b) -> Bool, inner: Relation(b)) -> Relation(b) {
+pub fn implies(
+  antecedent: fn(b, b) -> Bool,
+  inner: Relation(b),
+) -> Relation(b) {
   Relation(name: "implies(" <> inner.name <> ")", holds: fn(left, right) {
     case antecedent(left, right) {
       False -> True

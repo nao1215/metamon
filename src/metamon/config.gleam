@@ -171,7 +171,10 @@ pub fn with_regression_file_or_panic(c: Config, path: String) -> Config {
   )
 }
 
-fn unwrap_or_panic(name: String, result: Result(Config, ConfigError)) -> Config {
+fn unwrap_or_panic(
+  name: String,
+  result: Result(Config, ConfigError),
+) -> Config {
   case result {
     Ok(c) -> c
     Error(e) -> panic as { "metamon." <> name <> ": " <> describe_error(e) }

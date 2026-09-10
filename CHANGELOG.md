@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `gleam.toml` now declares `gleam = ">= 1.14.0"`, the oldest compiler that builds and tests the package unchanged; `gleam_stdlib` 1.0 already requires it. CI tests that floor on OTP 27 and 28, and the latest Gleam 1.x on OTP 29.
+
 ## [0.9.0] - 2026-05-20
 
 ### Changed

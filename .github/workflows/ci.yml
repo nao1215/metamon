@@ -1,5 +1,11 @@
 name: CI
 
+# Two compiler lanes:
+# - floor: the `gleam` requirement in gleam.toml (keep both in sync), on OTP 27 and 28.
+#   It proves the declared minimum still builds and passes the tests.
+# - latest: floats on 1.x with OTP 29 so new compiler warnings, deprecations and
+#   formatter changes surface here first. Format, lint and build use this lane.
+
 on:
   push:
     branches: [main]
@@ -11,60 +17,61 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: extractions/setup-just@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: "28"
-          gleam-version: "1.15"
+          otp-version: "29"
+          gleam-version: "1.x"
       - run: just format-check
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: extractions/setup-just@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: "28"
-          gleam-version: "1.15"
+          otp-version: "29"
+          gleam-version: "1.x"
       - run: just deps
       - run: just lint
 
   build:
-    name: Build (OTP ${{ matrix.otp-version }})
+    name: Build (warnings as errors)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        otp-version: ["27", "28"]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: extractions/setup-just@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: ${{ matrix.otp-version }}
-          gleam-version: "1.15"
+          otp-version: "29"
+          gleam-version: "1.x"
       - run: just deps
       - run: just build
 
   test-erlang:
-    name: Test (Erlang, OTP ${{ matrix.otp-version }})
+    name: Test (Erlang, Gleam ${{ matrix.gleam }}, OTP ${{ matrix.otp }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        otp-version: ["27", "28"]
+        include:
+          - gleam: "1.14.0"
+            otp: "27"
+          - gleam: "1.14.0"
+            otp: "28"
+          - gleam: "1.x"
+            otp: "29"
     steps:
-      - uses: actions/checkout@v6
-      - uses: extractions/setup-just@v4
+      - uses: actions/checkout@v7
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: ${{ matrix.otp-version }}
-          gleam-version: "1.15"
-      - run: just deps
-      - run: just test
+          otp-version: ${{ matrix.otp }}
+          gleam-version: ${{ matrix.gleam }}
+      - run: gleam deps download
+      - run: gleam test
 
   test-javascript:
     name: Test (JavaScript, Node ${{ matrix.node-version }})
@@ -72,14 +79,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ["22", "24"]
+        # 22 is the minimum promised in the README; lts/* is the current LTS.
+        node-version: ["22", "lts/*"]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: "28"
-          gleam-version: "1.15"
-      - uses: actions/setup-node@v6
+          otp-version: "29"
+          gleam-version: "1.x"
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
       - run: gleam deps download
