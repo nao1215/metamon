@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-29
+
 ### Added
 
 - `tree.lazy_shrinks(fn() -> List(a))`: a shrink stream whose elements are listed only when it is first forced, for custom generators whose shrink candidates are expensive to build.
