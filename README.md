@@ -1039,6 +1039,8 @@ pub fn configured_property_test() {
 `with_regression_file` all return `Result(Config, ConfigError)`.
 `with_seed` and `with_diff_enabled` are total.
 
+Setting `METAMON_RUNS_MULTIPLIER` to a positive integer multiplies every property's run count, so a nightly CI job can explore far more inputs than a pull request without editing a test: `METAMON_RUNS_MULTIPLIER=100 gleam test`. Any other value stops the run with an error. The failure report prints the seed, so a failure found this way can be reproduced with `with_seed`.
+
 ## Reading a failure report
 
 Failures are panics whose message is structured for human reading.

@@ -13,7 +13,8 @@
     ieee_positive_infinity/0,
     ieee_negative_infinity/0,
     ieee_smallest_positive_denormal/0,
-    ieee_largest_finite/0
+    ieee_largest_finite/0,
+    getenv/1
 ]).
 
 now_microseconds() ->
@@ -116,3 +117,11 @@ ieee_largest_finite() ->
     %% 1.7976931348623157e308 — the largest finite double.
     <<F/float>> = <<0:1, 16#7FE:11, ((1 bsl 52) - 1):52>>,
     F.
+
+%% Read an environment variable as `{ok, Binary}`, or `{error, nil}` when it
+%% is unset. Used for METAMON_RUNS_MULTIPLIER.
+getenv(Name) ->
+    case os:getenv(unicode:characters_to_list(Name)) of
+        false -> {error, nil};
+        Value -> {ok, unicode:characters_to_binary(Value)}
+    end.

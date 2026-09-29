@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `METAMON_RUNS_MULTIPLIER`: a positive integer in this environment variable multiplies the run count of every property, so a nightly job can run far more inputs than a pull request without editing tests. Unset, nothing changes; any other value stops the run with an error naming the variable.
+
 ## [0.10.0] - 2026-09-10
 
 ### Changed
