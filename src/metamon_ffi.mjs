@@ -105,3 +105,14 @@ export function ieee_smallest_positive_denormal() {
 export function ieee_largest_finite() {
   return Number.MAX_VALUE;
 }
+
+// Read an environment variable as Ok(string), or Error(undefined) when it is
+// unset or the runtime has no process environment (a browser). Used for
+// METAMON_RUNS_MULTIPLIER.
+export function getenv(name) {
+  const env = globalThis.process?.env;
+  if (env && Object.prototype.hasOwnProperty.call(env, name)) {
+    return new Ok(env[name]);
+  }
+  return new ErrorResult(undefined);
+}

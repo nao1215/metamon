@@ -305,7 +305,7 @@ fn morph_n_failure(
     "\n  runs:        ",
     int.to_string(run_index),
     " / ",
-    int.to_string(config.runs(cfg)),
+    int.to_string(total_runs(cfg)),
     "\n  source:      ",
     case source {
       EdgeSource(i) -> "edge(" <> int.to_string(i) <> ")"
@@ -398,7 +398,7 @@ fn iterate_inputs(
 ) -> Outcome {
   let edges = generator.edges_of(gen) |> take_first(config.max_edges(cfg))
   let edge_count = list.length(edges)
-  let run_total = config.runs(cfg)
+  let run_total = total_runs(cfg)
   case run_edges(edges, 0, body) {
     Halted(text) -> Halted(text)
     Done -> {
@@ -439,8 +439,7 @@ fn run_random(
     True -> Done
     False -> {
       let #(here, rest_seed) = seed_module.split(s)
-      let size =
-        scaled_size(start_index, config.runs(cfg), config.max_size(cfg))
+      let size = scaled_size(start_index, total_runs(cfg), config.max_size(cfg))
       let value = generator.generate(gen, here, size).value
       case
         body(value, RandomSource(seed_module.state(here), size), start_index)
@@ -478,7 +477,7 @@ fn forall_failure(
       config_seed: seed_module.state(config.seed(cfg)),
       config_seed_original: seed_module.original_input(config.seed(cfg)),
       runs_done: run_index,
-      runs_total: config.runs(cfg),
+      runs_total: total_runs(cfg),
       shrinks_done: 0,
       shrink_capped: False,
       morph_mode: None,
@@ -575,7 +574,7 @@ fn morph_failure(
       config_seed: seed_module.state(config.seed(cfg)),
       config_seed_original: seed_module.original_input(config.seed(cfg)),
       runs_done: run_index,
-      runs_total: config.runs(cfg),
+      runs_total: total_runs(cfg),
       shrinks_done: shrinks_count,
       shrink_capped: capped,
       morph_mode: Some(morph_mode_of(spec)),
@@ -879,3 +878,32 @@ fn replay_failure_message(
 @external(erlang, "metamon_ffi", "now_microseconds")
 @external(javascript, "../../metamon_ffi.mjs", "now_microseconds")
 fn now_microseconds() -> Int
+
+/// The number of runs to target: `config.runs` times the positive integer
+/// in `METAMON_RUNS_MULTIPLIER`, when that variable is set. A nightly job
+/// raises it to explore far more inputs than a pull request can afford,
+/// without editing any test. Any other value is a mistake in the job, so it
+/// stops the run instead of being ignored.
+fn total_runs(cfg: Config) -> Int {
+  config.runs(cfg) * runs_multiplier()
+}
+
+fn runs_multiplier() -> Int {
+  case getenv("METAMON_RUNS_MULTIPLIER") {
+    Error(Nil) -> 1
+    Ok(value) ->
+      case int.parse(string.trim(value)) {
+        Ok(n) if n > 0 -> n
+        _ ->
+          panic as {
+            "METAMON_RUNS_MULTIPLIER must be a positive integer (got \""
+            <> value
+            <> "\")"
+          }
+      }
+  }
+}
+
+@external(erlang, "metamon_ffi", "getenv")
+@external(javascript, "../../metamon_ffi.mjs", "getenv")
+fn getenv(name: String) -> Result(String, Nil)
