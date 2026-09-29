@@ -76,3 +76,27 @@ pub fn shrinks_take_clamps_at_stream_end_test() {
 pub fn shrinks_take_handles_empty_test() {
   should.equal(tree.shrinks_take(tree.no_shrinks(), 5), [])
 }
+
+pub fn lazy_shrinks_lists_nothing_until_forced_test() {
+  count_reset()
+  let stream =
+    tree.lazy_shrinks(fn() {
+      count_bump()
+      [1, 2, 3]
+    })
+  count_get() |> should.equal(0)
+  tree.shrinks_to_list(stream) |> should.equal([1, 2, 3])
+  count_get() |> should.equal(1)
+}
+
+@external(erlang, "metamon_env_test_ffi", "count_reset")
+@external(javascript, "./metamon_env_test_ffi.mjs", "count_reset")
+fn count_reset() -> Nil
+
+@external(erlang, "metamon_env_test_ffi", "count_bump")
+@external(javascript, "./metamon_env_test_ffi.mjs", "count_bump")
+fn count_bump() -> Nil
+
+@external(erlang, "metamon_env_test_ffi", "count_get")
+@external(javascript, "./metamon_env_test_ffi.mjs", "count_get")
+fn count_get() -> Int
