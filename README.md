@@ -4,6 +4,7 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/metamon)](https://hex.pm/packages/metamon)
 [![Hex Downloads](https://img.shields.io/hexpm/dt/metamon)](https://hex.pm/packages/metamon)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/metamon/)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nao1215/metamon/badge)](https://scorecard.dev/viewer/?uri=github.com/nao1215/metamon)
 
 Property-based testing and metamorphic testing combinator library for
 Gleam.
