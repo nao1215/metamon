@@ -928,18 +928,17 @@ fn generate_list_tree(
   }
 }
 
+/// The drop candidates are listed only when shrinking forces them. This
+/// runs for every suffix of every generated list, so computing them
+/// eagerly made generating a list of length n cost O(n^2) even when the
+/// property passed.
 fn attach_drop_shrinks(t: Tree(List(a))) -> Tree(List(a)) {
   let drops =
-    shrink_lib.list_drops(t.value)
-    |> list.map(tree.singleton)
-  Tree(value: t.value, shrinks: prepend_to_shrinks(t.shrinks, drops))
-}
-
-fn prepend_to_shrinks(
-  existing: tree.Shrinks(Tree(a)),
-  prepended: List(Tree(a)),
-) -> tree.Shrinks(Tree(a)) {
-  tree.append_shrinks(tree.shrinks_from_list(prepended), existing)
+    tree.lazy_shrinks(fn() {
+      shrink_lib.list_drops(t.value)
+      |> list.map(tree.singleton)
+    })
+  Tree(value: t.value, shrinks: tree.append_shrinks(drops, t.shrinks))
 }
 
 fn list_edges_in_range(

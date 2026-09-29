@@ -48,6 +48,14 @@ pub fn shrinks_from_list(items: List(a)) -> Shrinks(a) {
   }
 }
 
+/// Build a `Shrinks(a)` whose elements are computed only when the stream
+/// is first forced. Use it when the alternatives are expensive to list
+/// (every sub-list of a long list): a property that passes never forces
+/// the stream, so it never pays for them.
+pub fn lazy_shrinks(items: fn() -> List(a)) -> Shrinks(a) {
+  Shrinks(step: fn() { shrinks_from_list(items()).step() })
+}
+
 /// Map a function over every element of a `Shrinks(a)` lazily.
 pub fn map_shrinks(stream: Shrinks(a), f: fn(a) -> b) -> Shrinks(b) {
   Shrinks(step: fn() {
@@ -136,7 +144,7 @@ pub fn singleton(value: a) -> Tree(a) {
 pub fn unfold(value: a, expand: fn(a) -> List(a)) -> Tree(a) {
   Tree(
     value: value,
-    shrinks: shrinks_from_list(expand(value))
+    shrinks: lazy_shrinks(fn() { expand(value) })
       |> map_shrinks(unfold(_, expand)),
   )
 }

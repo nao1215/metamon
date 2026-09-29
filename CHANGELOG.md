@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `tree.lazy_shrinks(fn() -> List(a))`: a shrink stream whose elements are listed only when it is first forced, for custom generators whose shrink candidates are expensive to build.
+
+### Changed
+
+- Generating lists and strings is much faster. `list_of` built every drop-shrink candidate of every suffix of each generated list up front, so a list of length n cost O(n^2) work even when the property passed and shrinking never ran. The candidates are now built only when a failure is shrunk, in the same order as before. metamon's own test suite goes from 44 s to 5 s; in automata a property over strings of up to 200 characters that timed out at 10 times its runs now passes at 100 times in about 7 s. `tree.unfold` likewise expands a node only when its shrinks are forced.
+
 ## [0.11.0] - 2026-09-29
 
 ### Added
