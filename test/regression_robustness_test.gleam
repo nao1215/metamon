@@ -38,7 +38,8 @@ import metamon/internal/regression
 
 // ---------- helpers ----------
 
-const valid_block: String = "[[failures]]\nmr          = \"x\"\nconfig_seed = 7\nrun_index   = 0\nsize        = 0\nedge_index = none\nrecorded    = \"2026-01-01T00:00:00Z\"\n"
+const valid_block: String =
+  "[[failures]]\nmr          = \"x\"\nconfig_seed = 7\nrun_index   = 0\nsize        = 0\nedge_index = none\nrecorded    = \"2026-01-01T00:00:00Z\"\n"
 
 fn header_v1() -> String {
   "schema_version = 1\n"
