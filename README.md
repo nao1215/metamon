@@ -1171,6 +1171,20 @@ Contributions are welcome. See
 [CONTRIBUTING.md](https://github.com/nao1215/metamon/blob/main/CONTRIBUTING.md)
 for details.
 
+## Verifying releases
+
+Each GitHub Release attaches the package tarball (`metamon-<version>.tar`), `checksums.txt`, a cosign signature bundle for it (`checksums.txt.sigstore.json`) and the build provenance (`metamon-<version>.intoto.jsonl`). Download them from the release page, then verify:
+
+```sh
+gh attestation verify metamon-<version>.tar --repo nao1215/metamon
+
+sha256sum -c checksums.txt
+cosign verify-blob --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/nao1215/metamon/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+```
+
 ## License
 
 [MIT](https://github.com/nao1215/metamon/blob/main/LICENSE)
