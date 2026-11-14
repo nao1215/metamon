@@ -1,3 +1,4 @@
+import gleam/int
 import gleam/order
 import gleam/string
 import gleeunit/should
@@ -154,4 +155,27 @@ pub fn rename_keeps_predicate_test() {
     |> relation.rename("structural_eq")
   should.equal(r.name, "structural_eq")
   should.be_true(r.holds(1, 1))
+}
+
+pub fn all_equal_fails_when_any_output_differs_test() {
+  let r = relation.all_equal()
+  should.be_true(r.holds([]))
+  should.be_true(r.holds([7]))
+  should.be_true(r.holds([7, 7, 7]))
+  // A difference at the front, in the middle and at the end must each
+  // make the relation fail; a relation that only ever answers True would
+  // pass every metamorphic test built on it.
+  should.be_false(r.holds([1, 7, 7]))
+  should.be_false(r.holds([7, 1, 7]))
+  should.be_false(r.holds([7, 7, 1]))
+}
+
+pub fn pairwise_fails_when_any_adjacent_pair_breaks_test() {
+  let sorted = relation.pairwise(relation.monotone(int.compare))
+  should.be_true(sorted.holds([]))
+  should.be_true(sorted.holds([3]))
+  should.be_true(sorted.holds([1, 2, 2, 3]))
+  should.be_false(sorted.holds([2, 1, 3]))
+  should.be_false(sorted.holds([1, 3, 2]))
+  should.equal(sorted.name, "pairwise(monotone)")
 }
