@@ -9,11 +9,17 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore: ["doc/**", "CHANGELOG.md"]
   pull_request:
     branches: [main]
+    paths-ignore: ["doc/**", "CHANGELOG.md"]
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   format:
