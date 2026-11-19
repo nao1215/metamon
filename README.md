@@ -1,9 +1,13 @@
 # metamon
 
 [![CI](https://github.com/nao1215/metamon/actions/workflows/ci.yml/badge.svg)](https://github.com/nao1215/metamon/actions/workflows/ci.yml)
-[![Hex.pm](https://img.shields.io/hexpm/v/metamon)](https://hex.pm/packages/metamon)
-[![Hex Downloads](https://img.shields.io/hexpm/dt/metamon)](https://hex.pm/packages/metamon)
+[![Gitleaks](https://github.com/nao1215/metamon/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/nao1215/metamon/actions/workflows/gitleaks.yml)
+[![Trivy](https://github.com/nao1215/metamon/actions/workflows/trivy.yml/badge.svg)](https://github.com/nao1215/metamon/actions/workflows/trivy.yml)
+[![OSV-Scanner](https://github.com/nao1215/metamon/actions/workflows/osv-scan.yml/badge.svg)](https://github.com/nao1215/metamon/actions/workflows/osv-scan.yml)
+[![Hex](https://img.shields.io/hexpm/v/metamon)](https://hex.pm/packages/metamon)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/metamon/)
+[![Hex Downloads](https://img.shields.io/hexpm/dt/metamon)](https://hex.pm/packages/metamon)
+[![License](https://img.shields.io/github/license/nao1215/metamon)](./LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nao1215/metamon/badge)](https://scorecard.dev/viewer/?uri=github.com/nao1215/metamon)
 
 Property-based testing and metamorphic testing combinator library for
