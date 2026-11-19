@@ -604,3 +604,11 @@ pub fn statistics_buckets_values_test() {
   }
   should.equal(zero_count + one_count, 100)
 }
+
+pub fn float_samples_stay_in_a_range_away_from_zero_test() {
+  // An interval that does not start at 0 catches arithmetic that only
+  // works when lo is 0.
+  generator.sample(generator.float(10.0, 20.0), 200)
+  |> list.all(fn(x) { x >=. 10.0 && x <=. 20.0 })
+  |> should.be_true
+}
