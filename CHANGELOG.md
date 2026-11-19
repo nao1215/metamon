@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-19
+
 ### Changed
 
 - The runner's bookkeeping functions are marked `@internal` and leave the HexDocs: `annotate.reset`, `annotate.current_annotations`, `annotate.current_footnotes`, and `coverage.reset`, `snapshot`, `shortfalls`, `actual_pct`, `hits_for`, `requirements_of`, `collected_of`, `first_shortfall`, `target_pct_of` with the `coverage.Snapshot` type. Properties record with `annotate`, `footnote`, `classify`, `cover` and `collect` as before; the runner reads and clears the buffers itself. Existing calls still compile.
