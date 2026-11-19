@@ -44,6 +44,7 @@ pub type RequirementKind {
 /// requirement is a Pct one, otherwise compute it from the
 /// minimum-count requirement and the recorded total. Used by the
 /// failure formatter and the `target_pct` accessor in older code.
+@internal
 pub fn target_pct_of(req: Requirement, total: Int) -> Float {
   case req.kind {
     Pct(target) -> target
@@ -56,6 +57,7 @@ pub fn target_pct_of(req: Requirement, total: Int) -> Float {
 }
 
 /// Snapshot of the coverage state for one property run.
+@internal
 pub type Snapshot {
   Snapshot(
     total: Int,
@@ -162,6 +164,7 @@ pub fn collect(value: a, show: fn(a) -> String) -> Nil {
 
 /// Reset all coverage state. Called by the runner at the start of
 /// each property.
+@internal
 pub fn reset() -> Nil {
   process_state.erase(counts_key)
   process_state.erase(total_key)
@@ -171,6 +174,7 @@ pub fn reset() -> Nil {
 }
 
 /// Read the current coverage snapshot.
+@internal
 pub fn snapshot() -> Snapshot {
   let total = read_total()
   let counts = read_dict(counts_key)
@@ -187,6 +191,7 @@ pub fn snapshot() -> Snapshot {
 /// Find requirements whose actual coverage falls short of the target.
 /// Pct requirements are checked against `actual_pct`; Count
 /// requirements are checked against the absolute hit count.
+@internal
 pub fn shortfalls(snap: Snapshot) -> List(Requirement) {
   case snap.total <= 0 {
     True -> []
@@ -201,6 +206,7 @@ pub fn shortfalls(snap: Snapshot) -> List(Requirement) {
 }
 
 /// `(hits / total) * 100`, returning `0.0` if `total` is zero.
+@internal
 pub fn actual_pct(hits: Int, total: Int) -> Float {
   case total <= 0 {
     True -> 0.0
@@ -281,6 +287,7 @@ fn enriched_requirements(counts: Dict(String, Int)) -> List(Requirement) {
 }
 
 /// Read a single label's hit count.
+@internal
 pub fn hits_for(snap: Snapshot, label: String) -> Int {
   case dict.get(snap.counts, label) {
     Ok(n) -> n
@@ -289,16 +296,19 @@ pub fn hits_for(snap: Snapshot, label: String) -> Int {
 }
 
 /// Convenience accessor used by the runner / report.
+@internal
 pub fn requirements_of(snap: Snapshot) -> List(Requirement) {
   snap.requirements
 }
 
 /// Convenience accessor used by the runner / report.
+@internal
 pub fn collected_of(snap: Snapshot) -> Dict(String, Int) {
   snap.collected
 }
 
 /// `Some(req)` when at least one shortfall exists, otherwise `None`.
+@internal
 pub fn first_shortfall(snap: Snapshot) -> Option(Requirement) {
   case shortfalls(snap) {
     [] -> None

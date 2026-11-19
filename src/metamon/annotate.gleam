@@ -36,6 +36,7 @@ pub fn footnote(message: String) -> Nil {
 
 /// Clear annotation and footnote buffers. Called by the runner before
 /// each property run.
+@internal
 pub fn reset() -> Nil {
   process_state.erase(annotations_key)
   process_state.erase(footnotes_key)
@@ -44,11 +45,13 @@ pub fn reset() -> Nil {
 
 /// Read the annotations recorded since the last `reset`. Order is the
 /// order in which they were registered.
+@internal
 pub fn current_annotations() -> List(String) {
   read(annotations_key)
 }
 
 /// Read the footnotes recorded since the last `reset`.
+@internal
 pub fn current_footnotes() -> List(String) {
   read(footnotes_key)
 }
