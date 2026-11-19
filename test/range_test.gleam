@@ -117,3 +117,9 @@ pub fn random_check_values_within_bounds_test() {
     should.be_true(lo >= 0 && hi <= 100)
   })
 }
+
+pub fn linear_picks_zero_origin_only_when_in_range_test() {
+  should.equal(range.origin(range.linear(-5, 5)), 0)
+  should.equal(range.origin(range.linear(3, 9)), 3)
+  should.equal(range.origin(range.linear(-9, -3)), -9)
+}

@@ -46,6 +46,7 @@ sync with the API.
 - [Modules](#modules)
 - [Compatibility](#compatibility)
 - [Further reading](#further-reading)
+- [Testing](#testing)
 - [Development](#development)
 - [Contributing](#contributing)
 - [License](#license)
@@ -1155,6 +1156,16 @@ BEAM and JavaScript.
   special-value asymmetry).
 - [doc/targets.md](doc/targets.md): supported targets, runtime
   requirements, dependency footprint.
+
+## Testing
+
+| Technique | Bug class caught here |
+|---|---|
+| Examples and unit tests | [Wrong generator bounds, edges, shrinks and reports](doc/testing.md#examples-and-unit-tests) |
+| Generated properties | [Broken generator laws and runner invariants, checked by metamon itself](doc/testing.md#generated-properties) |
+| Metamorphic relations | [Relation checks that pass when outputs differ](doc/testing.md#metamorphic-relations) |
+| Contracts | [Changes to the stable JSON report, quadratic slowdowns](doc/testing.md#contracts) |
+| Mutation testing | [Assertions that miss a changed operator or branch](doc/testing.md#mutation-testing) |
 
 ## Development
 
