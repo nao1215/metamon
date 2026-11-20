@@ -10,46 +10,9 @@
 [![License](https://img.shields.io/github/license/nao1215/metamon)](./LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nao1215/metamon/badge)](https://scorecard.dev/viewer/?uri=github.com/nao1215/metamon)
 
-Property-based testing and metamorphic testing combinator library for
-Gleam.
+Property-based testing and metamorphic testing for Gleam. A property states a predicate over one input; a metamorphic relation states how the outputs for two related inputs (such as `f(x)` and `f(reverse(x))`) must relate. metamon generates inputs, shrinks failures and prints a report with a reproducible seed.
 
-metamon treats both styles of testing as first-class concepts:
-
-- Property-based testing (PBT): state a single-input predicate and let
-  metamon search the input space for counter-examples.
-- Metamorphic testing (MT): state a relation between outputs produced
-  by two related inputs (e.g. `f(x)` and `f(reverse(x))`) and let
-  metamon search for inputs where the relation breaks.
-
-Every snippet on this page is the body of a `pub fn readme_*_test` in
-[`test/readme_test.gleam`](test/readme_test.gleam) and is checked by
-`gleam test` on every CI run, so the examples cannot drift out of
-sync with the API.
-
-## Table of contents
-
-- [Install](#install)
-- [Quick start](#quick-start)
-- [Property-based testing](#property-based-testing)
-- [Metamorphic relations](#metamorphic-relations)
-- [Round-trip variants](#round-trip-variants)
-- [Generators](#generators)
-- [Transforms and relations](#transforms-and-relations)
-- [Coverage and annotations](#coverage-and-annotations)
-- [JSON output](#json-output)
-- [N-ary metamorphic relations](#n-ary-metamorphic-relations)
-- [Stateful / model-based testing](#stateful--model-based-testing)
-- [Case study: CRDT algebraic laws](#case-study-crdt-algebraic-laws)
-- [Configuration](#configuration)
-- [Reading a failure report](#reading-a-failure-report)
-- [Choosing PBT vs MT vs `assert_morph`](#choosing-pbt-vs-mt-vs-assert_morph)
-- [Modules](#modules)
-- [Compatibility](#compatibility)
-- [Further reading](#further-reading)
-- [Testing](#testing)
-- [Development](#development)
-- [Contributing](#contributing)
-- [License](#license)
+Each snippet below is mirrored in [`test/readme_test.gleam`](test/readme_test.gleam), so `gleam test` checks it on every CI run.
 
 ## Install
 
@@ -57,16 +20,11 @@ sync with the API.
 gleam add metamon --dev
 ```
 
-Requirements: Gleam 1.14+, Erlang/OTP 27+, Node.js 22+.
-
-See [doc/targets.md](doc/targets.md) for target details and the
-runtime dependency footprint.
+Requires Gleam 1.14+, Erlang/OTP 27+ and Node.js 22+. See [Compatibility](#compatibility).
 
 ## Quick start
 
-The smallest useful test states a metamorphic relation. `string.trim`
-is idempotent — applying it twice gives the same result as applying
-it once. metamon ships a template for this exact shape.
+`string.trim` is idempotent: applying it twice gives the same result as applying it once. metamon has a template for that relation.
 
 ```gleam
 import gleam/string
@@ -84,31 +42,47 @@ pub fn trim_idempotent_test() {
 }
 ```
 
-If `string.trim` ever stops being idempotent, the test panics with a
-named report:
+When a relation breaks, the test panics with a named report. This is the report for `fn(s) { string.drop_start(s, 1) }`, which is not idempotent, run through the same test:
 
 ```
-× metamorphic relation `trim_idempotent` failed
+× metamorphic relation `drop_first_idempotent` failed
   test:        forall_morph
-  source:      random(seed=..., size=12)
-  config seed: 1714867200000123
-  runs:        7 / 100
-  shrinks:     4
+  source:      edge(2)
+  config seed: 3287652029
+  runs:        2 / 100
+  shrinks:     0
 
-  transform:   `apply trim_idempotent`
+  transform:   `apply drop_first_idempotent`
   relation:    `equal`
 
   source input  (shrunk):
-    "  a"
-  ...
+    "\u{0000}\t\n 0Az~\u{007F}"
+
+  follow-up input  (= transform(source)):
+    "\t\n 0Az~\u{007F}"
+
+  source output:
+    "\t\n 0Az~\u{007F}"
+
+  follow-up output:
+    "\n 0Az~\u{007F}"
+
+  diff (source_output vs follow-up_output):
+    - "\"\\t\\n 0Az~\\u{007F}\""
+    + "\"\\n 0Az~\\u{007F}\""
+
+  reproduce (paste into a test):
+    // The MR failed for this input. To pin it as a regression,
+    // call assert_morph with the shrunk input and the same MR.
+    let input = "\u{0000}\t\n 0Az~\u{007F}"
+    metamon.assert_morph(input, mr, f)
 ```
 
 ## Property-based testing
 
 ### `forall`
 
-`metamon.forall` runs a single-argument predicate against many
-generated inputs:
+`metamon.forall` runs a one-argument predicate against many generated inputs:
 
 ```gleam
 import metamon
@@ -127,14 +101,9 @@ pub fn reverse_twice_is_identity_test() {
 }
 ```
 
-### `forall_observable` — show the predicate's intermediate value
+### `forall_observable`
 
-When the branch in the predicate hinges on an intermediate value
-(`f(input)`), the plain `forall` failure report only shows the shrunk
-source input, not what the predicate was actually inspecting.
-`forall_observable` lets the predicate return `#(observation, holds)`;
-the observation is rendered into the failure report under the label
-`predicate value`:
+`forall_observable` lets the predicate return `#(observation, holds)`. The failure report then shows the observation under `predicate value`, next to the shrunk input:
 
 ```gleam
 import metamon
@@ -154,15 +123,11 @@ pub fn parse_round_trip_test() {
 }
 ```
 
-This is equivalent to a plain `forall` plus a manual
-`annotate.annotate_value("predicate value", trimmed)`; the helper
-saves that one line and makes the intent explicit.
+It saves one `annotate.annotate_value("predicate value", trimmed)` call.
 
 ## Metamorphic relations
 
-A metamorphic relation says "if you transform the input in this known
-way, the output should change in this known way." metamon ships
-templates for the most common shapes.
+A metamorphic relation says that transforming the input in a known way changes the output in a known way, or not at all. metamon has templates for the common shapes.
 
 ### Idempotency: `f(f(x)) == f(x)`
 
@@ -187,9 +152,7 @@ pub fn sort_dedupe_idempotent_test() {
 
 ### Round-trip: `decode(encode(x)) == Ok(x)`
 
-`f` and `inverse` should round-trip cleanly. `forall_round_trip` is
-the one-liner — the failure report header is `round_trip[<name>]` so
-it is immediately obvious from the panic which round-trip broke:
+`forall_round_trip` checks an encoder and decoder pair. The report header is `round_trip[<name>]`.
 
 ```gleam
 import metamon
@@ -207,16 +170,11 @@ pub fn int_string_round_trip_test() {
 }
 ```
 
-Round-trip is not exposed as an `Mr` template because the relation
-compares the decoded output against the source input, which the
-two-point `f(source) ⟷ f(transform(source))` shape of an MR cannot
-express directly. `forall_round_trip` wraps `forall` instead, so the
-error reports retain the same shrunk-source rendering.
+A round trip compares the decoded output with the source input, which the two-point shape of an `Mr` cannot express, so `forall_round_trip` is built on `forall` instead.
 
 ### Invariance: `f(T(x)) == f(x)`
 
-The function is unaffected by the transformation. `list.length` is
-invariant under `reverse`:
+`list.length` is unchanged by `reverse`:
 
 ```gleam
 import metamon
@@ -244,8 +202,7 @@ pub fn length_invariant_under_reverse_test() {
 
 ### Equivariance: `U(f(x)) == f(T(x))`
 
-The output also transforms in a known way. `map(g)` commutes with
-`reverse`:
+The output transforms in a known way. `map(g)` commutes with `reverse`:
 
 ```gleam
 import metamon
@@ -276,8 +233,7 @@ pub fn map_commutes_with_reverse_test() {
 
 ### Manual MR construction
 
-When the four templates above don't fit, build the MR by hand from a
-`Transform(a)` and a `Relation(b)`:
+When no template fits, build the MR from a `Transform(a)` and a `Relation(b)`:
 
 ```gleam
 import metamon
@@ -306,10 +262,9 @@ pub fn sum_invariant_under_append_zero_test() {
 }
 ```
 
-### `assert_morph` — single hand-supplied input
+### `assert_morph`
 
-No generator, just a fixed input. Useful for regression tests of a
-specific failing case:
+Checks one fixed input, for regression tests of a known failing case:
 
 ```gleam
 import metamon
@@ -327,8 +282,7 @@ pub fn sum_reverse_regression_test() {
 
 ### Commutativity: `op(a, b) == op(b, a)`
 
-The `commutativity_of` template builds an MR over the input pair
-`#(a, a)` whose transform swaps the two components:
+`commutativity_of` builds an MR over the pair `#(a, a)` whose transform swaps the two components:
 
 ```gleam
 import metamon
@@ -352,10 +306,9 @@ pub fn add_commutative_test() {
 }
 ```
 
-### `forall_morphs` — multiple MRs against the same `f`
+### `forall_morphs`
 
-Each MR is exercised independently and the runner reports all
-failures, not just the first:
+Runs several MRs against the same `f` and reports every failure, not only the first:
 
 ```gleam
 import metamon
@@ -384,44 +337,11 @@ pub fn sum_multi_mr_test() {
 
 ## Round-trip variants
 
-> **Tip — encoder / decoder libraries.** If your library exposes a
-> paired `encode` / `decode`, a single `forall_round_trip` call
-> exercises a useful first invariant with no per-input handwriting.
-> Drop this into `test/` as a starter property:
->
-> ```gleam
-> import metamon
-> import metamon/generator
-> import metamon/generator/range
->
-> pub fn encode_decode_round_trip_test() {
->   metamon.forall_round_trip(
->     gen: generator.bit_array(range.constant(0, 64)),
->     name: "my_codec",
->     encode: my_codec.encode,
->     decode: my_codec.decode,
->   )
-> }
-> ```
->
-> The two variants below
-> (`forall_round_trip_partial` and `forall_round_trip_under`) cover
-> the common shapes a real codec hits — partial encoders that reject
-> some inputs, and decoded forms that compare equal only under a
-> normalising projection.
+`forall_round_trip` needs `encode: a -> b` and `decode: b -> Result(a, _)` and compares with `==`. Two variants cover codecs that do not fit.
 
-`forall_round_trip` requires `encode: a -> b` and
-`decode: b -> Result(a, _)`. Real codec libraries often produce
-`encode: a -> Result(b, _)` (when not every input is valid for the
-codec) or have a source type whose decoded form does not compare equal
-under structural `==`. Two named variants cover both cases without a
-hand-rolled shim.
+### `forall_round_trip_partial`
 
-### Partial encoder — `forall_round_trip_partial`
-
-Inputs the encoder rejects are skipped (treated as out of scope, not
-failures). Useful for codecs with structural preconditions
-(byte-alignment, version range, hrp / variant constraints, etc.).
+For an encoder that returns `Result(b, _)`. Inputs it rejects are skipped, not counted as failures, which suits codecs with preconditions such as byte alignment or a version range.
 
 ```gleam
 import metamon
@@ -445,13 +365,9 @@ pub fn readme_round_trip_partial_test() {
 }
 ```
 
-### Custom equality — `forall_round_trip_under`
+### `forall_round_trip_under`
 
-Pass a `Relation(a)` instead of structural `==`. Useful for opaque
-types whose decoded form normalises (multipart `Part` re-deriving its
-`name` / `filename` cache, MIME types whose essence lowercases, etc.).
-Combine with `relation.equivalent_under(via, name)` to compare on a
-projection.
+Compares with a `Relation(a)` instead of `==`, for decoded forms that normalise (a MIME type whose essence lowercases, for example). `relation.equivalent_under(via, name)` compares on a projection.
 
 ```gleam
 import metamon
@@ -498,38 +414,15 @@ pub fn shortcut_examples() {
 }
 ```
 
-These wrap `generator.int(range.linear(...))` etc. with sensible
-default ranges. Reach for the underlying `generator.int(...)` when you
-need different bounds or shrink origins.
+These wrap `generator.int(range.linear(...))` and friends with default ranges; use the underlying generator for other bounds or shrink origins. Single-character generators are the `ascii_*` family (`ascii_lower`, `ascii_upper`, `ascii_letter`, `ascii_digit`, `ascii_alphanumeric`, `ascii_printable`), and each `string_*` shortcut wraps one with a length range.
 
-For single-character generators (`a-zA-Z`, `0-9`, etc.), see the
-`ascii_*` family in the [Modules](#modules) table:
-`ascii_lower`, `ascii_upper`, `ascii_letter`, `ascii_digit`,
-`ascii_alphanumeric`, `ascii_printable`. The `string_*` shortcuts
-above wrap each of those with a length range.
+`bit_array_printable` keeps every byte in printable ASCII (`0x20`..`0x7E`), for parsers that take a `BitArray` of headers or MIME types. `bit_array_utf8` always decodes back to a string; its `len` counts codepoints, so the byte length can be larger.
 
-`bit_array_printable` constrains every byte to printable ASCII
-(`0x20`..`0x7E`) — useful when fuzzing parsers that take `BitArray`
-but expect printable input (HTTP headers, MIME types, etc.).
-`bit_array_utf8` produces a `BitArray` that is guaranteed to decode
-back to a string; the `len` argument is the codepoint count, so the
-byte length will be larger when the random string contains multi-byte
-codepoints.
-
-`generator.string_unicode(len)` and `generator.unicode_codepoint()`
-produce valid UTF-8 scalar values only. `generator.float(lo, hi)` is
-finite-only. For genuinely-NaN / `±Infinity` inputs, use
-`generator.float_special()` or splice the special values via
-`with_examples(my_float_gen, generator.float_special_edges())`. See
-[doc/limitations.md](doc/limitations.md) for the full caveats around
-UTF-8 surrogates, Unicode normalisation, and BEAM vs JavaScript float
-behaviour.
+`generator.string_unicode(len)` and `generator.unicode_codepoint()` produce valid UTF-8 scalar values only. `generator.float(lo, hi)` is finite only; for NaN and `±Infinity` use `generator.float_special()` or `with_examples(my_float_gen, generator.float_special_edges())`. [doc/limitations.md](doc/limitations.md) covers UTF-8 surrogates, Unicode normalisation, and float differences between BEAM and JavaScript.
 
 ### Building record-shaped values
 
-Use `map2` … `map8` (and the matching `tuple2` … `tuple8`) for
-record-shaped generators. Prefer applicative composition over nested
-`bind` so integrated shrinking applies on every component.
+Use `map2` … `map8` (and `tuple2` … `tuple8`). Applicative composition shrinks every component, which nested `bind` does not.
 
 ```gleam
 import metamon
@@ -570,9 +463,7 @@ pub fn traffic_light_test() {
 }
 ```
 
-`one_of` picks uniformly from a list of generators. For the common
-case of "pick uniformly from a fixed set of values", `element_of`
-skips the per-value `return` wrap:
+`one_of` picks uniformly from a list of generators. `element_of` picks uniformly from a list of values without wrapping each in `return`:
 
 ```gleam
 import metamon
@@ -588,16 +479,12 @@ pub fn extension_is_known_test() {
 }
 ```
 
-`element_of` panics when the list is empty (mirroring `one_of([])`).
-Every value becomes an edge, so the runner tries each one before
-sampling.
+`element_of([])` panics, as `one_of([])` does. Every value becomes an edge, so the runner tries each one before sampling.
 
-### `with_examples` — guarantee specific inputs are tried
+### `with_examples`
 
-The runner consumes `edges` first, before random generation. Use
-`with_examples` to add must-try inputs from past bug reports:
+The runner tries edges before random inputs. `with_examples` adds must-try inputs, such as ones from past bug reports:
 
-```gleam
 import metamon
 import metamon/generator
 import metamon/generator/range
@@ -620,8 +507,7 @@ pub fn trim_idempotent_with_examples_test() {
 
 ### Recursive generators
 
-`recursive(base, step)` halves `size` on each recursion, so it always
-terminates. At `size = 0` only `base` is used.
+`recursive(base, step)` halves `size` on each recursion, so it always terminates. At `size = 0` only `base` is used.
 
 ```gleam
 import metamon
@@ -686,9 +572,7 @@ pub fn and_combination_test() {
 }
 ```
 
-`relation.or`, `relation.invert`, `relation.implies` complete the
-Boolean set. For the most common domain shapes, four shortcut
-combinators skip the `and` / custom-`new` plumbing entirely:
+`relation.or`, `relation.invert` and `relation.implies` complete the Boolean set. Shortcut relations cover common domain shapes:
 
 ```gleam
 import metamon/relation
@@ -736,7 +620,7 @@ pub fn monotone_test() {
 }
 ```
 
-### `equivalent_under` — relation on a normalised view
+### `equivalent_under`
 
 ```gleam
 import metamon/relation
@@ -755,9 +639,7 @@ pub fn case_insensitive_test() {
 
 ### `cover` and `classify`
 
-`cover(target, label, condition)` asserts that the labelled hits
-account for at least `target%` of all inputs. The property fails even
-when every individual run passed if coverage falls short:
+`cover(target, label, condition)` requires the labelled hits to reach `target%` of all inputs. The property fails when coverage falls short, even if every run passed:
 
 ```gleam
 import metamon
@@ -780,8 +662,7 @@ pub fn trim_never_grows_input_test() {
 
 ### `annotate` and `footnote`
 
-These are silent on success and surface only on failure, so liberal
-use is cheap:
+These print nothing unless the property fails:
 
 ```gleam
 import metamon
@@ -805,8 +686,7 @@ pub fn annotated_property_test() {
 
 ## JSON output
 
-Set the output format on a per-test config to swap the human-readable
-text for a single-line JSON object:
+`with_output_format(config.Json)` replaces the text report with a single-line JSON object:
 
 ```gleam
 import metamon
@@ -830,13 +710,11 @@ The schema is stable. Top-level keys: `mr_name`, `test_name`,
 `config_seed`, `runs_done`, `runs_total`, `shrinks_done`,
 `shrink_capped`, `source`, `morph_mode`, `relation`, `source_input`,
 `followup_input`, `source_output`, `followup_output`, `annotations`,
-`footnotes`, `coverage`. Pipe to `jq`, post to GitHub Actions
-annotations, or feed into an LLM analysis step.
+`footnotes`, `coverage`.
 
 ## N-ary metamorphic relations
 
-When the relation must compare more than two outputs in one shot,
-hand `forall_morph_n` a list of input transforms and a `RelationN`:
+`forall_morph_n` takes a list of input transforms and a `RelationN` that compares all the outputs at once:
 
 ```gleam
 import gleam/list
@@ -863,13 +741,11 @@ pub fn sum_under_three_invariants_test() {
 }
 ```
 
-`relation.all_equal()` asserts every output is structurally equal;
-`relation.pairwise(r)` lifts a binary relation to a chain check.
+`relation.all_equal()` requires every output to be equal; `relation.pairwise(r)` checks a binary relation along the chain.
 
 ## Stateful / model-based testing
 
-For state machines, build a list of `Command(model, real)` and run it
-against a parallel `(model, real)` pair:
+Run a list of `Command(model, real)` against a model and a real system side by side:
 
 ```gleam
 import gleam/dict
@@ -903,122 +779,17 @@ pub fn counter_increments_test() {
 }
 ```
 
-`command.no_precondition` (alias: `command.always`) skips the
-precondition; use `command.new` to gate commands on the current model.
-"No precondition" is not the same as "always runs" — the command's
-`run` step can still return `Error(reason)`, which halts the sequence
-and reports `Failed`. `stateful.assert_passed` panics with a
-structured failure message when that happens. Prefer the
-`no_precondition` name in new code; the `always` alias is kept for
-backward compatibility.
+`command.no_precondition` (alias `command.always`, kept for backward compatibility) has no precondition; `command.new` gates a command on the current model. A command's `run` can still return `Error(reason)`, which halts the sequence with `Failed`, and `stateful.assert_passed` then panics with a structured message.
 
-`stateful.run` requires at least one `Command`; passing `[]` is a
-programming error (vacuous test) and panics with a structured message.
-Use `forall(...)` if you need a non-stateful property instead.
-
-`stateful.assert_passed` also panics when every command's
-`precondition` returned `False` — i.e. the outcome is
-`Passed(_, ran: 0, skipped: N)` with `N > 0`. The test never compared
-model and real, so silently passing would hide precondition or
-initial-model bugs. Adjust the preconditions or initial model so at
-least one command fires.
+`stateful.run([])` panics, because an empty command list tests nothing. `stateful.assert_passed` also panics on `Passed(_, ran: 0, skipped: N)` with `N > 0`: every precondition returned `False`, so model and real were never compared.
 
 ## Case study: CRDT algebraic laws
 
-CRDTs (conflict-free replicated data types) are characterised by
-three laws on their `merge` operator:
-
-| Law | Statement |
-|-----|-----------|
-| Idempotency | `merge(a, a) == a` |
-| Commutativity | `merge(a, b) == merge(b, a)` |
-| Associativity | `merge(merge(a, b), c) == merge(a, merge(b, c))` |
-
-A G-Counter (grow-only counter) is the simplest CRDT: each replica
-holds a per-node counter, and `merge` takes the per-key max. Here is
-the implementation alongside the three laws expressed in metamon:
-
-```gleam
-import gleam/dict.{type Dict}
-import gleam/list
-import metamon
-import metamon/generator
-import metamon/generator/range
-
-type GCounter =
-  Dict(String, Int)
-
-fn merge(left: GCounter, right: GCounter) -> GCounter {
-  dict.fold(right, left, fn(acc, key, value) {
-    case dict.get(acc, key) {
-      Ok(current) if current >= value -> acc
-      _ -> dict.insert(acc, key, value)
-    }
-  })
-}
-
-fn make_gcounter(pairs: List(#(String, Int))) -> GCounter {
-  list.fold(pairs, dict.new(), fn(acc, pair) {
-    dict.insert(acc, pair.0, pair.1)
-  })
-}
-
-pub fn readme_gcounter_idempotent_test() {
-  metamon.forall(generator.int(range.constant(0, 100)), fn(seed) {
-    let counter =
-      make_gcounter([
-        #("node-A", seed),
-        #("node-B", seed * 2),
-        #("node-C", seed * 3),
-      ])
-    merge(counter, counter) == counter
-  })
-}
-
-pub fn readme_gcounter_commutative_test() {
-  metamon.forall(generator.int(range.constant(0, 100)), fn(seed) {
-    let left = make_gcounter([#("node-A", seed), #("node-B", seed * 2)])
-    let right = make_gcounter([#("node-A", seed + 1), #("node-C", seed * 3)])
-    merge(left, right) == merge(right, left)
-  })
-}
-
-pub fn readme_gcounter_associative_test() {
-  metamon.forall(generator.int(range.constant(0, 100)), fn(seed) {
-    let a = make_gcounter([#("X", seed), #("Y", seed + 1)])
-    let b = make_gcounter([#("X", seed + 5), #("Z", seed + 7)])
-    let c = make_gcounter([#("Y", seed + 9), #("Z", seed + 11)])
-    merge(merge(a, b), c) == merge(a, merge(b, c))
-  })
-}
-```
-
-Three things to note:
-
-1. **`forall` is the right primitive when the property is a binary or
-   ternary equation.** `idempotency_of` and `commutativity_of` are
-   metamorphic-relation templates over a unary `f: a -> a`, so they
-   do not directly express `merge(a, a) == a` or `merge(a, b, c)`-style
-   laws. Falling back to `forall` is the idiomatic way to test n-ary
-   operators.
-2. **Per-replica state is generated indirectly via a seed.** The
-   generator produces an `Int`, and the test body uses it to derive
-   deterministic counter snapshots. This keeps the generator simple
-   while still exercising the laws across many shapes.
-3. **Failure of any one law is a Byzantine-style bug.** If
-   associativity fails, replicas that received the same operations
-   in different orders will diverge silently — exactly the class of
-   bug that property-based testing catches and unit testing misses.
-
-The three test functions above are mirrored in
-`test/readme_test.gleam` so the example cannot drift from the actual
-API.
+[doc/crdt-case-study.md](doc/crdt-case-study.md) checks the idempotency, commutativity and associativity of a G-Counter `merge` with `forall`.
 
 ## Configuration
 
-Override the defaults via `with_*` builders. Validation errors return
-`Result(Config, ConfigError)` instead of silently falling back to a
-default.
+The `with_*` builders that can be given invalid values return `Result(Config, ConfigError)` instead of falling back to a default.
 
 ```gleam
 import metamon
@@ -1040,17 +811,13 @@ pub fn configured_property_test() {
 }
 ```
 
-`with_runs`, `with_max_size`, `with_shrink_limit`, `with_max_edges`,
-`with_regression_file` all return `Result(Config, ConfigError)`.
-`with_seed` and `with_diff_enabled` are total.
+`with_runs`, `with_max_size`, `with_shrink_limit`, `with_max_edges` and `with_regression_file` return `Result(Config, ConfigError)`. `with_seed` and `with_diff_enabled` are total.
 
 Setting `METAMON_RUNS_MULTIPLIER` to a positive integer multiplies every property's run count, so a nightly CI job can explore far more inputs than a pull request without editing a test: `METAMON_RUNS_MULTIPLIER=100 gleam test`. Any other value stops the run with an error. The failure report prints the seed, so a failure found this way can be reproduced with `with_seed`.
 
 ## Reading a failure report
 
-Failures are panics whose message is structured for human reading.
-Every block is optional; only the parts that apply to your test
-appear:
+The panic message has these blocks; only the ones that apply appear:
 
 ```
 × metamorphic relation `<mr.name>` failed
@@ -1092,15 +859,7 @@ appear:
     metamon.assert_morph(input, mr, f)
 ```
 
-The `reproduce` block paired with `metamon.with_regression_file(...)`
-gives you two ways to keep failing inputs around:
-
-- Reproduce block (in-test): paste the shrunk input directly into a
-  Gleam test as a literal. Survives regardless of the runner state.
-- Regression file (`with_regression_file(path)`): the runner appends
-  each failure to a TOML file and re-runs every entry on startup
-  before any random generation. Useful when you want past failures
-  rerun on every CI build without changing the test source.
+To keep a failing input, paste the `reproduce` block into a test as a literal, or use `with_regression_file(path)`: the runner appends each failure to a TOML file and re-runs every entry before random generation.
 
 ## Choosing PBT vs MT vs `assert_morph`
 
@@ -1112,18 +871,17 @@ gives you two ways to keep failing inputs around:
 | "this one specific input must always pass this MR" | `metamon.assert_morph` |
 | "all of these MRs must hold for the same `f`" | `metamon.forall_morphs` |
 
-`forall_morphs` requires ≥ 1 MR; passing `[]` panics with a structured
-"empty MR list (vacuous test)" message — use `forall(...)` for the
-no-MR case. Same applies to `forall_morph_n` and `forall_morph_n_with`
-with an empty `transforms` list.
+`forall_morphs([])`, and `forall_morph_n` or `forall_morph_n_with` with an empty `transforms` list, panic with "empty MR list (vacuous test)". Use `forall(...)` when there is no MR.
 
 ## Modules
 
+The full API is on [HexDocs](https://hexdocs.pm/metamon/).
+
 | Module | Responsibility |
 |---|---|
-| `metamon` | Top-level API: `forall`, `forall_with`, `forall_observable`, `forall_observable_with`, `forall_morph`, `forall_morph_with`, `forall_morph_n`, `forall_morph_n_with`, `assert_morph`, `forall_morphs`, `forall_round_trip`, `forall_round_trip_with`, `forall_round_trip_partial`, `forall_round_trip_partial_with`, `forall_round_trip_under`, `forall_round_trip_under_with`, `Mr` (opaque), `mr`, `mr_equivariant`, `name_of`, `idempotency_of`, `invariant_under`, `equivariant_under`, `commutativity_of`, `OutputFormat`, `with_output_format`, `seed`, `random_seed`, `default_config` and all `with_*` re-exports |
-| `metamon/config` | `Config`, `ConfigError`, `default_config`, `with_runs`, `with_seed`, `with_max_size`, `with_shrink_limit`, `with_max_edges`, `with_regression_file`, `with_diff_enabled` |
-| `metamon/generator` | `Generator(a)` (opaque), `generate`, `sample`, `statistics`, `with_examples`, `add_edges`, `no_edges`, `return`, `map`, `bind`, `map2`..`map8`, `tuple2`..`tuple8`, `one_of`, `element_of`, `frequency`, `sized`, `resize`, `scale`, `filter`, `recursive`, `int`, `float`, `float_special`, `float_special_edges`, `bool`, `non_negative_int`, `positive_int`, `negative_int`, `byte`, `bit_array`, `bit_array_printable`, `bit_array_utf8`, `ascii_*`, `unicode_codepoint`, `string`, `string_ascii`, `string_alpha`, `string_alphanumeric`, `string_digit`, `string_printable_ascii`, `string_unicode`, `list_of`, `non_empty_list_of`, `dict_of`, `set_of`, `option_of`, `result_of` |
+| `metamon` | Runners (`forall*`, `forall_morph*`, `assert_morph`, `forall_round_trip*`), MR templates, `Mr`, seeds and config re-exports |
+| `metamon/config` | `Config`, `ConfigError` and the `with_*` builders |
+| `metamon/generator` | `Generator(a)`, combinators (`map`, `bind`, `map2`..`map8`, `one_of`, `frequency`, `recursive`, ...) and generators for numbers, strings, bit arrays and collections |
 | `metamon/generator/seed` | xorshift32-based `Seed` with `split` (target-portable; identical streams on BEAM and JS) |
 | `metamon/generator/tree` | Lazy rose tree used as the integrated shrink representation |
 | `metamon/generator/range` | `singleton`, `constant`, `linear`, `linear_from`, `exponential` (Hedgehog-style ranges) |
@@ -1131,12 +889,12 @@ with an empty `transforms` list.
 | `metamon/transform/list`   | `reverse`, `dedupe`, `prepend`, `append`, `shuffle` |
 | `metamon/transform/string` | `reverse`, `lowercase`, `uppercase`, `trim`, `prepend`, `append` |
 | `metamon/transform/dict`   | `insert`, `remove`, `shuffle_keys` |
-| `metamon/relation` | `Relation(b)`, `new`, `equal`, `not_equal`, `equivalent_under`, `approximately`, `permutation_of`, `subset_of` (multiset), `set_subset_of` (set), `monotone`, `implies`, `and`, `or`, `invert`, `rename`, `RelationN(b)`, `n_new`, `all_equal`, `pairwise` (N-ary relations for `forall_morph_n`) |
-| `metamon/diff` | Structural diff used in failure reports: `diff`, `diff_string`, `render`, `Same`/`Differ`/`ListDiff`/`TupleDiff`/`StringDiff` |
-| `metamon/annotate` | `annotate`, `annotate_value`, `footnote`, `reset`, `current_annotations`, `current_footnotes` |
-| `metamon/coverage` | `classify`, `cover`, `cover_at_least`, `classify_in_bucket`, `collect`, `snapshot`, `shortfalls`, `actual_pct`, `target_pct_of`, `requirements_of`, `collected_of`, `hits_for`, `first_shortfall`, `Pct`/`Count` requirement kinds |
-| `metamon/command` | `Command(model, real)`, `new`, `no_precondition`, `always` (alias of `no_precondition`), `name_of` (model-based testing primitive) |
-| `metamon/stateful` | `run(initial_model, initial_real, commands)`, `assert_passed`, `Outcome` (model-based test runner) |
+| `metamon/relation` | `Relation(b)` and `RelationN(b)` with equality, approximate, multiset and set relations and Boolean combinators |
+| `metamon/diff` | Structural diff used in failure reports |
+| `metamon/annotate` | `annotate`, `annotate_value`, `footnote` and accessors |
+| `metamon/coverage` | `classify`, `cover` and coverage inspection |
+| `metamon/command` | `Command(model, real)` for model-based testing |
+| `metamon/stateful` | `run`, `assert_passed`, `Outcome` (model-based test runner) |
 
 ## Compatibility
 
@@ -1144,18 +902,7 @@ with an empty `transforms` list.
 - BEAM target: Erlang/OTP 27 or later (CI covers OTP 27, 28 and 29).
 - JavaScript target: Node.js 22 or later (CI covers Node 22 and the current LTS).
 
-See [doc/targets.md](doc/targets.md) for the full target story,
-runtime dependency footprint, and behavioural differences between
-BEAM and JavaScript.
-
-## Further reading
-
-- [doc/limitations.md](doc/limitations.md): known scope cuts and
-  workarounds (`bind` shrinking, `recursive` branch-swap, `filter`
-  retry limit, JS parallel runners, UTF-8 surrogate exclusion, float
-  special-value asymmetry).
-- [doc/targets.md](doc/targets.md): supported targets, runtime
-  requirements, dependency footprint.
+[doc/targets.md](doc/targets.md) covers the runtime dependency footprint and behaviour differences between BEAM and JavaScript. [doc/limitations.md](doc/limitations.md) lists known scope cuts and workarounds (`bind` shrinking, `recursive` branch-swap, `filter` retry limit, JS parallel runners, UTF-8 surrogate exclusion, float special values).
 
 ## Testing
 

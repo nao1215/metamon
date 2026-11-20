@@ -4,7 +4,7 @@
 
 ## Examples and unit tests
 
-Each module has a test file with fixed inputs and expected outputs: generators and their edges (`generator_test.gleam`, `edges_in_range_test.gleam`, `edge_propagation_test.gleam`, `range_test.gleam`, `shortcut_generators_test.gleam`), shrinking (`shrink_strategy_test.gleam`, `tree_test.gleam`), relations and transforms (`relation_test.gleam`, `transform_test.gleam`), configuration (`config_test.gleam`, `config_boundary_test.gleam`), the runner's failure path (`runner_failure_test.gleam`) and regression files (`regression_test.gleam`, `regression_runner_test.gleam`). `readme_test.gleam` runs every README example.
+Each module has a test file with fixed inputs and expected outputs: generators and their edges (`generator_test.gleam`, `edges_in_range_test.gleam`, `edge_propagation_test.gleam`, `range_test.gleam`, `shortcut_generators_test.gleam`), shrinking (`shrink_strategy_test.gleam`, `tree_test.gleam`), relations and transforms (`relation_test.gleam`, `transform_test.gleam`), configuration (`config_test.gleam`, `config_boundary_test.gleam`), the runner's failure path (`runner_failure_test.gleam`) and regression files (`regression_test.gleam`, `regression_runner_test.gleam`). `readme_test.gleam` runs every README example and the CRDT case study in `doc/crdt-case-study.md`.
 
 ## Generated properties
 

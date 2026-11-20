@@ -398,7 +398,7 @@ pub fn readme_configuration_test() {
   })
 }
 
-// ===========================================================================
+// Case study: CRDT algebraic laws (doc/crdt-case-study.md)
 // Case study: CRDT algebraic laws
 // ===========================================================================
 
