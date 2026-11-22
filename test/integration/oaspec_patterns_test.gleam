@@ -13,8 +13,6 @@ import metamon
 import metamon/coverage
 import metamon/generator
 import metamon/generator/range
-import metamon/relation
-import metamon/transform
 
 // § 8.1 — `naming.to_snake_case` idempotency + keyword coverage.
 //
@@ -39,7 +37,7 @@ pub fn snake_idempotent_with_examples_and_coverage_test() {
     c,
     generator.string_ascii(range.constant(0, 8))
       |> generator.with_examples(["", "Hello World", "OAuth2 Token"]),
-    mr,
+    [mr],
     fn(s) {
       coverage.classify("non_empty", string.length(s) > 0)
       to_snake_case_stub(s)
@@ -66,7 +64,7 @@ pub fn normalize_idempotent_test() {
   metamon.forall_morph_with(
     c,
     generator.string_ascii(range.constant(0, 16)),
-    mr,
+    [mr],
     normalize_stub,
   )
 }
@@ -103,7 +101,7 @@ pub fn parse_write_round_trip_test() {
   // For round-trip we use a Plain MR with the identity transform and
   // a custom relation that asserts `parse(write(x)) == Ok(x)`.
   let r =
-    relation.new("parse_after_write_recovers_input", fn(left, right) {
+    metamon.Relation("parse_after_write_recovers_input", fn(left, right) {
       // Both sides are `write(input)` (transform = identity), so
       // the assertion is implicit: parsing them must succeed and
       // give equal results, i.e. the encoder is deterministic.
@@ -113,9 +111,9 @@ pub fn parse_write_round_trip_test() {
       }
     })
   let mr =
-    metamon.mr(
+    metamon.Morph(
       name: "parse_write_round_trip",
-      transform: transform.new("identity", fn(value) { value }),
+      transform: metamon.Transform("identity", fn(value) { value }),
       relation: r,
     )
   metamon.forall_morph(
@@ -123,7 +121,7 @@ pub fn parse_write_round_trip_test() {
       generator.int(range.constant(0, 99)),
       range.constant(0, 5),
     ),
-    mr,
+    [mr],
     write_spec,
   )
 }
@@ -147,17 +145,17 @@ fn parse_kv(text: String) -> Dict(String, String) {
 }
 
 pub fn yaml_json_equivalence_stub_test() {
-  let strip_t = transform.new("strip_spaces", strip_spaces)
+  let strip_t = metamon.Transform("strip_spaces", strip_spaces)
   let mr =
-    metamon.mr(
+    metamon.Morph(
       name: "kv_equivalent_modulo_whitespace",
       transform: strip_t,
-      relation: relation.equal(),
+      relation: metamon.equal(),
     )
   metamon.forall_morph(
     generator.string_ascii(range.constant(0, 12))
       |> generator.with_examples(["a:1", "a: 1, b:2", " a : 1 "]),
-    mr,
+    [mr],
     parse_kv,
   )
 }
@@ -173,7 +171,7 @@ pub fn field_order_invariance_test() {
   let mr =
     metamon.invariant_under(
       name: "size_invariant_under_shuffle_keys",
-      under: transform.new("dict.reinsert_reversed", fn(entries) {
+      under: metamon.Transform("dict.reinsert_reversed", fn(entries) {
         entries |> dict.to_list |> list.reverse |> dict.from_list
       }),
     )
@@ -183,7 +181,7 @@ pub fn field_order_invariance_test() {
       generator.int(range.constant(0, 9)),
       range.constant(0, 5),
     ),
-    mr,
+    [mr],
     count_pairs,
   )
 }

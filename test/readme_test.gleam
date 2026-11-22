@@ -16,8 +16,6 @@ import metamon/annotate
 import metamon/coverage
 import metamon/generator
 import metamon/generator/range
-import metamon/relation
-import metamon/transform
 
 // ===========================================================================
 // Quick start
@@ -29,7 +27,7 @@ pub fn readme_quick_start_test() {
   let mr = metamon.idempotency_of(name: "trim_idempotent", of: string.trim)
   metamon.forall_morph(
     generator.string_ascii(range.constant(0, 16)),
-    mr,
+    [mr],
     string.trim,
   )
 }
@@ -61,14 +59,14 @@ pub fn readme_idempotency_test() {
     metamon.idempotency_of(name: "sort_dedupe_idempotent", of: sort_dedupe)
   metamon.forall_morph(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 6)),
-    mr,
+    [mr],
     sort_dedupe,
   )
 }
 
 fn sort_dedupe(xs: List(Int)) -> List(Int) {
   let sorted = list.sort(xs, int.compare)
-  let dedupe = transform.new("list.dedupe", list.unique)
+  let dedupe = metamon.Transform("list.dedupe", list.unique)
   dedupe.apply(sorted)
 }
 
@@ -76,19 +74,19 @@ fn sort_dedupe(xs: List(Int)) -> List(Int) {
 pub fn readme_round_trip_test() {
   // Encoding: int -> string -> int must recover the original.
   let r =
-    relation.new("string_int_round_trip", fn(left: Int, right: Int) {
+    metamon.Relation("string_int_round_trip", fn(left: Int, right: Int) {
       // `left` and `right` are both `int.to_string` of the same input
       // (the transform is identity), so round-trip correctness is the
       // assertion that `parse(write(x))` succeeds and equals `x`.
       left == right
     })
   let mr =
-    metamon.mr(
+    metamon.Morph(
       name: "int_string_round_trip",
-      transform: transform.new("identity", fn(value) { value }),
+      transform: metamon.Transform("identity", fn(value) { value }),
       relation: r,
     )
-  metamon.forall_morph(generator.int(range.constant(-1000, 1000)), mr, fn(n) {
+  metamon.forall_morph(generator.int(range.constant(-1000, 1000)), [mr], fn(n) {
     let assert Ok(parsed) = int.parse(int.to_string(n))
     parsed
   })
@@ -109,11 +107,11 @@ pub fn readme_invariance_test() {
   let mr =
     metamon.invariant_under(
       name: "length_invariant_under_reverse",
-      under: transform.new("list.reverse", list.reverse),
+      under: metamon.Transform("list.reverse", list.reverse),
     )
   metamon.forall_morph(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 8)),
-    mr,
+    [mr],
     list.length,
   )
 }
@@ -123,15 +121,15 @@ pub fn readme_equivariance_test() {
   // map(g) commutes with reverse:
   //   list.reverse(list.map(xs, g)) == list.map(list.reverse(xs), g)
   let mr =
-    metamon.equivariant_under(
+    metamon.Equivariant(
       name: "map_commutes_with_reverse",
-      input: transform.new("list.reverse", list.reverse),
-      output: transform.new("list.reverse", list.reverse),
-      relation: relation.equal(),
+      input: metamon.Transform("list.reverse", list.reverse),
+      output: metamon.Transform("list.reverse", list.reverse),
+      relation: metamon.equal(),
     )
   metamon.forall_morph(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 6)),
-    mr,
+    [mr],
     fn(xs) { list.map(xs, fn(n) { n * 2 }) },
   )
 }
@@ -140,16 +138,16 @@ pub fn readme_equivariance_test() {
 pub fn readme_manual_mr_test() {
   // Adding zero to a list of ints does not change its sum.
   let append_zero =
-    transform.new("list.append(0)", fn(items) { list.append(items, [0]) })
+    metamon.Transform("list.append(0)", fn(items) { list.append(items, [0]) })
   let mr =
-    metamon.mr(
+    metamon.Morph(
       name: "sum_invariant_under_append_zero",
       transform: append_zero,
-      relation: relation.equal(),
+      relation: metamon.equal(),
     )
   metamon.forall_morph(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 5)),
-    mr,
+    [mr],
     list_sum,
   )
 }
@@ -163,7 +161,7 @@ pub fn readme_assert_morph_test() {
   let mr =
     metamon.invariant_under(
       name: "sum_invariant_under_reverse",
-      under: transform.new("list.reverse", list.reverse),
+      under: metamon.Transform("list.reverse", list.reverse),
     )
   metamon.assert_morph([1, 2, 3, 4, 5], mr, list_sum)
 }
@@ -176,7 +174,7 @@ pub fn readme_commutativity_test() {
       generator.int(range.constant(-50, 50)),
       generator.int(range.constant(-50, 50)),
     ),
-    mr,
+    [mr],
     fn(pair) { add_int(pair.0, pair.1) },
   )
 }
@@ -195,21 +193,21 @@ pub fn readme_round_trip_via_forall_test() {
   })
 }
 
-// 2.9. forall_morphs — run several MRs against the same f.
-pub fn readme_forall_morphs_test() {
+// 2.9. forall_morph — run several morphs against the same f.
+pub fn readme_forall_morph_list_test() {
   let invariant_under_reverse =
     metamon.invariant_under(
       name: "sum_under_reverse",
-      under: transform.new("list.reverse", list.reverse),
+      under: metamon.Transform("list.reverse", list.reverse),
     )
   let invariant_under_append_zero =
     metamon.invariant_under(
       name: "sum_under_append_zero",
-      under: transform.new("list.append(0)", fn(items) {
+      under: metamon.Transform("list.append(0)", fn(items) {
         list.append(items, [0])
       }),
     )
-  metamon.forall_morphs(
+  metamon.forall_morph(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 4)),
     [invariant_under_reverse, invariant_under_append_zero],
     list_sum,
@@ -260,7 +258,7 @@ pub fn readme_with_examples_test() {
   metamon.forall_morph(
     generator.string_ascii(range.constant(0, 8))
       |> generator.with_examples(["", " ", "  ", "\t\n  hi  \n\t"]),
-    trim_idempotent,
+    [trim_idempotent],
     string.trim,
   )
 }
@@ -302,7 +300,8 @@ fn count_leaves(t: Tree) -> Int {
 // 4.3. equivalent_under — relation on a normalised view.
 pub fn readme_equivalent_under_test() {
   // Two strings are equivalent if their lowercase forms match.
-  let r = relation.equivalent_under(string.lowercase, "case_insensitive")
+  let r =
+    metamon.equivalent_under(name: "case_insensitive", via: string.lowercase)
   should.be_true(r.holds("Hello", "HELLO"))
   should.be_false(r.holds("Hello", "World"))
 }

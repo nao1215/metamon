@@ -102,14 +102,14 @@ unwrap_used = "error"
 "src/metamon/internal/runner.gleam" = ["avoid_panic"]
 "src/metamon/generator.gleam" = ["avoid_panic", "assert_ok_pattern"]
 "src/metamon/generator/range.gleam" = ["avoid_panic"]
-# `relation.approximately(epsilon)` rejects a negative epsilon at
+# `metamon.approximately(epsilon)` rejects a negative epsilon at
 # construction time with a structured panic. The "always false"
 # relation a negative epsilon would silently produce is never the
 # user's intent, so we fail visibly on the sign mistake.
-"src/metamon/relation.gleam" = ["avoid_panic"]
+"src/metamon.gleam" = ["avoid_panic"]
 # `coverage.cover` / `cover_at_least` panic on a malformed target
 # (target_pct outside [0.0, 100.0] or NaN, min_hits < 0) — the same
-# "fail visibly on misconfiguration" stance as relation.approximately
+# "fail visibly on misconfiguration" stance as metamon.approximately
 # (negative epsilon) and Range constructors (inverted bounds).
 "src/metamon/coverage.gleam" = ["avoid_panic"]
 # Process-dictionary FFI shims (BEAM + JS) intentionally form the

@@ -112,7 +112,7 @@ pub fn every_runner_checks_the_config_test() {
       metamon.forall_morph_with(
         bad,
         ints,
-        metamon.idempotency_of(name: "id", of: fn(x) { x }),
+        [metamon.idempotency_of(name: "id", of: fn(x) { x })],
         fn(x) { x },
       )
     })
@@ -121,8 +121,8 @@ pub fn every_runner_checks_the_config_test() {
   let #(round_trip_panicked, round_trip_message) =
     test_helpers.capture_panic(fn() {
       metamon.forall_round_trip_with(
-        cfg: bad,
-        gen: ints,
+        config: bad,
+        generator: ints,
         name: "identity",
         encode: fn(x) { x },
         decode: Ok,

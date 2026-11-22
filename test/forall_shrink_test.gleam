@@ -61,8 +61,8 @@ pub fn forall_round_trip_shrinks_test() {
   let text =
     failure_text(fn() {
       metamon.forall_round_trip_with(
-        cfg: seeded(3),
-        gen: ints(),
+        config: seeded(3),
+        generator: ints(),
         name: "lossy",
         encode: int.to_string,
         decode: fn(s) {

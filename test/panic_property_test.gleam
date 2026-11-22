@@ -127,8 +127,8 @@ pub fn round_trip_reports_the_decoded_value_test() {
   let #(panicked, text) =
     test_helpers.capture_panic(fn() {
       metamon.forall_round_trip_with(
-        cfg: seeded(42),
-        gen: ints(),
+        config: seeded(42),
+        generator: ints(),
         name: "off_by_one",
         encode: fn(n) { n },
         decode: fn(n) {
@@ -148,8 +148,8 @@ pub fn round_trip_catches_a_panicking_decoder_test() {
   let #(panicked, text) =
     test_helpers.capture_panic(fn() {
       metamon.forall_round_trip_with(
-        cfg: seeded(42),
-        gen: ints(),
+        config: seeded(42),
+        generator: ints(),
         name: "panicking_decoder",
         encode: fn(n) { n },
         decode: fn(n) {

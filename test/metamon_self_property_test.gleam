@@ -9,11 +9,10 @@ import gleam/list
 import metamon
 import metamon/generator
 import metamon/generator/range
-import metamon/relation
 
 pub fn relation_equal_is_reflexive_test() {
   metamon.forall(generator.int(range.constant(-100, 100)), fn(value) {
-    let equal = relation.equal()
+    let equal = metamon.equal()
     assert equal.holds(value, value)
   })
 }
@@ -26,7 +25,7 @@ pub fn relation_equal_is_symmetric_test() {
     ),
     fn(pair) {
       let #(left, right) = pair
-      let equal = relation.equal()
+      let equal = metamon.equal()
       assert equal.holds(left, right) == equal.holds(right, left)
     },
   )
@@ -39,7 +38,7 @@ pub fn relation_permutation_holds_for_reverse_test() {
       range.constant(0, 6),
     ),
     fn(items) {
-      let perm = relation.permutation_of()
+      let perm = metamon.permutation_of()
       assert perm.holds(items, list.reverse(items))
     },
   )
@@ -52,7 +51,7 @@ pub fn relation_permutation_self_test() {
       range.constant(0, 6),
     ),
     fn(items) {
-      let perm = relation.permutation_of()
+      let perm = metamon.permutation_of()
       assert perm.holds(items, items)
     },
   )
@@ -60,7 +59,7 @@ pub fn relation_permutation_self_test() {
 
 pub fn relation_approximately_zero_epsilon_is_equal_test() {
   metamon.forall(generator.int(range.constant(-1000, 1000)), fn(value) {
-    let approx = relation.approximately(0.0)
+    let approx = metamon.approximately(0.0)
     let as_float = int.to_float(value)
     assert approx.holds(as_float, as_float)
   })

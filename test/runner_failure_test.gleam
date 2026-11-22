@@ -10,8 +10,6 @@ import gleeunit/should
 import metamon
 import metamon/generator
 import metamon/generator/range
-import metamon/relation
-import metamon/transform
 import test_helpers
 
 pub type CapturedPanic {
@@ -49,18 +47,20 @@ pub fn forall_panics_on_violation_test() {
 pub fn forall_morph_panics_with_named_relation_test() {
   // Build an MR that always fails by claiming the input is invariant
   // under "increment" (which it obviously is not).
-  let increment = transform.new("+1", fn(n) { n + 1 })
+  let increment = metamon.Transform("+1", fn(n) { n + 1 })
   let bad_mr =
-    metamon.mr(
+    metamon.Morph(
       name: "false_invariant_under_increment",
       transform: increment,
-      relation: relation.equal(),
+      relation: metamon.equal(),
     )
   let outcome =
     capture(fn() {
-      metamon.forall_morph(generator.int(range.constant(1, 10)), bad_mr, fn(n) {
-        n
-      })
+      metamon.forall_morph(
+        generator.int(range.constant(1, 10)),
+        [bad_mr],
+        fn(n) { n },
+      )
     })
   case outcome {
     Reason(text) -> {
@@ -76,12 +76,12 @@ pub fn forall_morph_panics_with_named_relation_test() {
 }
 
 pub fn assert_morph_panics_on_violation_test() {
-  let increment = transform.new("+1", fn(n) { n + 1 })
+  let increment = metamon.Transform("+1", fn(n) { n + 1 })
   let bad_mr =
-    metamon.mr(
+    metamon.Morph(
       name: "fails_for_assert_morph",
       transform: increment,
-      relation: relation.equal(),
+      relation: metamon.equal(),
     )
   let outcome = capture(fn() { metamon.assert_morph(5, bad_mr, fn(n) { n }) })
   case outcome {
@@ -96,7 +96,7 @@ pub fn forall_round_trip_panics_on_decode_error_test() {
   let outcome =
     capture(fn() {
       metamon.forall_round_trip(
-        gen: generator.int(range.constant(0, 100)),
+        generator: generator.int(range.constant(0, 100)),
         name: "broken",
         encode: int.to_string,
         decode: fn(_value) { Error(Nil) },
@@ -111,17 +111,17 @@ pub fn forall_round_trip_panics_on_decode_error_test() {
   }
 }
 
-pub fn forall_morphs_panics_on_empty_mr_list_test() {
+pub fn forall_morph_panics_on_empty_morph_list_test() {
   let outcome =
     capture(fn() {
-      metamon.forall_morphs(generator.int(range.constant(0, 100)), [], fn(n) {
+      metamon.forall_morph(generator.int(range.constant(0, 100)), [], fn(n) {
         n
       })
     })
   case outcome {
     Reason(text) -> {
-      should.be_true(string.contains(text, "metamon.forall_morphs"))
-      should.be_true(string.contains(text, "empty MR list"))
+      should.be_true(string.contains(text, "metamon.forall_morph"))
+      should.be_true(string.contains(text, "empty morph list"))
       should.be_true(string.contains(text, "vacuous test"))
     }
     NoPanic -> should.fail()

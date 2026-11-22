@@ -8,8 +8,6 @@ import metamon
 import metamon/generator
 import metamon/generator/range
 import metamon/internal/diff.{Differ, IndexedDiff, ListDiff, Same, TupleDiff}
-import metamon/relation
-import metamon/transform
 import test_helpers
 
 fn failure_text(thunk: fn() -> Nil) -> String {
@@ -18,18 +16,18 @@ fn failure_text(thunk: fn() -> Nil) -> String {
   message
 }
 
-fn plus_one_mr() -> metamon.Mr(Int, a) {
-  metamon.mr(
+fn plus_one_mr() -> metamon.Morph(Int, a) {
+  metamon.Morph(
     name: "invariant_under_plus_one",
-    transform: transform.new("+1", fn(n) { n + 1 }),
-    relation: relation.equal(),
+    transform: metamon.Transform("+1", fn(n) { n + 1 }),
+    relation: metamon.equal(),
   )
 }
 
 pub fn report_diffs_list_outputs_per_index_test() {
   let text =
     failure_text(fn() {
-      metamon.forall_morph(generator.return(3), plus_one_mr(), fn(n) {
+      metamon.forall_morph(generator.return(3), [plus_one_mr()], fn(n) {
         [1, 2, n]
       })
     })
@@ -40,7 +38,7 @@ pub fn report_diffs_list_outputs_per_index_test() {
 pub fn report_diffs_tuple_outputs_per_index_test() {
   let text =
     failure_text(fn() {
-      metamon.forall_morph(generator.return(3), plus_one_mr(), fn(n) {
+      metamon.forall_morph(generator.return(3), [plus_one_mr()], fn(n) {
         #("x", n)
       })
     })
@@ -50,7 +48,7 @@ pub fn report_diffs_tuple_outputs_per_index_test() {
 pub fn report_diff_escapes_strings_once_test() {
   let text =
     failure_text(fn() {
-      metamon.forall_morph(generator.return(3), plus_one_mr(), fn(n) {
+      metamon.forall_morph(generator.return(3), [plus_one_mr()], fn(n) {
         string.repeat("\"", n)
       })
     })

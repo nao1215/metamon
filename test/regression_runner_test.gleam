@@ -126,12 +126,12 @@ fn round_trip_with_file(
   broken: fn(Int) -> Bool,
 ) -> Nil {
   metamon.forall_round_trip_with(
-    cfg: metamon.Config(
+    config: metamon.Config(
       ..metamon.default_config(),
       seed: Some(seed),
       regression_file: Some(shared_path),
     ),
-    gen: generator.int(range.constant(0, 1000)) |> generator.no_edges,
+    generator: generator.int(range.constant(0, 1000)) |> generator.no_edges,
     name: name,
     encode: fn(n) { n },
     decode: fn(n) {

@@ -11,13 +11,12 @@ import gleeunit/should
 import metamon
 import metamon/generator
 import metamon/generator/range
-import metamon/transform
 
 pub fn forall_morph_thousand_runs_finishes_quickly_test() {
   let mr =
     metamon.invariant_under(
       name: "length_under_reverse",
-      under: transform.new("list.reverse", list.reverse),
+      under: metamon.Transform("list.reverse", list.reverse),
     )
   let c = metamon.Config(..metamon.default_config(), seed: Some(0), runs: 1000)
   let started = monotonic_microseconds()
@@ -27,7 +26,7 @@ pub fn forall_morph_thousand_runs_finishes_quickly_test() {
       generator.int(range.constant(0, 100)),
       range.constant(0, 16),
     ),
-    mr,
+    [mr],
     list.length,
   )
   let elapsed_us = monotonic_microseconds() - started

@@ -25,8 +25,6 @@ import gleeunit/should
 import metamon
 import metamon/generator
 import metamon/generator/range
-import metamon/relation
-import metamon/transform
 import test_helpers
 
 // ---------- panic capture ----------
@@ -55,19 +53,19 @@ fn json_for_forall_failure() -> String {
 }
 
 fn json_for_forall_morph_failure() -> String {
-  let increment = transform.new("+1", fn(n: Int) { n + 1 })
+  let increment = metamon.Transform("+1", fn(n: Int) { n + 1 })
   let bad_mr =
-    metamon.mr(
+    metamon.Morph(
       name: "false_invariant",
       transform: increment,
-      relation: relation.equal(),
+      relation: metamon.equal(),
     )
   let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   json_from_failure(fn() {
     metamon.forall_morph_with(
       cfg,
       generator.int(range.constant(1, 10)),
-      bad_mr,
+      [bad_mr],
       fn(n) { n },
     )
   })
@@ -78,8 +76,8 @@ fn json_for_forall_round_trip_failure() -> String {
   json_from_failure(fn() {
     // A trivially broken codec: encoder and decoder do not invert.
     metamon.forall_round_trip_with(
-      cfg: cfg,
-      gen: generator.int(range.constant(1, 10)),
+      config: cfg,
+      generator: generator.int(range.constant(1, 10)),
       name: "broken_codec",
       encode: fn(n: Int) { n + 1 },
       decode: fn(n: Int) { Ok(n) },

@@ -21,57 +21,25 @@ import metamon/generator.{type Generator}
 import metamon/internal/capture
 import metamon/internal/regression
 import metamon/internal/report.{
-  type FailureReport, type InputSource, type MorphMode, EdgeSource, Equivariant,
-  FailureReport, Plain, RandomSource,
+  type FailureReport, type InputSource, type MorphMode, EdgeSource,
+  FailureReport, RandomSource,
 } as report_module
 import metamon/internal/seed.{type Seed} as seed_module
 import metamon/internal/tree.{type Tree}
-import metamon/relation.{type Relation}
-import metamon/transform.{type Transform}
 import simplifile
 
-/// Internal description of a metamorphic relation. Built from
-/// `metamon.mr` and `metamon.mr_equivariant`. Opaque so the variant
-/// shape can change without breaking downstream test files.
-pub opaque type MorphSpec(a, b) {
-  PlainSpec(name: String, transform: Transform(a), relation: Relation(b))
-  EquivariantSpec(
+/// A metamorphic relation as the runner checks it: the relation holds
+/// between `expected(f(x))` and `f(follow_up(x))`. A plain relation has
+/// the identity as `expected`.
+pub type MorphSpec(a, b) {
+  MorphSpec(
     name: String,
-    input_transform: Transform(a),
-    output_transform: Transform(b),
-    relation: Relation(b),
+    mode: MorphMode,
+    follow_up: fn(a) -> a,
+    expected: fn(b) -> b,
+    relation_name: String,
+    holds: fn(b, b) -> Bool,
   )
-}
-
-/// Smart constructor for the Plain MR shape (`f(T(x))` and `f(x)`
-/// are related by `R`).
-pub fn plain(
-  name: String,
-  transform: Transform(a),
-  relation: Relation(b),
-) -> MorphSpec(a, b) {
-  PlainSpec(name: name, transform: transform, relation: relation)
-}
-
-/// Smart constructor for the Equivariant MR shape (`f(T(x))` and
-/// `U(f(x))` are related by `R`).
-pub fn equivariant(
-  name: String,
-  input_transform: Transform(a),
-  output_transform: Transform(b),
-  relation: Relation(b),
-) -> MorphSpec(a, b) {
-  EquivariantSpec(
-    name: name,
-    input_transform: input_transform,
-    output_transform: output_transform,
-    relation: relation,
-  )
-}
-
-/// Public accessor for the MR's user-visible name.
-pub fn morph_name(spec: MorphSpec(a, b)) -> String {
-  spec_name(spec)
 }
 
 /// The configuration of one run, built and checked by `settings`.
@@ -195,18 +163,6 @@ pub fn run_round_trip(
   })
 }
 
-/// Run a metamorphic relation against `f` for many inputs.
-pub fn run_forall_morph(
-  cfg: Settings,
-  test_name: String,
-  gen: Generator(a),
-  spec: MorphSpec(a, b),
-  f: fn(a) -> b,
-) -> Nil {
-  run_check(cfg, test_name, gen, morph_check(cfg, test_name, spec, f))
-  |> finish
-}
-
 fn morph_check(
   cfg: Settings,
   test_name: String,
@@ -214,8 +170,8 @@ fn morph_check(
   f: fn(a) -> b,
 ) -> Check(a) {
   Check(
-    regression_key: spec_name(spec),
-    coverage_name: Some(spec_name(spec)),
+    regression_key: spec.name,
+    coverage_name: Some(spec.name),
     holds: fn(input) { evaluate_spec(spec, f, input).holds },
     report: fn(failure) { morph_failure(cfg, test_name, spec, f, failure) },
   )
@@ -246,10 +202,10 @@ fn render_for(cfg: Settings, report: FailureReport) -> String {
   }
 }
 
-/// Run multiple metamorphic specs against the same generator + `f`.
-/// Each spec is run independently; failures are collected and the
-/// runner panics at the end if any spec failed.
-pub fn run_forall_morphs(
+/// Run metamorphic specs against the same generator and `f`. Each spec
+/// is run on its own; the runner panics at the end with the report of
+/// every spec that failed.
+pub fn run_forall_morph(
   cfg: Settings,
   test_name: String,
   gen: Generator(a),
@@ -259,7 +215,7 @@ pub fn run_forall_morphs(
   case specs {
     [] ->
       panic_with(
-        "metamon.forall_morphs: empty MR list (vacuous test). Pass at least one MR or use forall(...) for a single-input property.",
+        "metamon.forall_morph: empty morph list (vacuous test). Pass at least one Morph or use forall(...) for a single-input property.",
       )
     _ -> Nil
   }
@@ -274,6 +230,7 @@ pub fn run_forall_morphs(
     })
   case collected {
     [] -> Nil
+    [only] -> panic_with(only)
     failures ->
       panic_with(
         "× one or more metamorphic relations failed\n\n"
@@ -555,43 +512,15 @@ fn evaluate_spec(
   f: fn(a) -> b,
   input: a,
 ) -> Evaluation(b) {
-  let #(followup_input, src_output, rel) = case spec {
-    PlainSpec(_name, t, r) -> #(t.apply(input), f(input), r)
-    EquivariantSpec(_name, ti, to, r) -> #(
-      ti.apply(input),
-      to.apply(f(input)),
-      r,
-    )
-  }
+  let followup_input = spec.follow_up(input)
+  let src_output = spec.expected(f(input))
   let fol_output = f(followup_input)
   Evaluation(
     followup_input: string.inspect(followup_input),
     src_output: src_output,
     fol_output: fol_output,
-    holds: rel.holds(src_output, fol_output),
+    holds: spec.holds(src_output, fol_output),
   )
-}
-
-fn morph_mode_of(spec: MorphSpec(a, b)) -> MorphMode {
-  case spec {
-    PlainSpec(_, t, _) -> Plain(transform_name: t.name)
-    EquivariantSpec(_, ti, to, _) ->
-      Equivariant(input_transform_name: ti.name, output_transform_name: to.name)
-  }
-}
-
-fn relation_name_of(spec: MorphSpec(a, b)) -> String {
-  case spec {
-    PlainSpec(_, _, r) -> r.name
-    EquivariantSpec(_, _, _, r) -> r.name
-  }
-}
-
-fn spec_name(spec: MorphSpec(a, b)) -> String {
-  case spec {
-    PlainSpec(name, _, _) -> name
-    EquivariantSpec(name, _, _, _) -> name
-  }
 }
 
 fn morph_failure(
@@ -605,9 +534,9 @@ fn morph_failure(
   let report =
     FailureReport(
       ..plain_report(cfg, test_name, failure),
-      mr_name: spec_name(spec),
-      morph_mode: Some(morph_mode_of(spec)),
-      relation_name: relation_name_of(spec),
+      mr_name: spec.name,
+      morph_mode: Some(spec.mode),
+      relation_name: spec.relation_name,
       followup_input: evaluation.followup_input,
       source_output: string.inspect(evaluation.src_output),
       followup_output: string.inspect(evaluation.fol_output),
@@ -622,7 +551,7 @@ fn morph_failure_static(
   evaluation: Evaluation(b),
 ) -> FailureReport {
   FailureReport(
-    mr_name: spec_name(spec),
+    mr_name: spec.name,
     test_name: test_name,
     config_seed: 0,
     config_seed_original: None,
@@ -630,8 +559,8 @@ fn morph_failure_static(
     runs_total: 1,
     shrinks_done: 0,
     shrink_capped: False,
-    morph_mode: Some(morph_mode_of(spec)),
-    relation_name: relation_name_of(spec),
+    morph_mode: Some(spec.mode),
+    relation_name: spec.relation_name,
     source_input: string.inspect(input),
     followup_input: evaluation.followup_input,
     source_output: string.inspect(evaluation.src_output),

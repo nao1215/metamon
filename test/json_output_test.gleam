@@ -7,8 +7,6 @@ import gleeunit/should
 import metamon
 import metamon/generator
 import metamon/generator/range
-import metamon/relation
-import metamon/transform
 import test_helpers
 
 pub fn json_output_is_single_line_object_test() {
@@ -35,12 +33,12 @@ pub fn json_output_is_single_line_object_test() {
 }
 
 pub fn json_output_for_morph_failure_test() {
-  let increment = transform.new("+1", fn(n: Int) { n + 1 })
+  let increment = metamon.Transform("+1", fn(n: Int) { n + 1 })
   let bad_mr =
-    metamon.mr(
+    metamon.Morph(
       name: "false_invariant",
       transform: increment,
-      relation: relation.equal(),
+      relation: metamon.equal(),
     )
   let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   let outcome =
@@ -48,7 +46,7 @@ pub fn json_output_for_morph_failure_test() {
       metamon.forall_morph_with(
         cfg,
         generator.int(range.constant(1, 10)),
-        bad_mr,
+        [bad_mr],
         fn(n) { n },
       )
     })

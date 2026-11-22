@@ -1,4 +1,4 @@
-//// `forall_morph` and `forall_morphs` go through the same pipeline as
+//// `forall_morph` goes through the same pipeline as
 //// `forall`: regression replay and record, the coverage check, and
 //// shrinking.
 
@@ -8,8 +8,6 @@ import metamon
 import metamon/coverage
 import metamon/generator
 import metamon/generator/range
-import metamon/relation
-import metamon/transform
 import simplifile
 import test_helpers
 
@@ -25,11 +23,11 @@ fn ints() -> generator.Generator(Int) {
   generator.int(range.constant(0, 1000)) |> generator.no_edges
 }
 
-fn below_ten() -> metamon.Mr(Int, Int) {
-  metamon.mr(
+fn below_ten() -> metamon.Morph(Int, Int) {
+  metamon.Morph(
     name: "below_ten",
-    transform: transform.new("identity", fn(value) { value }),
-    relation: relation.new("source below ten", fn(source, _) { source < 10 }),
+    transform: metamon.Transform("identity", fn(value) { value }),
+    relation: metamon.Relation("source below ten", fn(source, _) { source < 10 }),
   )
 }
 
@@ -40,7 +38,7 @@ fn seeded(value: Int) -> metamon.Config {
 pub fn forall_morph_shrinks_test() {
   let text =
     failure_text(fn() {
-      metamon.forall_morph_with(seeded(42), ints(), below_ten(), fn(x) { x })
+      metamon.forall_morph_with(seeded(42), ints(), [below_ten()], fn(x) { x })
     })
   assert string.contains(text, "source input  (shrunk):\n    10\n")
 }
@@ -50,7 +48,7 @@ pub fn forall_morph_records_and_replays_regressions_test() {
   let cfg = metamon.Config(..seeded(42), regression_file: Some(tmp_path))
   let _ =
     failure_text(fn() {
-      metamon.forall_morph_with(cfg, ints(), below_ten(), fn(x) { x })
+      metamon.forall_morph_with(cfg, ints(), [below_ten()], fn(x) { x })
     })
   let assert Ok(content) = simplifile.read(tmp_path)
   assert string.contains(content, "mr          = \"below_ten\"")
@@ -60,7 +58,7 @@ pub fn forall_morph_records_and_replays_regressions_test() {
       metamon.forall_morph_with(
         metamon.Config(..seeded(1), regression_file: Some(tmp_path)),
         ints(),
-        below_ten(),
+        [below_ten()],
         fn(x) { x },
       )
     })
@@ -69,16 +67,16 @@ pub fn forall_morph_records_and_replays_regressions_test() {
   Nil
 }
 
-pub fn forall_morphs_checks_coverage_test() {
+pub fn forall_morph_checks_coverage_test() {
   let never_hit =
-    metamon.mr(
+    metamon.Morph(
       name: "identity_under_identity",
-      transform: transform.new("identity", fn(value) { value }),
-      relation: relation.equal(),
+      transform: metamon.Transform("identity", fn(value) { value }),
+      relation: metamon.equal(),
     )
   let text =
     failure_text(fn() {
-      metamon.forall_morphs(ints(), [never_hit], fn(x) {
+      metamon.forall_morph(ints(), [never_hit], fn(x) {
         coverage.cover(50.0, "never", False)
         x
       })

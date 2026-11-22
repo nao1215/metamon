@@ -1,22 +1,33 @@
-//// Metamon top-level public API.
+//// Property-based and metamorphic testing.
 ////
-//// `metamon` exports the small surface that most tests interact with:
-//// `forall`, `forall_morph`, `assert_morph`,
-//// `forall_morphs`, `forall_round_trip`, the `Mr` smart constructors,
-//// and a handful of metamorphic-relation templates (`idempotency_of`,
-//// `invariant_under`, `equivariant_under`, `commutativity_of`).
+//// `forall` runs a property on many generated inputs and shrinks the
+//// first input that makes it panic. `forall_morph` checks metamorphic
+//// relations: how the output of a function changes when its input is
+//// transformed. Generators live in `metamon/generator`.
 ////
-//// Configuration lives in `metamon/config`; generators in
-//// `metamon/generator`; transforms in `metamon/transform`; relations
-//// in `metamon/relation`; per-property context in `metamon/annotate`
-//// and `metamon/coverage`.
+//// ```gleam
+//// import gleam/list
+//// import metamon
+//// import metamon/generator
+////
+//// pub fn reverse_twice_test() {
+////   let lists =
+////     generator.list_of(
+////       generator.int(generator.range(from: -100, to: 100)),
+////       length: generator.range(from: 0, to: 20),
+////     )
+////   metamon.forall(lists, fn(items) {
+////     assert list.reverse(list.reverse(items)) == items
+////   })
+//// }
+//// ```
 
+import gleam/float
 import gleam/list
 import gleam/option.{type Option, None}
 import metamon/generator.{type Generator}
-import metamon/internal/runner.{type MorphSpec}
-import metamon/relation.{type Relation}
-import metamon/transform.{type Transform}
+import metamon/internal/report
+import metamon/internal/runner
 
 /// How a runner explores inputs and reports a failure. Build one from
 /// `default_config` and override the fields you need:
@@ -89,46 +100,31 @@ fn settings(config: Config) -> runner.Settings {
   )
 }
 
-// ---------- Mr type and constructors ----------
-
-/// A named metamorphic relation. Construct via `mr` (the Plain form,
-/// `f(T(x)) ≈ f(x)`) or `mr_equivariant` (the Equivariant form,
-/// `f(T(x)) ≈ U(f(x))`).
-///
-/// Opaque on purpose: future versions may add fields without breaking
-/// callers that always go through the smart constructors.
-pub opaque type Mr(a, b) {
-  Mr(spec: MorphSpec(a, b))
+/// A named transformation of an input, such as reversing a list. The
+/// name appears in failure reports. `apply` must be pure.
+pub type Transform(a) {
+  Transform(name: String, apply: fn(a) -> a)
 }
 
-/// Construct a Plain MR. The relation is checked between
-/// `f(source_input)` and `f(transform.apply(source_input))`.
-pub fn mr(
-  name name: String,
-  transform transform: Transform(a),
-  relation relation: Relation(b),
-) -> Mr(a, b) {
-  Mr(spec: runner.plain(name, transform, relation))
+/// A named check between two outputs, such as equality. The name appears
+/// in failure reports.
+pub type Relation(b) {
+  Relation(name: String, holds: fn(b, b) -> Bool)
 }
 
-/// Construct an Equivariant MR. The relation is checked between
-/// `output_transform.apply(f(source_input))` and
-/// `f(input_transform.apply(source_input))`.
-pub fn mr_equivariant(
-  name name: String,
-  input input_transform: Transform(a),
-  output output_transform: Transform(b),
-  relation relation: Relation(b),
-) -> Mr(a, b) {
-  Mr(spec: runner.equivariant(name, input_transform, output_transform, relation))
+/// A metamorphic relation of a function `f` from `a` to `b`.
+pub type Morph(a, b) {
+  /// `f(x)` and `f(transform.apply(x))` satisfy `relation`.
+  Morph(name: String, transform: Transform(a), relation: Relation(b))
+  /// `output.apply(f(x))` and `f(input.apply(x))` satisfy `relation`:
+  /// transforming the input transforms the output the same way.
+  Equivariant(
+    name: String,
+    input: Transform(a),
+    output: Transform(b),
+    relation: Relation(b),
+  )
 }
-
-/// Get the user-facing name of an MR.
-pub fn name_of(m: Mr(a, b)) -> String {
-  runner.morph_name(m.spec)
-}
-
-// ---------- public runners ----------
 
 /// Run `property` on many generated inputs. The property fails when it
 /// panics: a failing `assert` or `let assert`, a `panic`, or an Erlang
@@ -166,151 +162,232 @@ pub fn forall_with(
   )
 }
 
-/// Run a metamorphic relation over many random inputs.
-pub fn forall_morph(g: Generator(a), m: Mr(a, b), f: fn(a) -> b) -> Nil {
-  forall_morph_with(default_config(), g, m, f)
-}
-
-/// Run a metamorphic relation with an explicit configuration.
-pub fn forall_morph_with(
-  cfg: Config,
-  g: Generator(a),
-  m: Mr(a, b),
-  f: fn(a) -> b,
-) -> Nil {
-  runner.run_forall_morph(settings(cfg), "forall_morph", g, m.spec, f)
-}
-
-/// Run a metamorphic relation against a single input. Generator-free.
-pub fn assert_morph(input: a, m: Mr(a, b), f: fn(a) -> b) -> Nil {
-  runner.run_assert_morph("assert_morph", m.spec, f, input)
-}
-
-/// Run multiple metamorphic relations against the same generator.
-/// Each MR is tried independently; failures are collected and reported
-/// together at the end.
-///
-/// Passing `[]` is a programming error (vacuous test) and panics with
-/// a structured message — use `forall(...)` for a single-input property.
-pub fn forall_morphs(
-  g: Generator(a),
-  ms: List(Mr(a, b)),
-  f: fn(a) -> b,
-) -> Nil {
-  runner.run_forall_morphs(
-    settings(default_config()),
-    "forall_morphs",
-    g,
-    list.map(ms, fn(m) { m.spec }),
-    f,
-  )
-}
-
-// ---------- MR templates ----------
-//
-// All templates take `name` first and use labelled arguments so the
-// call sites read naturally:
-//
-//   metamon.idempotency_of(name: "trim", of: string.trim)
-//   metamon.invariant_under(name: "len_under_reverse", under: reverse)
-//
-// Round-trip is not exposed as a Plain MR — MR's two-point output
-// relation cannot express the source-vs-output comparison
-// `decode(encode(x)) == Ok(x)`. Instead, the runner-style helper
-// `forall_round_trip` (below) wraps `forall` with a named header
-// (`round_trip[<name>]`) so the failure report identifies which
-// round-trip broke, which is the discoverability win without forcing
-// a contrived MR shape.
-
-/// `f(f(x)) == f(x)`. Idempotency.
-///
-/// Encoded as a Plain MR whose transform is `f` itself and whose
-/// relation is structural equality.
-pub fn idempotency_of(name name: String, of f: fn(a) -> a) -> Mr(a, a) {
-  let apply_t = transform.new("apply " <> name, f)
-  mr(name: name, transform: apply_t, relation: relation.equal())
-}
-
-/// `f(T(x)) == f(x)` — `f` is invariant under the input transform.
-pub fn invariant_under(
-  name name: String,
-  under under: Transform(a),
-) -> Mr(a, b) {
-  mr(name: name, transform: under, relation: relation.equal())
-}
-
-/// `R(U(f(x)), f(T(x)))`. Equivariance: the input transform `T` and
-/// the output transform `U` commute with `f` modulo `R`.
-pub fn equivariant_under(
-  name name: String,
-  input input_transform: Transform(a),
-  output output_transform: Transform(b),
-  relation rel: Relation(b),
-) -> Mr(a, b) {
-  mr_equivariant(
-    name: name,
-    input: input_transform,
-    output: output_transform,
-    relation: rel,
-  )
-}
-
-/// `op(a, b) == op(b, a)` — `op` is commutative.
-///
-/// The MR is over the input pair `#(a, a)` and the output type `b`.
-/// Use it as:
+/// Check every morph in `morphs` against `function` on many generated
+/// inputs. Each morph runs on its own; when any fails, the input is
+/// shrunk and the runner panics with the report of every failing morph.
 ///
 /// ```gleam
-/// let mr = metamon.commutativity_of(name: "add_commutative")
 /// metamon.forall_morph(
-///   generator.tuple2(int_gen, int_gen),
-///   mr,
-///   fn(pair) { add(pair.0, pair.1) },
+///   generator.list_of(generator.int(generator.range(from: 0, to: 9)),
+///     length: generator.range(from: 0, to: 10)),
+///   [metamon.invariant_under(name: "sum", under: metamon.Transform("reverse", list.reverse))],
+///   int.sum,
 /// )
 /// ```
-pub fn commutativity_of(name name: String) -> Mr(#(a, a), b) {
-  let swap = transform.new("swap", fn(pair: #(a, a)) { #(pair.1, pair.0) })
-  mr(name: name, transform: swap, relation: relation.equal())
+///
+/// ## Panics
+///
+/// Panics when `morphs` is empty.
+pub fn forall_morph(
+  generator: Generator(a),
+  morphs: List(Morph(a, b)),
+  function: fn(a) -> b,
+) -> Nil {
+  forall_morph_with(default_config(), generator, morphs, function)
 }
 
-/// Run a round-trip property over many random inputs:
-/// `decode(encode(x))` must equal `Ok(x)` for every generated `x`.
+/// Check `morphs` like `forall_morph`, with an explicit configuration.
 ///
-/// The failure report header is `round_trip[<name>]` so it is
-/// immediately obvious from the panic which round-trip broke. The
-/// underlying machinery is the same as `forall`, including shrinking
-/// of the source input.
+/// ## Panics
+///
+/// Panics when `morphs` is empty, or when `config` is invalid as
+/// described in `forall_with`.
+pub fn forall_morph_with(
+  config: Config,
+  generator: Generator(a),
+  morphs: List(Morph(a, b)),
+  function: fn(a) -> b,
+) -> Nil {
+  runner.run_forall_morph(
+    settings(config),
+    "forall_morph",
+    generator,
+    list.map(morphs, spec),
+    function,
+  )
+}
+
+/// Check `morph` against `function` on the single input `input`, for
+/// example a shrunk input copied from a failure report. Panics with a
+/// report when the relation does not hold.
+pub fn assert_morph(input: a, morph: Morph(a, b), function: fn(a) -> b) -> Nil {
+  runner.run_assert_morph("assert_morph", spec(morph), function, input)
+}
+
+fn spec(morph: Morph(a, b)) -> runner.MorphSpec(a, b) {
+  case morph {
+    Morph(name:, transform:, relation:) ->
+      runner.MorphSpec(
+        name: name,
+        mode: report.Plain(transform_name: transform.name),
+        follow_up: transform.apply,
+        expected: fn(output) { output },
+        relation_name: relation.name,
+        holds: relation.holds,
+      )
+    Equivariant(name:, input:, output:, relation:) ->
+      runner.MorphSpec(
+        name: name,
+        mode: report.Equivariant(
+          input_transform_name: input.name,
+          output_transform_name: output.name,
+        ),
+        follow_up: input.apply,
+        expected: output.apply,
+        relation_name: relation.name,
+        holds: relation.holds,
+      )
+  }
+}
+
+/// Check that `decode(encode(x))` is `Ok(x)` for many generated `x`.
+/// The report is titled `round_trip[<name>]`, and a failing input is
+/// shrunk like in `forall`.
 ///
 /// ```gleam
 /// metamon.forall_round_trip(
-///   gen: generator.bit_array(range.constant(0, 16)),
-///   name: "base64",
-///   encode: base64.encode,
-///   decode: base64.decode,
+///   generator: generator.int(generator.range(from: -1000, to: 1000)),
+///   name: "int_to_string",
+///   encode: int.to_string,
+///   decode: int.parse,
 /// )
 /// ```
 pub fn forall_round_trip(
-  gen gen: Generator(a),
+  generator generator: Generator(a),
   name name: String,
   encode encode: fn(a) -> b,
   decode decode: fn(b) -> Result(a, e),
 ) -> Nil {
   forall_round_trip_with(
-    cfg: default_config(),
-    gen: gen,
+    config: default_config(),
+    generator: generator,
     name: name,
     encode: encode,
     decode: decode,
   )
 }
 
-/// `forall_round_trip` with an explicit configuration.
+/// Check a round trip like `forall_round_trip`, with an explicit
+/// configuration.
+///
+/// ## Panics
+///
+/// Panics when `config` is invalid as described in `forall_with`.
 pub fn forall_round_trip_with(
-  cfg cfg: Config,
-  gen gen: Generator(a),
+  config config: Config,
+  generator generator: Generator(a),
   name name: String,
   encode encode: fn(a) -> b,
   decode decode: fn(b) -> Result(a, e),
 ) -> Nil {
-  runner.run_round_trip(settings(cfg), name, gen, encode, decode)
+  runner.run_round_trip(settings(config), name, generator, encode, decode)
+}
+
+/// Return the morph `f(f(x)) == f(x)`: applying `function` twice gives
+/// the same output as applying it once. Use it as the morph of `function`
+/// itself.
+pub fn idempotency_of(
+  name name: String,
+  of function: fn(a) -> a,
+) -> Morph(a, a) {
+  Morph(
+    name: name,
+    transform: Transform(name: "apply " <> name, apply: function),
+    relation: equal(),
+  )
+}
+
+/// Return the morph `f(transform.apply(x)) == f(x)`: the output does not
+/// change when the input is transformed.
+pub fn invariant_under(
+  name name: String,
+  under transform: Transform(a),
+) -> Morph(a, b) {
+  Morph(name: name, transform: transform, relation: equal())
+}
+
+/// Return the morph `f(#(a, b)) == f(#(b, a))` for a function of a pair:
+/// swapping the arguments does not change the output.
+pub fn commutativity_of(name name: String) -> Morph(#(a, a), b) {
+  Morph(
+    name: name,
+    transform: Transform(name: "swap", apply: fn(pair: #(a, a)) {
+      #(pair.1, pair.0)
+    }),
+    relation: equal(),
+  )
+}
+
+/// Return the relation that holds when both outputs are equal with `==`.
+pub fn equal() -> Relation(a) {
+  Relation(name: "equal", holds: fn(left, right) { left == right })
+}
+
+/// Return the relation that holds when two floats differ by at most
+/// `epsilon`.
+///
+/// ## Panics
+///
+/// Panics when `epsilon` is negative, since no pair of floats would then
+/// satisfy the relation.
+pub fn approximately(within epsilon: Float) -> Relation(Float) {
+  case epsilon <. 0.0 {
+    True ->
+      panic as "metamon.approximately: epsilon must be >= 0.0 (a negative epsilon would make every pair compare False, including a value with itself)"
+    False ->
+      Relation(
+        name: "approximately(" <> float.to_string(epsilon) <> ")",
+        holds: fn(left, right) {
+          let difference = case left >=. right {
+            True -> left -. right
+            False -> right -. left
+          }
+          difference <=. epsilon
+        },
+      )
+  }
+}
+
+/// Return the relation that holds when both outputs are equal after
+/// `project`, such as equal ignoring case. The report names it
+/// `equivalent_under(<name>)`.
+pub fn equivalent_under(
+  name name: String,
+  via project: fn(b) -> c,
+) -> Relation(b) {
+  Relation(name: "equivalent_under(" <> name <> ")", holds: fn(left, right) {
+    project(left) == project(right)
+  })
+}
+
+/// Return the relation that holds when two lists have the same elements
+/// with the same counts, in any order.
+pub fn permutation_of() -> Relation(List(a)) {
+  Relation(name: "permutation_of", holds: is_permutation)
+}
+
+fn is_permutation(left: List(a), right: List(a)) -> Bool {
+  list.length(left) == list.length(right) && remove_each(left, right) == []
+}
+
+/// `remaining` with one occurrence of every element of `to_remove`
+/// taken out, or a non-empty list as soon as an element is missing.
+fn remove_each(to_remove: List(a), remaining: List(a)) -> List(a) {
+  case to_remove {
+    [] -> remaining
+    [first, ..rest] ->
+      case remove_one(first, remaining, []) {
+        Ok(remaining_after) -> remove_each(rest, remaining_after)
+        Error(Nil) -> [first]
+      }
+  }
+}
+
+fn remove_one(target: a, items: List(a), acc: List(a)) -> Result(List(a), Nil) {
+  case items {
+    [] -> Error(Nil)
+    [first, ..rest] if first == target ->
+      Ok(list.append(list.reverse(acc), rest))
+    [first, ..rest] -> remove_one(target, rest, [first, ..acc])
+  }
 }

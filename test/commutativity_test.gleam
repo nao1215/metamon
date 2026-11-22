@@ -19,7 +19,7 @@ pub fn integer_addition_is_commutative_test() {
       generator.int(range.constant(-50, 50)),
       generator.int(range.constant(-50, 50)),
     ),
-    mr,
+    [mr],
     fn(pair) { add(pair.0, pair.1) },
   )
 }
@@ -38,7 +38,7 @@ pub fn integer_max_is_commutative_test() {
       generator.int(range.constant(0, 100)),
       generator.int(range.constant(0, 100)),
     ),
-    mr,
+    [mr],
     fn(pair) { max_of(pair.0, pair.1) },
   )
 }
