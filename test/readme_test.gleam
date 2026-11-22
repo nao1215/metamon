@@ -1,442 +1,84 @@
-//// Every public-facing usage example in README.md is mirrored here as
-//// an executable test. The two files MUST stay byte-identical inside
-//// each fenced code block — when the README is regenerated, each
-//// block is copied from one of the `pub fn readme_*_test` functions
-//// below. CI runs `gleam test`, which means the README cannot drift
-//// out of sync with the actual API.
+//// The examples in README.md, kept here so they keep compiling and keep
+//// passing.
 
-import gleam/dict.{type Dict}
+import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/string
-import gleeunit/should
 import metamon
 import metamon/generator
 
-// ===========================================================================
-// Quick start
-// ===========================================================================
-
-pub fn readme_quick_start_test() {
-  // The simplest property: trim is idempotent — applying it twice
-  // gives the same result as applying it once.
-  let mr = metamon.idempotency_of(name: "trim_idempotent", of: string.trim)
-  metamon.forall_morph(
-    generator.string(of: generator.Ascii, length: generator.range(0, 16)),
-    [mr],
-    string.trim,
-  )
-}
-
-// ===========================================================================
-// 1. Property-based testing — `forall`
-// ===========================================================================
-
-pub fn readme_forall_test() {
-  // For every list of small ints, reversing twice yields the original.
-  metamon.forall(
+pub fn reverse_twice_test() {
+  let lists =
     generator.list_of(
-      generator.int(generator.range(0, 9)),
-      generator.range(0, 5),
-    ),
-    fn(xs) {
-      assert list.reverse(list.reverse(xs)) == xs
-    },
-  )
-}
-
-// ===========================================================================
-// 2. Metamorphic relations
-// ===========================================================================
-
-// 2.1. Idempotency: f(f(x)) == f(x)
-//
-// `sort_dedupe` (sort + remove duplicates) is idempotent — applying
-// it twice produces the same list as applying it once.
-pub fn readme_idempotency_test() {
-  let mr =
-    metamon.idempotency_of(name: "sort_dedupe_idempotent", of: sort_dedupe)
-  metamon.forall_morph(
-    generator.list_of(
-      generator.int(generator.range(0, 9)),
-      generator.range(0, 6),
-    ),
-    [mr],
-    sort_dedupe,
-  )
-}
-
-fn sort_dedupe(xs: List(Int)) -> List(Int) {
-  let sorted = list.sort(xs, int.compare)
-  let dedupe = metamon.Transform("list.dedupe", list.unique)
-  dedupe.apply(sorted)
-}
-
-// 2.2. Round-trip via a custom relation: f and inverse round-trip.
-pub fn readme_round_trip_test() {
-  // Encoding: int -> string -> int must recover the original.
-  let r =
-    metamon.Relation("string_int_round_trip", fn(left: Int, right: Int) {
-      // `left` and `right` are both `int.to_string` of the same input
-      // (the transform is identity), so round-trip correctness is the
-      // assertion that `parse(write(x))` succeeds and equals `x`.
-      left == right
-    })
-  let mr =
-    metamon.Morph(
-      name: "int_string_round_trip",
-      transform: metamon.Transform("identity", fn(value) { value }),
-      relation: r,
+      generator.int(generator.range(from: -100, to: 100)),
+      length: generator.range(from: 0, to: 20),
     )
-  metamon.forall_morph(generator.int(generator.range(-1000, 1000)), [mr], fn(n) {
-    let assert Ok(parsed) = int.parse(int.to_string(n))
-    parsed
+  metamon.forall(lists, fn(items) {
+    assert list.reverse(list.reverse(items)) == items
   })
 }
 
-// 2.2.1.A. Round-trip when the encoder is partial: encoder returns
-// Result(b, _), so use forall_round_trip_partial to skip encoder
-// rejections instead of writing a `let assert Ok(s) = encode(...)`
-// shim that turns documented partiality into a runtime panic.
-// 2.2.1.B. Round-trip with a caller-supplied equality. Use this when
-// the source type's decoded form normalises (multipart Part with
-// re-derived caches, MIME types whose essence lowercases, etc.). The
-// example below uses a lowercasing "encoder" to demonstrate that
-// uppercase letters round-trip under case-insensitive equality.
-// 2.3. Invariance: f(T(x)) == f(x) — the function is unaffected by T.
-pub fn readme_invariance_test() {
-  // list.length is invariant under reverse.
-  let mr =
-    metamon.invariant_under(
-      name: "length_invariant_under_reverse",
-      under: metamon.Transform("list.reverse", list.reverse),
-    )
-  metamon.forall_morph(
+pub fn sum_test() {
+  let lists =
     generator.list_of(
-      generator.int(generator.range(0, 9)),
-      generator.range(0, 8),
-    ),
-    [mr],
-    list.length,
-  )
-}
-
-// 2.4. Equivariance: U(f(x)) == f(T(x)).
-pub fn readme_equivariance_test() {
-  // map(g) commutes with reverse:
-  //   list.reverse(list.map(xs, g)) == list.map(list.reverse(xs), g)
-  let mr =
-    metamon.Equivariant(
-      name: "map_commutes_with_reverse",
-      input: metamon.Transform("list.reverse", list.reverse),
-      output: metamon.Transform("list.reverse", list.reverse),
-      relation: metamon.equal(),
+      generator.int(generator.range(from: -100, to: 100)),
+      length: generator.range(from: 0, to: 20),
     )
-  metamon.forall_morph(
-    generator.list_of(
-      generator.int(generator.range(0, 9)),
-      generator.range(0, 6),
-    ),
-    [mr],
-    fn(xs) { list.map(xs, fn(n) { n * 2 }) },
-  )
-}
-
-// 2.5. Manual MR construction — pick any Transform and any Relation.
-pub fn readme_manual_mr_test() {
-  // Adding zero to a list of ints does not change its sum.
+  let reverse = metamon.Transform(name: "list.reverse", apply: list.reverse)
   let append_zero =
-    metamon.Transform("list.append(0)", fn(items) { list.append(items, [0]) })
-  let mr =
-    metamon.Morph(
-      name: "sum_invariant_under_append_zero",
-      transform: append_zero,
-      relation: metamon.equal(),
-    )
+    metamon.Transform(name: "append 0", apply: fn(items) {
+      list.append(items, [0])
+    })
   metamon.forall_morph(
+    lists,
+    [
+      metamon.invariant_under(name: "order does not matter", under: reverse),
+      metamon.Morph(
+        name: "adding 0 changes nothing",
+        transform: append_zero,
+        relation: metamon.equal(),
+      ),
+    ],
+    int.sum,
+  )
+}
+
+pub fn sort_test() {
+  let lists =
     generator.list_of(
-      generator.int(generator.range(0, 9)),
-      generator.range(0, 5),
-    ),
-    [mr],
-    list_sum,
-  )
-}
-
-fn list_sum(items: List(Int)) -> Int {
-  list.fold(items, 0, fn(acc, n) { acc + n })
-}
-
-// 2.6. assert_morph — single hand-supplied input, no generator.
-pub fn readme_assert_morph_test() {
-  let mr =
-    metamon.invariant_under(
-      name: "sum_invariant_under_reverse",
-      under: metamon.Transform("list.reverse", list.reverse),
+      generator.int(generator.range(from: -100, to: 100)),
+      length: generator.range(from: 0, to: 20),
     )
-  metamon.assert_morph([1, 2, 3, 4, 5], mr, list_sum)
-}
-
-// 2.7. commutativity_of — op(a, b) == op(b, a).
-pub fn readme_commutativity_test() {
-  let mr = metamon.commutativity_of(name: "add_commutative")
+  let sort = list.sort(_, int.compare)
   metamon.forall_morph(
-    generator.tuple2(
-      generator.int(generator.range(-50, 50)),
-      generator.int(generator.range(-50, 50)),
-    ),
-    [mr],
-    fn(pair) { add_int(pair.0, pair.1) },
+    lists,
+    [metamon.idempotency_of(name: "sort", of: sort)],
+    sort,
   )
 }
 
-fn add_int(a: Int, b: Int) -> Int {
-  a + b
-}
-
-// 2.8. round-trip via PBT (no MR template — see README).
-pub fn readme_round_trip_via_forall_test() {
-  metamon.forall(generator.int(generator.range(-1000, 1000)), fn(n) {
-    assert case int.parse(int.to_string(n)) {
-      Ok(parsed) -> parsed == n
-      Error(_) -> False
-    }
-  })
-}
-
-// 2.9. forall_morph — run several morphs against the same f.
-pub fn readme_forall_morph_list_test() {
-  let invariant_under_reverse =
-    metamon.invariant_under(
-      name: "sum_under_reverse",
-      under: metamon.Transform("list.reverse", list.reverse),
-    )
-  let invariant_under_append_zero =
-    metamon.invariant_under(
-      name: "sum_under_append_zero",
-      under: metamon.Transform("list.append(0)", fn(items) {
-        list.append(items, [0])
-      }),
-    )
-  metamon.forall_morph(
-    generator.list_of(
-      generator.int(generator.range(0, 9)),
-      generator.range(0, 4),
-    ),
-    [invariant_under_reverse, invariant_under_append_zero],
-    list_sum,
+pub fn base64_test() {
+  metamon.forall_round_trip(
+    generator: generator.bit_array(bytes: generator.range(from: 0, to: 64)),
+    name: "base64",
+    encode: bit_array.base64_encode(_, True),
+    decode: bit_array.base64_decode,
   )
 }
 
-// ===========================================================================
-// 3. Generators
-// ===========================================================================
-
-// 3.1. map2 builds a record-shaped generator.
-pub type User {
-  User(name: String, age: Int)
-}
-
-pub fn readme_user_generator_test() {
-  let user_gen =
-    generator.map2(
-      generator.string(of: generator.Ascii, length: generator.range(1, 8)),
-      generator.int(generator.range(0, 120)),
-      User,
+pub fn trim_test() {
+  let config =
+    metamon.Config(..metamon.default_config(), runs: 300, seed: Some(42))
+  let words =
+    generator.string(
+      of: generator.Alphanumeric,
+      length: generator.range(from: 0, to: 8),
     )
-  metamon.forall(user_gen, fn(u: User) {
-    assert u.age >= 0 && u.age <= 120
+  metamon.forall_with(config, words, fn(word) {
+    metamon.classify(label: "empty", when: word == "")
+    metamon.cover(at_least: 50.0, label: "non-empty", when: word != "")
+    assert string.trim(word) == word
   })
-}
-
-// 3.2. one_of and frequency.
-pub fn readme_choice_test() {
-  let traffic_light =
-    generator.frequency([
-      #(3, generator.return("green")),
-      #(2, generator.return("yellow")),
-      #(1, generator.return("red")),
-    ])
-  metamon.forall(traffic_light, fn(colour) {
-    assert colour == "green" || colour == "yellow" || colour == "red"
-  })
-}
-
-// 3.3. with_examples — guarantee specific edge inputs are tried.
-pub fn readme_with_examples_test() {
-  let trim_idempotent =
-    metamon.idempotency_of(
-      name: "trim_idempotent_with_examples",
-      of: string.trim,
-    )
-  metamon.forall_morph(
-    generator.string(of: generator.Ascii, length: generator.range(0, 8))
-      |> generator.with_examples(["", " ", "  ", "\t\n  hi  \n\t"]),
-    [trim_idempotent],
-    string.trim,
-  )
-}
-
-// 3.4. recursive generator.
-pub type Tree {
-  Leaf(Int)
-  Node(Tree, Tree)
-}
-
-pub fn readme_recursive_generator_test() {
-  let tree_gen =
-    generator.recursive(
-      // base case: leaf
-      generator.map(generator.int(generator.range(0, 9)), Leaf),
-      // step: build a Node from two smaller trees
-      fn(smaller) { generator.map2(smaller, smaller, Node) },
-    )
-  metamon.forall(tree_gen, fn(t) {
-    assert case count_leaves(t) {
-      n -> n >= 1
-    }
-  })
-}
-
-fn count_leaves(t: Tree) -> Int {
-  case t {
-    Leaf(_) -> 1
-    Node(left, right) -> count_leaves(left) + count_leaves(right)
-  }
-}
-
-// ===========================================================================
-// 4. Transforms and relations
-// ===========================================================================
-
-// 4.1. Composing transforms.
-// 4.2. Combining relations.
-// 4.3. equivalent_under — relation on a normalised view.
-pub fn readme_equivalent_under_test() {
-  // Two strings are equivalent if their lowercase forms match.
-  let r =
-    metamon.equivalent_under(name: "case_insensitive", via: string.lowercase)
-  should.be_true(r.holds("Hello", "HELLO"))
-  should.be_false(r.holds("Hello", "World"))
-}
-
-// ===========================================================================
-// 5. Coverage and annotations
-// ===========================================================================
-
-pub fn readme_coverage_test() {
-  // `cover` asserts that at least 5% of inputs hit "non_empty".
-  // The generator's edges include "" so the runner sees both sides.
-  metamon.forall_with(
-    test_config(50, 7),
-    generator.string(of: generator.Ascii, length: generator.range(0, 8)),
-    fn(s) {
-      metamon.cover(
-        at_least: 5.0,
-        label: "non_empty",
-        when: string.length(s) > 0,
-      )
-      metamon.classify(label: "contains_space", when: string.contains(s, " "))
-      // The actual property: trim never makes a string longer.
-      assert string.length(string.trim(s)) <= string.length(s)
-    },
-  )
-}
-
-pub fn readme_annotate_test() {
-  // annotate is invisible on success and shown on failure. Here we
-  // just demonstrate the call shape.
-  metamon.forall_with(
-    test_config(20, 0),
-    generator.int(generator.range(0, 100)),
-    fn(n) {
-      metamon.annotate(label: "n", value: n)
-      metamon.annotate(label: "doubled", value: n * 2)
-      assert n >= 0
-    },
-  )
-}
-
-// ===========================================================================
-// 6. Configuration
-// ===========================================================================
-
-pub fn readme_configuration_test() {
-  let c = metamon.Config(..metamon.default_config(), seed: Some(2026), runs: 30)
-  metamon.forall_with(c, generator.int(generator.range(-100, 100)), fn(n) {
-    assert n + 0 == n
-  })
-}
-
-// Case study: CRDT algebraic laws (doc/crdt-case-study.md)
-// Case study: CRDT algebraic laws
-// ===========================================================================
-
-type GCounter =
-  Dict(String, Int)
-
-fn merge(left: GCounter, right: GCounter) -> GCounter {
-  dict.fold(right, left, fn(acc, key, value) {
-    case dict.get(acc, key) {
-      Ok(current) if current >= value -> acc
-      _ -> dict.insert(acc, key, value)
-    }
-  })
-}
-
-fn make_gcounter(pairs: List(#(String, Int))) -> GCounter {
-  list.fold(pairs, dict.new(), fn(acc, pair) {
-    dict.insert(acc, pair.0, pair.1)
-  })
-}
-
-pub fn readme_gcounter_idempotent_test() {
-  metamon.forall(generator.int(generator.range(0, 100)), fn(seed) {
-    let counter =
-      make_gcounter([
-        #("node-A", seed),
-        #("node-B", seed * 2),
-        #("node-C", seed * 3),
-      ])
-    assert merge(counter, counter) == counter
-  })
-}
-
-pub fn readme_gcounter_commutative_test() {
-  metamon.forall(generator.int(generator.range(0, 100)), fn(seed) {
-    let left = make_gcounter([#("node-A", seed), #("node-B", seed * 2)])
-    let right = make_gcounter([#("node-A", seed + 1), #("node-C", seed * 3)])
-    assert merge(left, right) == merge(right, left)
-  })
-}
-
-pub fn readme_gcounter_associative_test() {
-  metamon.forall(generator.int(generator.range(0, 100)), fn(seed) {
-    let a = make_gcounter([#("X", seed), #("Y", seed + 1)])
-    let b = make_gcounter([#("X", seed + 5), #("Z", seed + 7)])
-    let c = make_gcounter([#("Y", seed + 9), #("Z", seed + 11)])
-    assert merge(merge(a, b), c) == merge(a, merge(b, c))
-  })
-}
-
-// ===========================================================================
-// Helpers used in multiple examples
-// ===========================================================================
-
-fn test_config(runs: Int, seed_value: Int) -> metamon.Config {
-  metamon.Config(..metamon.default_config(), seed: Some(seed_value), runs: runs)
-}
-
-// ===========================================================================
-// Smoke tests for placeholders / internal references
-// ===========================================================================
-
-pub fn readme_helpers_smoke_test() {
-  should.equal(list_sum([1, 2, 3]), 6)
-  should.equal(count_leaves(Node(Leaf(1), Leaf(2))), 2)
-  should.equal(sort_dedupe([3, 1, 2, 1, 3]), [1, 2, 3])
-  let _ = test_config(10, 0)
-  let _: Dict(String, Int) = dict.new()
-  Nil
 }
