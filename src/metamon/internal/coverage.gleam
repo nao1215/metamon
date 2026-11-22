@@ -126,8 +126,11 @@ pub fn first_shortfall(snap: Snapshot) -> Option(Requirement) {
   case snap.total <= 0 {
     True -> None
     False ->
+      // Compare hits * 100 with target * total rather than the rounded
+      // percentage: 29 / 100 * 100.0 is just below 29.0.
       list.find(snap.requirements, fn(req: Requirement) {
-        actual_pct(req.hits, snap.total) <. req.target_pct
+        int.to_float(req.hits) *. 100.0
+        <. req.target_pct *. int.to_float(snap.total)
       })
       |> option.from_result
   }

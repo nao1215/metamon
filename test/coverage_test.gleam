@@ -1,4 +1,5 @@
 import gleam/dict
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import gleeunit/should
@@ -122,4 +123,15 @@ fn hits(snap: coverage.Snapshot, label: String) -> Int {
     Ok(n) -> n
     Error(Nil) -> 0
   }
+}
+
+pub fn cover_met_exactly_is_not_a_shortfall_test() {
+  // 29 / 100 * 100.0 is 28.999999999999996 in floating point.
+  coverage.reset()
+  test_helpers.integers_from(0, 100)
+  |> list.each(fn(i) {
+    coverage.count_run()
+    coverage.cover(29.0, "exact", i < 29)
+  })
+  should.equal(coverage.first_shortfall(coverage.snapshot()), None)
 }
