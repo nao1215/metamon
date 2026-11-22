@@ -810,9 +810,22 @@ pub fn unicode_codepoint() -> Generator(Int) {
 
 /// A string built from `char_gen` characters with length in `len`.
 pub fn string(char_gen: Generator(String), len: Range) -> Generator(String) {
-  list_of(char_gen, len)
-  |> map(string.concat)
-  |> with_examples(strings_in_length_range(["", " ", "\n"], len))
+  string_with_edges(char_gen, len, [])
+}
+
+/// `string` whose edges are the ones built from `char_gen`'s edges plus
+/// the `curated` strings that fit the length range, without duplicates.
+/// `curated` must only use characters `char_gen` can produce.
+fn string_with_edges(
+  char_gen: Generator(String),
+  len: Range,
+  curated: List(String),
+) -> Generator(String) {
+  let built = list_of(char_gen, len) |> map(string.concat)
+  let edges =
+    list.append(built.edges, strings_in_length_range(curated, len))
+    |> list.unique
+  override_edges(built, edges)
 }
 
 /// An ASCII string with length in `len`.
@@ -826,8 +839,7 @@ pub fn string(char_gen: Generator(String), len: Range) -> Generator(String) {
 /// Curated edges include both control bytes (`\t`, `\n`) and
 /// printable boundaries (`" "`, `"~"`).
 pub fn string_ascii(len: Range) -> Generator(String) {
-  string(ascii_full(), len)
-  |> with_examples(strings_in_length_range(edge_lib.strings_ascii(), len))
+  string_with_edges(ascii_full(), len, edge_lib.strings_ascii())
 }
 
 /// A single ASCII codepoint generator (`0x00`..`0x7F`). Includes
@@ -889,15 +901,13 @@ pub fn string_printable_ascii(len: Range) -> Generator(String) {
 /// depends on them.
 pub fn string_unicode(len: Range) -> Generator(String) {
   let cp_gen = unicode_codepoint() |> map(codepoint_int_to_string)
-  string(cp_gen, len)
-  |> with_examples(strings_in_length_range(edge_lib.strings_unicode(), len))
+  string_with_edges(cp_gen, len, edge_lib.strings_unicode())
 }
 
 /// Filter a candidate string-edge list down to entries whose length lies
-/// inside the user-supplied `Range`, then dedupe so the same value does
-/// not appear multiple times across the merged edge set. Range bounds are
-/// resolved at the maximum size (`size = max_size`) so the full
-/// user-visible window is admitted regardless of how the range scales.
+/// inside the user-supplied `Range`. Range bounds are resolved at the
+/// maximum size (`size = max_size`) so the full user-visible window is
+/// admitted regardless of how the range scales.
 fn strings_in_length_range(
   candidates: List(String),
   len: Range,
@@ -908,7 +918,6 @@ fn strings_in_length_range(
     let length = string.length(s)
     length >= lo && length <= hi
   })
-  |> list.unique
 }
 
 @external(erlang, "metamon_ffi", "codepoint_to_string")
