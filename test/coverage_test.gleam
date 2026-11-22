@@ -14,10 +14,15 @@ pub fn snapshot_starts_empty_test() {
   should.equal(coverage.requirements_of(snap), [])
 }
 
+// The runner calls `count_run` once per run; these tests stand in for it.
+
 pub fn classify_increments_count_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.classify("zero", True)
+  coverage.count_run()
   coverage.classify("zero", True)
+  coverage.count_run()
   coverage.classify("zero", False)
   let snap = coverage.snapshot()
   should.equal(snap.total, 3)
@@ -39,8 +44,11 @@ pub fn cover_records_a_requirement_test() {
 
 pub fn shortfalls_flags_unmet_requirements_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.cover(80.0, "rare", True)
+  coverage.count_run()
   coverage.cover(80.0, "rare", False)
+  coverage.count_run()
   coverage.cover(80.0, "rare", False)
   let snap = coverage.snapshot()
   let bad = coverage.shortfalls(snap)
@@ -56,9 +64,13 @@ fn count_list(items: List(a)) -> Int {
 
 pub fn shortfalls_empty_when_target_met_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.cover(20.0, "common", True)
+  coverage.count_run()
   coverage.cover(20.0, "common", True)
+  coverage.count_run()
   coverage.cover(20.0, "common", False)
+  coverage.count_run()
   coverage.cover(20.0, "common", False)
   let snap = coverage.snapshot()
   should.equal(coverage.shortfalls(snap), [])
@@ -96,8 +108,11 @@ pub fn cover_at_least_records_count_kind_test() {
 
 pub fn cover_at_least_meets_target_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.cover_at_least(2, "ok", True)
+  coverage.count_run()
   coverage.cover_at_least(2, "ok", True)
+  coverage.count_run()
   coverage.cover_at_least(2, "ok", True)
   let snap = coverage.snapshot()
   should.equal(coverage.shortfalls(snap), [])
@@ -105,8 +120,11 @@ pub fn cover_at_least_meets_target_test() {
 
 pub fn cover_at_least_falls_short_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.cover_at_least(5, "ok", True)
+  coverage.count_run()
   coverage.cover_at_least(5, "ok", False)
+  coverage.count_run()
   coverage.cover_at_least(5, "ok", False)
   let snap = coverage.snapshot()
   case coverage.shortfalls(snap) {

@@ -394,6 +394,8 @@ fn run_check(
   reset_state()
   let entries = load_regression_for(cfg, check.regression_key)
   use <- and_then(replay_regression(gen, check, entries))
+  // The replayed entries are not runs: start counting coverage afresh.
+  reset_state()
   use <- and_then(
     iterate_inputs(cfg, gen, fn(input, source, run_index) {
       check_step(cfg, gen, check, input, source, run_index)
@@ -412,6 +414,7 @@ fn check_step(
 ) -> Step {
   // Annotations describe one run; coverage accumulates across runs.
   annotate.reset()
+  coverage.count_run()
   case check.holds(input) {
     True -> Continue
     False -> {

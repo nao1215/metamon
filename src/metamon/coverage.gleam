@@ -68,10 +68,8 @@ pub type Snapshot {
 }
 
 /// Tag the current input with `label` if `condition` is true. Only
-/// labelled hits are counted, but every call to `classify` advances
-/// the total-runs denominator.
+/// labelled hits are counted; the denominator is the number of runs.
 pub fn classify(label: String, condition: Bool) -> Nil {
-  bump_total()
   case condition {
     False -> Nil
     True -> bump_count(counts_key, label)
@@ -89,7 +87,6 @@ pub fn classify(label: String, condition: Bool) -> Nil {
 /// as a confusing coverage shortfall.
 pub fn cover(target_pct: Float, label: String, condition: Bool) -> Nil {
   validate_target_pct(target_pct)
-  bump_total()
   ensure_pct_requirement(label, target_pct)
   case condition {
     False -> Nil
@@ -108,7 +105,6 @@ pub fn cover(target_pct: Float, label: String, condition: Bool) -> Nil {
 /// message at the call site.
 pub fn cover_at_least(min_hits: Int, label: String, condition: Bool) -> Nil {
   validate_min_hits(min_hits)
-  bump_total()
   ensure_count_requirement(label, min_hits)
   case condition {
     False -> Nil
@@ -158,7 +154,6 @@ pub fn classify_in_bucket(group: String, bucket: String) -> Nil {
 /// Render `value` via `show` and add the result to the histogram of
 /// collected values.
 pub fn collect(value: a, show: fn(a) -> String) -> Nil {
-  bump_total()
   bump_count(collected_key, show(value))
 }
 
@@ -214,10 +209,11 @@ pub fn actual_pct(hits: Int, total: Int) -> Float {
   }
 }
 
-fn bump_total() -> Nil {
-  let updated = read_total() + 1
-  process_state.put(total_key, updated)
-  Nil
+/// Count one run of the property. Called by the runner once per
+/// generated input, so the percentages are over runs, not over calls.
+@internal
+pub fn count_run() -> Nil {
+  process_state.put(total_key, read_total() + 1)
 }
 
 fn read_total() -> Int {
