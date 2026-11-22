@@ -1053,11 +1053,19 @@ fn list_edges_in_range(
 }
 
 /// Non-empty list. Like `list_of`, but the length is at least 1.
+///
+/// ## Panics
+///
+/// Panics when `len` allows no length of 1 or more (its upper bound is 0).
 pub fn non_empty_list_of(
   element: Generator(a),
   len: Range,
 ) -> Generator(List(a)) {
-  list_at_least(element, len, 1)
+  case range.bounds(len, 99, 99) {
+    #(_, hi) if hi < 1 ->
+      panic as "metamon.non_empty_list_of: the length range has no length of 1 or more"
+    _ -> list_at_least(element, len, 1)
+  }
 }
 
 /// Generate a `dict.Dict(k, v)` of size in `len`. Duplicate keys are

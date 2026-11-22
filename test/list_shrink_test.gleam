@@ -131,3 +131,14 @@ pub fn non_empty_list_of_shrinks_to_one_element_test() {
     })
   assert input == "[0]"
 }
+
+pub fn non_empty_list_of_rejects_a_range_without_non_empty_lengths_test() {
+  let #(panicked, message) =
+    capture_panic(fn() {
+      let _ =
+        generator.non_empty_list_of(generator.byte(), range.constant(0, 0))
+      Nil
+    })
+  assert panicked
+  assert string.contains(message, "metamon.non_empty_list_of")
+}
