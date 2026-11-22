@@ -8,13 +8,10 @@ import gleam/string
 import metamon
 import metamon/generator
 import metamon/generator/range
-
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+import test_helpers
 
 fn failure_text(thunk: fn() -> Nil) -> String {
-  let #(panicked, message) = capture_panic(thunk)
+  let #(panicked, message) = test_helpers.capture_panic(thunk)
   assert panicked
   message
 }
@@ -34,7 +31,9 @@ fn shrunk_to(text: String, rendered: String) -> Bool {
 pub fn forall_with_shrinks_to_the_smallest_counterexample_test() {
   let text =
     failure_text(fn() {
-      metamon.forall_with(seeded(42), ints(), fn(x) { x < 10 })
+      metamon.forall_with(seeded(42), ints(), fn(x) {
+        assert x < 10
+      })
     })
   assert shrunk_to(text, "10")
   assert !string.contains(text, "shrinks:     0\n")
@@ -49,9 +48,11 @@ pub fn forall_shrinks_to_the_boundary_for_every_seed_test() {
     fn(seed_value) {
       let text =
         failure_text(fn() {
-          metamon.forall_with(seeded(seed_value), ints(), fn(x) { x < 10 })
+          metamon.forall_with(seeded(seed_value), ints(), fn(x) {
+            assert x < 10
+          })
         })
-      shrunk_to(text, "10")
+      assert shrunk_to(text, "10")
     },
   )
 }

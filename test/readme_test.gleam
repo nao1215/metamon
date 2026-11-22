@@ -42,7 +42,9 @@ pub fn readme_forall_test() {
   // For every list of small ints, reversing twice yields the original.
   metamon.forall(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 5)),
-    fn(xs) { list.reverse(list.reverse(xs)) == xs },
+    fn(xs) {
+      assert list.reverse(list.reverse(xs)) == xs
+    },
   )
 }
 
@@ -186,7 +188,7 @@ fn add_int(a: Int, b: Int) -> Int {
 // 2.8. round-trip via PBT (no MR template — see README).
 pub fn readme_round_trip_via_forall_test() {
   metamon.forall(generator.int(range.constant(-1000, 1000)), fn(n) {
-    case int.parse(int.to_string(n)) {
+    assert case int.parse(int.to_string(n)) {
       Ok(parsed) -> parsed == n
       Error(_) -> False
     }
@@ -230,7 +232,9 @@ pub fn readme_user_generator_test() {
       generator.int(range.constant(0, 120)),
       User,
     )
-  metamon.forall(user_gen, fn(u: User) { u.age >= 0 && u.age <= 120 })
+  metamon.forall(user_gen, fn(u: User) {
+    assert u.age >= 0 && u.age <= 120
+  })
 }
 
 // 3.2. one_of and frequency.
@@ -242,7 +246,7 @@ pub fn readme_choice_test() {
       #(1, generator.return("red")),
     ])
   metamon.forall(traffic_light, fn(colour) {
-    colour == "green" || colour == "yellow" || colour == "red"
+    assert colour == "green" || colour == "yellow" || colour == "red"
   })
 }
 
@@ -276,7 +280,7 @@ pub fn readme_recursive_generator_test() {
       fn(smaller) { generator.map2(smaller, smaller, Node) },
     )
   metamon.forall(tree_gen, fn(t) {
-    case count_leaves(t) {
+    assert case count_leaves(t) {
       n -> n >= 1
     }
   })
@@ -317,7 +321,7 @@ pub fn readme_coverage_test() {
       coverage.cover(5.0, "non_empty", string.length(s) > 0)
       coverage.classify("contains_space", string.contains(s, " "))
       // The actual property: trim never makes a string longer.
-      string.length(string.trim(s)) <= string.length(s)
+      assert string.length(string.trim(s)) <= string.length(s)
     },
   )
 }
@@ -332,7 +336,7 @@ pub fn readme_annotate_test() {
       annotate.annotate("currently checking n = " <> int.to_string(n))
       annotate.annotate_value("doubled", n * 2)
       annotate.footnote("hint: n is non-negative by construction")
-      n >= 0
+      assert n >= 0
     },
   )
 }
@@ -344,7 +348,7 @@ pub fn readme_annotate_test() {
 pub fn readme_configuration_test() {
   let c = metamon.Config(..metamon.default_config(), seed: Some(2026), runs: 30)
   metamon.forall_with(c, generator.int(range.constant(-100, 100)), fn(n) {
-    n + 0 == n
+    assert n + 0 == n
   })
 }
 
@@ -378,7 +382,7 @@ pub fn readme_gcounter_idempotent_test() {
         #("node-B", seed * 2),
         #("node-C", seed * 3),
       ])
-    merge(counter, counter) == counter
+    assert merge(counter, counter) == counter
   })
 }
 
@@ -386,7 +390,7 @@ pub fn readme_gcounter_commutative_test() {
   metamon.forall(generator.int(range.constant(0, 100)), fn(seed) {
     let left = make_gcounter([#("node-A", seed), #("node-B", seed * 2)])
     let right = make_gcounter([#("node-A", seed + 1), #("node-C", seed * 3)])
-    merge(left, right) == merge(right, left)
+    assert merge(left, right) == merge(right, left)
   })
 }
 
@@ -395,7 +399,7 @@ pub fn readme_gcounter_associative_test() {
     let a = make_gcounter([#("X", seed), #("Y", seed + 1)])
     let b = make_gcounter([#("X", seed + 5), #("Z", seed + 7)])
     let c = make_gcounter([#("Y", seed + 9), #("Z", seed + 11)])
-    merge(merge(a, b), c) == merge(a, merge(b, c))
+    assert merge(merge(a, b), c) == merge(a, merge(b, c))
   })
 }
 

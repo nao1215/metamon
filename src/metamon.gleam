@@ -130,18 +130,40 @@ pub fn name_of(m: Mr(a, b)) -> String {
 
 // ---------- public runners ----------
 
-/// Run a property over many random inputs.
-pub fn forall(g: Generator(a), property: fn(a) -> Bool) -> Nil {
-  forall_with(default_config(), g, property)
+/// Run `property` on many generated inputs. The property fails when it
+/// panics: a failing `assert` or `let assert`, a `panic`, or an Erlang
+/// error or JavaScript exception. On failure the input is shrunk to a
+/// smaller one that still panics, and the runner panics with a report of
+/// that input and its panic message.
+///
+/// ```gleam
+/// metamon.forall(generator.int(generator.range(-100, 100)), fn(n) {
+///   assert n + 0 == n
+/// })
+/// ```
+pub fn forall(generator: Generator(a), property: fn(a) -> Nil) -> Nil {
+  forall_with(default_config(), generator, property)
 }
 
-/// Run a property with an explicit configuration.
+/// Run `property` like `forall`, with an explicit configuration.
+///
+/// ## Panics
+///
+/// Panics when `config.runs`, `config.max_size`, `config.shrink_limit` or
+/// `config.max_edges` is not positive, or `config.regression_file` is
+/// `Some("")`. Every runner that takes a `Config` checks it the same way.
 pub fn forall_with(
-  cfg: Config,
-  g: Generator(a),
-  property: fn(a) -> Bool,
+  config: Config,
+  generator: Generator(a),
+  property: fn(a) -> Nil,
 ) -> Nil {
-  runner.run_forall(settings(cfg), "forall", "(plain property)", g, property)
+  runner.run_forall(
+    settings(config),
+    "forall",
+    "(plain property)",
+    generator,
+    property,
+  )
 }
 
 /// Run a metamorphic relation over many random inputs.
@@ -290,36 +312,5 @@ pub fn forall_round_trip_with(
   encode encode: fn(a) -> b,
   decode decode: fn(b) -> Result(a, e),
 ) -> Nil {
-  run_round_trip(
-    cfg,
-    name,
-    gen,
-    decodes_back(encode, decode, fn(decoded, input) { decoded == input }),
-  )
-}
-
-/// Run `property` under the round-trip name, which is both the report's
-/// test name and the regression key.
-fn run_round_trip(
-  cfg: Config,
-  name: String,
-  gen: Generator(a),
-  property: fn(a) -> Bool,
-) -> Nil {
-  let test_name = "round_trip[" <> name <> "]"
-  runner.run_forall(settings(cfg), test_name, test_name, gen, property)
-}
-
-/// `decode(encode(input))` succeeds and `equal(decoded, input)` holds.
-fn decodes_back(
-  encode: fn(a) -> b,
-  decode: fn(b) -> Result(a, e),
-  equal: fn(a, a) -> Bool,
-) -> fn(a) -> Bool {
-  fn(input) {
-    case decode(encode(input)) {
-      Ok(decoded) -> equal(decoded, input)
-      Error(_) -> False
-    }
-  }
+  runner.run_round_trip(settings(cfg), name, gen, encode, decode)
 }

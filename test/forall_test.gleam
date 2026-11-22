@@ -6,19 +6,21 @@ import metamon/generator/range
 
 pub fn forall_passes_when_property_always_true_test() {
   metamon.forall(generator.int(range.constant(0, 100)), fn(n) {
-    n >= 0 && n <= 100
+    assert n >= 0 && n <= 100
   })
 }
 
 pub fn forall_passes_for_simple_int_property_test() {
   metamon.forall(generator.int(range.constant(-1000, 1000)), fn(n) {
-    n + 0 == n
+    assert n + 0 == n
   })
 }
 
 pub fn forall_passes_with_explicit_seed_test() {
   let c = metamon.Config(..metamon.default_config(), seed: Some(7), runs: 30)
-  metamon.forall_with(c, generator.int(range.constant(0, 50)), fn(n) { n >= 0 })
+  metamon.forall_with(c, generator.int(range.constant(0, 50)), fn(n) {
+    assert n >= 0
+  })
   should.equal(1, 1)
 }
 
@@ -27,7 +29,7 @@ pub fn forall_passes_for_list_length_invariant_test() {
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 5)),
     fn(items) {
       // length must be ≥ 0 (trivial, but exercises list generation)
-      length_ge_zero(items)
+      assert length_ge_zero(items)
     },
   )
 }

@@ -10,13 +10,10 @@ import metamon/generator/range
 import metamon/internal/diff.{Differ, IndexedDiff, ListDiff, Same, TupleDiff}
 import metamon/relation
 import metamon/transform
-
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+import test_helpers
 
 fn failure_text(thunk: fn() -> Nil) -> String {
-  let #(panicked, message) = capture_panic(thunk)
+  let #(panicked, message) = test_helpers.capture_panic(thunk)
   assert panicked
   message
 }
@@ -90,7 +87,7 @@ pub fn list_diff_has_one_item_per_element_test() {
     ),
     fn(pair) {
       let #(left, right) = pair
-      case left == right, inspected(left, right) {
+      assert case left == right, inspected(left, right) {
         True, Same(_) -> True
         False, ListDiff(items) ->
           list.length(items) == int.max(list.length(left), list.length(right))

@@ -2,10 +2,7 @@ import gleam/dict
 import gleam/string
 import gleeunit/should
 import metamon/coverage
-
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+import test_helpers
 
 pub fn snapshot_starts_empty_test() {
   coverage.reset()
@@ -162,7 +159,7 @@ pub fn classify_in_bucket_groups_labels_test() {
 pub fn cover_panics_on_negative_target_pct_test() {
   coverage.reset()
   let #(panicked, message) =
-    capture_panic(fn() { coverage.cover(-1.0, "neg", True) })
+    test_helpers.capture_panic(fn() { coverage.cover(-1.0, "neg", True) })
   should.be_true(panicked)
   should.be_true(string.contains(message, "metamon.coverage.cover"))
   should.be_true(string.contains(message, "[0.0, 100.0]"))
@@ -171,7 +168,9 @@ pub fn cover_panics_on_negative_target_pct_test() {
 pub fn cover_panics_just_over_100_test() {
   coverage.reset()
   let #(panicked, message) =
-    capture_panic(fn() { coverage.cover(100.0000001, "over", True) })
+    test_helpers.capture_panic(fn() {
+      coverage.cover(100.0000001, "over", True)
+    })
   should.be_true(panicked)
   should.be_true(string.contains(message, "metamon.coverage.cover"))
   should.be_true(string.contains(message, "[0.0, 100.0]"))
@@ -198,7 +197,7 @@ pub fn cover_accepts_100_boundary_test() {
 pub fn cover_at_least_panics_on_negative_min_hits_test() {
   coverage.reset()
   let #(panicked, message) =
-    capture_panic(fn() { coverage.cover_at_least(-1, "neg", True) })
+    test_helpers.capture_panic(fn() { coverage.cover_at_least(-1, "neg", True) })
   should.be_true(panicked)
   should.be_true(string.contains(message, "metamon.coverage.cover_at_least"))
   should.be_true(string.contains(message, ">= 0"))

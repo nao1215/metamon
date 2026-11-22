@@ -192,7 +192,7 @@ pub fn regression_parse_no_panic_under_printable_ascii_fuzz_test() {
     fn(payload) {
       // Discard the result — only "did this return?" matters.
       let _ = regression.parse(payload)
-      True
+      Nil
     },
   )
 }
@@ -206,7 +206,7 @@ pub fn regression_parse_no_panic_under_unicode_fuzz_test() {
     generator.string_unicode(range.constant(0, 64)),
     fn(payload) {
       let _ = regression.parse(payload)
-      True
+      Nil
     },
   )
 }
@@ -217,7 +217,7 @@ pub fn regression_parse_no_panic_under_long_ascii_fuzz_test() {
     generator.string_printable_ascii(range.constant(0, 256)),
     fn(payload) {
       let _ = regression.parse(payload)
-      True
+      Nil
     },
   )
 }

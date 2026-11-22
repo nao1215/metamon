@@ -42,7 +42,9 @@ pub fn deep_recursive_tree_generator_finishes_quickly_test() {
   // shrink expansion. Same wall-clock budget.
   let started = monotonic_microseconds()
   let c = metamon.Config(..metamon.default_config(), seed: Some(0), runs: 300)
-  metamon.forall_with(c, recursive_tree_gen(), fn(t) { count_leaves(t) >= 1 })
+  metamon.forall_with(c, recursive_tree_gen(), fn(t) {
+    assert count_leaves(t) >= 1
+  })
   let elapsed_us = monotonic_microseconds() - started
   should.be_true(elapsed_us < 5_000_000)
 }

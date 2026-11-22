@@ -12,7 +12,8 @@
     ieee_negative_infinity/0,
     ieee_smallest_positive_denormal/0,
     ieee_largest_finite/0,
-    getenv/1
+    getenv/1,
+    capture_panic/1
 ]).
 
 now_microseconds() ->
@@ -94,4 +95,17 @@ getenv(Name) ->
     case os:getenv(unicode:characters_to_list(Name)) of
         false -> {error, nil};
         Value -> {ok, unicode:characters_to_binary(Value)}
+    end.
+
+%% Run a thunk and return `{false, <<>>}`, or `{true, Message}` when it
+%% raises. A Gleam panic, `assert` or `let assert` carries its message in
+%% the error map; any other error, throw or exit is formatted with `~p`.
+capture_panic(Thunk) ->
+    try Thunk() of
+        _ -> {false, <<>>}
+    catch
+        error:#{gleam_error := _, message := Message} when is_binary(Message) ->
+            {true, Message};
+        _:Reason ->
+            {true, unicode:characters_to_binary(io_lib:format("~p", [Reason]))}
     end.

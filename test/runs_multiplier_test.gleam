@@ -6,6 +6,7 @@ import gleeunit/should
 import metamon
 import metamon/generator
 import metamon/generator/range
+import test_helpers
 
 const var = "METAMON_RUNS_MULTIPLIER"
 
@@ -14,7 +15,6 @@ fn run_counting(runs: Int) -> Int {
   count_reset()
   metamon.forall_with(cfg, generator.int(range.constant(0, 1000)), fn(_) {
     count_bump()
-    True
   })
   count_get()
 }
@@ -35,7 +35,8 @@ pub fn an_invalid_multiplier_stops_the_run_test() {
   ["0", "-2", "many", ""]
   |> list_each(fn(value) {
     set_env(var, value)
-    let #(panicked, message) = capture_panic(fn() { run_counting(5) })
+    let #(panicked, message) =
+      test_helpers.capture_panic(fn() { run_counting(5) })
     unset_env(var)
     #(value, panicked, string.contains(message, var))
     |> should.equal(#(value, True, True))
@@ -51,10 +52,6 @@ fn list_each(items: List(a), f: fn(a) -> Nil) -> Nil {
     }
   }
 }
-
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> a) -> #(Bool, String)
 
 @external(erlang, "metamon_env_test_ffi", "set_env")
 @external(javascript, "./metamon_env_test_ffi.mjs", "set_env")

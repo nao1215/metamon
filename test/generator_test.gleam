@@ -124,7 +124,7 @@ pub fn frequency_respects_weights_test() {
 
 pub fn frequency_panics_on_zero_weight_test() {
   let #(panicked, message) =
-    capture_panic(fn() {
+    test_helpers.capture_panic(fn() {
       let _ =
         generator.frequency([
           #(0, generator.return("never_pick_me")),
@@ -141,7 +141,7 @@ pub fn frequency_panics_on_zero_weight_test() {
 
 pub fn frequency_panics_on_negative_weight_test() {
   let #(panicked, message) =
-    capture_panic(fn() {
+    test_helpers.capture_panic(fn() {
       let _ =
         generator.frequency([
           #(10, generator.return("a")),
@@ -154,10 +154,6 @@ pub fn frequency_panics_on_negative_weight_test() {
   should.be_true(string.contains(message, "got -5"))
   should.be_true(string.contains(message, "position 1"))
 }
-
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
 
 // ---------- float_special ----------
 
@@ -194,7 +190,7 @@ pub fn float_special_runs_through_metamon_test() {
   // to the property without arithmetic intervention. The property
   // returns True for every input — this just verifies that no edge
   // value crashes the runner pipeline (e.g. via badarith on the BEAM).
-  metamon.forall(generator.float_special(), fn(_x) { True })
+  metamon.forall(generator.float_special(), fn(_x) { Nil })
 }
 
 // ---------- map7 / map8 / tuple6 / tuple7 / tuple8 ----------

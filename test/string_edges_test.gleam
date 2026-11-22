@@ -52,7 +52,7 @@ pub fn string_edges_stay_inside_the_generator_test() {
     ),
     fn(bounds) {
       let #(lo, hi) = bounds
-      list.all(cases(), fn(c) {
+      assert list.all(cases(), fn(c) {
         let edges = generator.edges_of(c.build(range.constant(lo, hi)))
         let #(lo, hi) = #(int.min(lo, hi), int.max(lo, hi))
         list.all(edges, fn(edge) {

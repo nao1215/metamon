@@ -12,18 +12,15 @@ import metamon/generator
 import metamon/generator/range
 import metamon/relation
 import metamon/transform
+import test_helpers
 
 pub type CapturedPanic {
   Reason(message: String)
   NoPanic
 }
 
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic_raw(thunk: fn() -> Nil) -> #(Bool, String)
-
 fn capture(thunk: fn() -> Nil) -> CapturedPanic {
-  let #(panicked, message) = capture_panic_raw(thunk)
+  let #(panicked, message) = test_helpers.capture_panic(thunk)
   case panicked {
     True -> Reason(message: message)
     False -> NoPanic
@@ -36,7 +33,7 @@ pub fn forall_panics_on_violation_test() {
       metamon.forall(
         generator.int(range.constant(0, 100)),
         // false for everything ≥ 0, which is everything → instant fail
-        fn(_n) { False },
+        fn(_n) { test_helpers.fail() },
       )
     })
   case outcome {
@@ -139,7 +136,7 @@ pub fn config_seed_zero_renders_with_originally_annotation_test() {
   let outcome =
     capture(fn() {
       metamon.forall_with(cfg, generator.int(range.constant(0, 100)), fn(_n) {
-        False
+        test_helpers.fail()
       })
     })
   case outcome {

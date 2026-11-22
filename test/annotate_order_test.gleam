@@ -11,12 +11,8 @@ import metamon/generator
 import metamon/generator/range
 import test_helpers
 
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
-
 fn failure_text(thunk: fn() -> Nil) -> String {
-  let #(panicked, message) = capture_panic(thunk)
+  let #(panicked, message) = test_helpers.capture_panic(thunk)
   assert panicked
   message
 }
@@ -32,7 +28,7 @@ pub fn annotations_keep_registration_order_test() {
     failure_text(fn() {
       metamon.forall(generator.return(0), fn(_) {
         list.each(labels, annotate.annotate)
-        False
+        test_helpers.fail()
       })
     })
   assert string.contains(text, annotations_block(labels) <> "\n\n")
@@ -48,10 +44,10 @@ pub fn annotations_keep_order_for_any_count_test() {
         failure_text(fn() {
           metamon.forall(generator.return(0), fn(_) {
             list.each(labels, annotate.annotate)
-            False
+            test_helpers.fail()
           })
         })
-      string.contains(text, annotations_block(labels) <> "\n\n")
+      assert string.contains(text, annotations_block(labels) <> "\n\n")
     },
   )
 }
@@ -65,7 +61,7 @@ pub fn passing_runs_do_not_leak_annotations_test() {
         generator.int(range.linear(0, 1000)) |> generator.no_edges,
         fn(x) {
           annotate.annotate_value("x", x)
-          x < 500
+          assert x < 500
         },
       )
     })

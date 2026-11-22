@@ -12,6 +12,7 @@ import metamon/generator
 import metamon/generator/range
 import metamon/internal/regression
 import simplifile
+import test_helpers
 
 const tmp_path: String = "/tmp/metamon_regression_test.toml"
 
@@ -26,7 +27,7 @@ pub fn write_records_failing_input_test() {
   // Run a property that fails so the runner records a regression
   // entry, then read the file back and verify the entry shape.
   let outcome =
-    capture_panic(fn() {
+    test_helpers.capture_panic(fn() {
       let c =
         metamon.Config(
           ..metamon.default_config(),
@@ -37,7 +38,7 @@ pub fn write_records_failing_input_test() {
         c,
         generator.int(range.constant(0, 10)),
         // Always-failing property: triggers an immediate write.
-        fn(_n) { False },
+        fn(_n) { test_helpers.fail() },
       )
     })
 
@@ -83,7 +84,7 @@ pub fn read_replays_existing_entry_test() {
   let _ = simplifile.write(tmp_path, regression.render(entry))
 
   let observed =
-    capture_panic(fn() {
+    test_helpers.capture_panic(fn() {
       let c =
         metamon.Config(
           ..metamon.default_config(),
@@ -95,7 +96,7 @@ pub fn read_replays_existing_entry_test() {
         generator.return(0) |> generator.with_examples([42]),
         // Always-failing property; the replay path runs first, so
         // the failure must be tagged "regression replay".
-        fn(_n) { False },
+        fn(_n) { test_helpers.fail() },
       )
     })
 
@@ -112,14 +113,10 @@ pub fn missing_file_is_silent_test() {
   let c =
     metamon.Config(..metamon.default_config(), regression_file: Some(tmp_path))
   metamon.forall_with(c, generator.int(range.constant(0, 9)), fn(n) {
-    n >= 0 && n <= 9
+    assert n >= 0 && n <= 9
   })
   cleanup()
 }
-
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
 
 const shared_path: String = "/tmp/metamon_regression_shared_test.toml"
 
@@ -153,7 +150,7 @@ pub fn round_trips_sharing_a_file_replay_only_their_own_entries_test() {
   b()
   // `a` fails first on 163 and records it.
   let a = fn() { round_trip_with_file("a", 42, fn(n) { n >= 10 }) }
-  let #(panicked, _) = capture_panic(a)
+  let #(panicked, _) = test_helpers.capture_panic(a)
   should.be_true(panicked)
   let assert Ok(content) = simplifile.read(shared_path)
   should.be_true(string.contains(content, "mr          = \"round_trip[a]\""))
@@ -161,7 +158,7 @@ pub fn round_trips_sharing_a_file_replay_only_their_own_entries_test() {
   // The entry recorded for `a` is not replayed against `b`.
   b()
   // `a` still replays its own entry.
-  let #(panicked, text) = capture_panic(a)
+  let #(panicked, text) = test_helpers.capture_panic(a)
   should.be_true(panicked)
   should.be_true(string.contains(text, "regression replay for `round_trip[a]`"))
   let _ = simplifile.delete(shared_path)
@@ -171,11 +168,11 @@ pub fn round_trips_sharing_a_file_replay_only_their_own_entries_test() {
 pub fn unwritable_regression_file_is_reported_test() {
   let path = "/tmp/metamon-no-such-directory/regressions.toml"
   let #(panicked, text) =
-    capture_panic(fn() {
+    test_helpers.capture_panic(fn() {
       metamon.forall_with(
         metamon.Config(..metamon.default_config(), regression_file: Some(path)),
         generator.int(range.constant(0, 10)),
-        fn(_) { False },
+        fn(_) { test_helpers.fail() },
       )
     })
   should.be_true(panicked)
@@ -188,7 +185,9 @@ pub fn unwritable_regression_file_is_reported_test() {
 pub fn regression_entries_share_one_header_test() {
   let _ = simplifile.delete(shared_path)
   let fail = fn(name) {
-    capture_panic(fn() { round_trip_with_file(name, 42, fn(_) { True }) })
+    test_helpers.capture_panic(fn() {
+      round_trip_with_file(name, 42, fn(_) { True })
+    })
   }
   let _ = fail("one")
   let _ = fail("two")
@@ -223,14 +222,14 @@ pub fn future_schema_version_file_is_not_replayed_test() {
         "schema_version = " <> version <> "\n\n" <> regression.render(entry),
       )
     let #(panicked, text) =
-      capture_panic(fn() {
+      test_helpers.capture_panic(fn() {
         metamon.forall_with(
           metamon.Config(
             ..metamon.default_config(),
             regression_file: Some(tmp_path),
           ),
           generator.int(range.constant(0, 9)),
-          fn(_) { False },
+          fn(_) { test_helpers.fail() },
         )
       })
     cleanup()
@@ -248,7 +247,7 @@ pub fn replay_uses_the_recorded_max_size_test() {
   let gen = generator.int(range.linear(0, 1_000_000)) |> generator.no_edges
   // Record a failure under max_size 30.
   let #(panicked, _) =
-    capture_panic(fn() {
+    test_helpers.capture_panic(fn() {
       metamon.forall_with(
         metamon.Config(
           ..metamon.default_config(),
@@ -257,7 +256,9 @@ pub fn replay_uses_the_recorded_max_size_test() {
           regression_file: Some(tmp_path),
         ),
         gen,
-        fn(x) { x < 1000 },
+        fn(x) {
+          assert x < 1000
+        },
       )
     })
   should.be_true(panicked)
@@ -266,7 +267,7 @@ pub fn replay_uses_the_recorded_max_size_test() {
   let assert Some(recorded) = entry.note
   // A later run with the default max_size must replay the same input.
   let #(panicked, text) =
-    capture_panic(fn() {
+    test_helpers.capture_panic(fn() {
       metamon.forall_with(
         metamon.Config(
           ..metamon.default_config(),
@@ -274,7 +275,9 @@ pub fn replay_uses_the_recorded_max_size_test() {
           regression_file: Some(tmp_path),
         ),
         gen,
-        fn(x) { string.inspect(x) != recorded },
+        fn(x) {
+          assert string.inspect(x) != recorded
+        },
       )
     })
   cleanup()

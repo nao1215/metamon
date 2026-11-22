@@ -74,3 +74,18 @@ export function getenv(name) {
   }
   return new ErrorResult(undefined);
 }
+
+// Run a thunk and return [false, ""], or [true, message] when it throws. A
+// Gleam panic, `assert` or `let assert` throws an Error carrying its message;
+// any other thrown value is converted with String().
+export function capture_panic(thunk) {
+  try {
+    thunk();
+    return [false, ""];
+  } catch (error) {
+    if (error && typeof error === "object" && error.message) {
+      return [true, error.message];
+    }
+    return [true, String(error)];
+  }
+}

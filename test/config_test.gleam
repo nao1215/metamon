@@ -7,15 +7,12 @@ import gleeunit/should
 import metamon
 import metamon/generator
 import metamon/generator/range
-
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+import test_helpers
 
 fn run(config: metamon.Config) -> #(Bool, String) {
-  capture_panic(fn() {
+  test_helpers.capture_panic(fn() {
     metamon.forall_with(config, generator.int(range.constant(0, 9)), fn(_) {
-      True
+      Nil
     })
   })
 }
@@ -111,7 +108,7 @@ pub fn every_runner_checks_the_config_test() {
   let bad = metamon.Config(..default(), runs: 0)
   let ints = generator.int(range.constant(0, 9))
   let #(morph_panicked, morph_message) =
-    capture_panic(fn() {
+    test_helpers.capture_panic(fn() {
       metamon.forall_morph_with(
         bad,
         ints,
@@ -122,7 +119,7 @@ pub fn every_runner_checks_the_config_test() {
   should.be_true(morph_panicked)
   should.be_true(string.contains(morph_message, "Config.runs"))
   let #(round_trip_panicked, round_trip_message) =
-    capture_panic(fn() {
+    test_helpers.capture_panic(fn() {
       metamon.forall_round_trip_with(
         cfg: bad,
         gen: ints,

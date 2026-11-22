@@ -18,6 +18,7 @@ import gleam/string
 import metamon/annotate
 import metamon/coverage
 import metamon/generator.{type Generator}
+import metamon/internal/capture
 import metamon/internal/regression
 import metamon/internal/report.{
   type FailureReport, type InputSource, type MorphMode, EdgeSource, Equivariant,
@@ -139,23 +140,59 @@ fn require_positive(field: String, value: Int) -> Nil {
   }
 }
 
-/// Run a property test (no metamorphic transform). `regression_key`
-/// names the property's entries in the regression file.
+/// Run a property test (no metamorphic transform). The property fails
+/// when it panics. `regression_key` names the property's entries in the
+/// regression file.
 pub fn run_forall(
   cfg: Settings,
   test_name: String,
   regression_key: String,
   gen: Generator(a),
-  property: fn(a) -> Bool,
+  property: fn(a) -> Nil,
 ) -> Nil {
   let check =
     Check(
       regression_key: regression_key,
       coverage_name: None,
-      holds: property,
+      holds: fn(input) { run_property(property, input) == None },
       report: fn(failure) { forall_failure(cfg, test_name, property, failure) },
     )
   run_check(cfg, test_name, gen, check) |> finish
+}
+
+/// The panic message of `property` on `input`, or `None` when it passes.
+fn run_property(property: fn(a) -> Nil, input: a) -> Option(String) {
+  capture.capture_panic(fn() { property(input) })
+}
+
+/// Run a round-trip property: `decode(encode(input))` must be
+/// `Ok(input)`. The report and the regression key are both
+/// `round_trip[<name>]`.
+pub fn run_round_trip(
+  cfg: Settings,
+  name: String,
+  gen: Generator(a),
+  encode: fn(a) -> b,
+  decode: fn(b) -> Result(a, e),
+) -> Nil {
+  let test_name = "round_trip[" <> name <> "]"
+  run_forall(cfg, test_name, test_name, gen, fn(input) {
+    case decode(encode(input)) {
+      Ok(decoded) if decoded == input -> Nil
+      Ok(decoded) ->
+        panic_with(
+          "decode(encode(input)) returned Ok("
+          <> string.inspect(decoded)
+          <> "), which is not the input",
+        )
+      Error(error) ->
+        panic_with(
+          "decode(encode(input)) returned Error("
+          <> string.inspect(error)
+          <> ")",
+        )
+    }
+  })
 }
 
 /// Run a metamorphic relation against `f` for many inputs.
@@ -464,11 +501,19 @@ fn shrunk_failure(
 fn forall_failure(
   cfg: Settings,
   test_name: String,
-  property: fn(a) -> Bool,
+  property: fn(a) -> Nil,
   failure: Failure(a),
 ) -> String {
-  let _ = property(failure.input)
-  render_for(cfg, plain_report(cfg, test_name, failure))
+  // Run the property once more first: the report reads the annotations
+  // of this run.
+  let panic_message = run_property(property, failure.input)
+  render_for(
+    cfg,
+    FailureReport(
+      ..plain_report(cfg, test_name, failure),
+      panic_message: panic_message,
+    ),
+  )
 }
 
 /// The report for a failure of a plain property. The metamorphic report
@@ -497,6 +542,7 @@ fn plain_report(
     annotations: annotate.current_annotations(),
     footnotes: list.append(annotate.current_footnotes(), failure.notes),
     coverage_snapshot: Some(failure.coverage),
+    panic_message: None,
   )
 }
 
@@ -594,6 +640,7 @@ fn morph_failure_static(
     annotations: annotate.current_annotations(),
     footnotes: annotate.current_footnotes(),
     coverage_snapshot: None,
+    panic_message: None,
   )
 }
 

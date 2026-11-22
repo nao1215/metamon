@@ -54,6 +54,10 @@ pub type FailureReport {
     annotations: List(String),
     footnotes: List(String),
     coverage_snapshot: Option(coverage.Snapshot),
+    /// The message of the panic that failed a plain property, from a
+    /// last run on the reported input. `None` for metamorphic relations,
+    /// and when that last run did not panic.
+    panic_message: Option(String),
   )
 }
 
@@ -152,6 +156,7 @@ pub fn render_json(report: FailureReport) -> String {
     #("annotations", json.array(report.annotations, json.string)),
     #("footnotes", json.array(report.footnotes, json.string)),
     #("coverage", coverage_field),
+    #("panic_message", json.nullable(report.panic_message, json.string)),
   ])
   |> json.to_string
 }
@@ -233,7 +238,10 @@ fn body_lines(report: FailureReport) -> List(String) {
     Some(_) -> ["  relation:    `" <> report.relation_name <> "`"]
   }
   let inputs = case report.morph_mode {
-    None -> ["  source input  (shrunk):\n    " <> report.source_input]
+    None -> [
+      "  source input  (shrunk):\n    " <> report.source_input,
+      ..panic_lines(report.panic_message)
+    ]
     Some(_) -> [
       "  source input  (shrunk):\n    " <> report.source_input,
       "  follow-up input  (= transform(source)):\n    " <> report.followup_input,
@@ -259,6 +267,13 @@ fn body_lines(report: FailureReport) -> List(String) {
     inputs,
     diff_block,
   ])
+}
+
+fn panic_lines(message: Option(String)) -> List(String) {
+  case message {
+    None -> []
+    Some(text) -> ["  panic message:\n" <> indent(text, "    ")]
+  }
 }
 
 fn list_join_block(lines: List(String)) -> List(String) {
@@ -327,9 +342,9 @@ fn reproduce_lines(report: FailureReport) -> List(String) {
     None -> [
       "  reproduce (paste into a test):",
       "    // The property failed for this input. To pin it as a",
-      "    // regression, store it explicitly and assert directly.",
+      "    // regression, store it explicitly and call the property.",
       "    let input = " <> report.source_input,
-      "    should.be_true(property(input))",
+      "    property(input)",
     ]
     Some(_) -> [
       "  reproduce (paste into a test):",

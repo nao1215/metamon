@@ -11,15 +11,12 @@ import metamon/generator/range
 import metamon/relation
 import metamon/transform
 import simplifile
+import test_helpers
 
 const tmp_path: String = "/tmp/metamon_morph_pipeline_test.toml"
 
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
-
 fn failure_text(thunk: fn() -> Nil) -> String {
-  let #(panicked, message) = capture_panic(thunk)
+  let #(panicked, message) = test_helpers.capture_panic(thunk)
   assert panicked
   message
 }

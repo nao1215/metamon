@@ -1,19 +1,19 @@
 //// Schema-contract tests for the JSON failure-report format. (#82)
 ////
-//// `README.md` §JSON output declares the schema is stable and lists 17
-//// top-level keys: `mr_name`, `test_name`, `config_seed`, `runs_done`,
-//// `runs_total`, `shrinks_done`, `shrink_capped`, `source`,
-//// `morph_mode`, `relation`, `source_input`, `followup_input`,
-//// `source_output`, `followup_output`, `annotations`, `footnotes`,
-//// `coverage`. Downstream tooling (`jq` pipelines, GitHub Actions
+//// The JSON failure report has 18 top-level keys: `mr_name`,
+//// `test_name`, `config_seed`, `runs_done`, `runs_total`,
+//// `shrinks_done`, `shrink_capped`, `source`, `morph_mode`, `relation`,
+//// `source_input`, `followup_input`, `source_output`,
+//// `followup_output`, `annotations`, `footnotes`, `coverage` and
+//// `panic_message`. Downstream tooling (`jq` pipelines, GitHub Actions
 //// annotations, LLM analysis steps) depends on every one of those
 //// keys being present in every failure shape.
 ////
 //// `test/json_output_test.gleam` covers basic emission for `forall` and
-//// `forall_morph`, but only spot-checks five of the seventeen keys.
+//// `forall_morph`, but only spot-checks five of the eighteen keys.
 //// This module triggers each public failure shape that emits JSON
 //// (`forall`, `forall_morph`, `forall_round_trip`) and asserts that
-//// **every** README-listed key appears, plus the documented value-type
+//// every key appears, plus the documented value-type
 //// for the keys whose type is part of the contract (`config_seed`,
 //// `runs_done`, `runs_total`, `shrinks_done` → Int; `shrink_capped` →
 //// Bool; `annotations`, `footnotes` → Array; `coverage` → Object or
@@ -27,15 +27,12 @@ import metamon/generator
 import metamon/generator/range
 import metamon/relation
 import metamon/transform
+import test_helpers
 
 // ---------- panic capture ----------
 
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
-
 fn json_from_failure(thunk: fn() -> Nil) -> String {
-  let #(panicked, message) = capture_panic(thunk)
+  let #(panicked, message) = test_helpers.capture_panic(thunk)
   should.equal(panicked, True)
   let trimmed = string.trim(message)
   // Sanity: the failure path produced a JSON object, not the text
@@ -52,7 +49,7 @@ fn json_for_forall_failure() -> String {
   let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   json_from_failure(fn() {
     metamon.forall_with(cfg, generator.int(range.constant(0, 10)), fn(_n) {
-      False
+      test_helpers.fail()
     })
   })
 }
@@ -96,7 +93,7 @@ const required_keys: List(String) = [
   "mr_name", "test_name", "config_seed", "runs_done", "runs_total",
   "shrinks_done", "shrink_capped", "source", "morph_mode", "relation",
   "source_input", "followup_input", "source_output", "followup_output",
-  "annotations", "footnotes", "coverage",
+  "annotations", "footnotes", "coverage", "panic_message",
 ]
 
 fn assert_key_present(json: String, key: String) -> Nil {
