@@ -54,9 +54,17 @@ pub fn default_config() -> Config {
 
 /// Override the number of successful runs.
 pub fn with_runs(c: Config, n: Int) -> Result(Config, ConfigError) {
+  positive("runs", n, fn() { Config(..c, runs: n) })
+}
+
+fn positive(
+  field: String,
+  n: Int,
+  set: fn() -> Config,
+) -> Result(Config, ConfigError) {
   case n <= 0 {
-    True -> Error(NonPositive(field: "runs", value: n))
-    False -> Ok(Config(..c, runs: n))
+    True -> Error(NonPositive(field: field, value: n))
+    False -> Ok(set())
   }
 }
 
@@ -67,26 +75,17 @@ pub fn with_seed(c: Config, s: Seed) -> Config {
 
 /// Override `max_size`.
 pub fn with_max_size(c: Config, n: Int) -> Result(Config, ConfigError) {
-  case n <= 0 {
-    True -> Error(NonPositive(field: "max_size", value: n))
-    False -> Ok(Config(..c, max_size: n))
-  }
+  positive("max_size", n, fn() { Config(..c, max_size: n) })
 }
 
 /// Override the shrink limit.
 pub fn with_shrink_limit(c: Config, n: Int) -> Result(Config, ConfigError) {
-  case n <= 0 {
-    True -> Error(NonPositive(field: "shrink_limit", value: n))
-    False -> Ok(Config(..c, shrink_limit: n))
-  }
+  positive("shrink_limit", n, fn() { Config(..c, shrink_limit: n) })
 }
 
 /// Override the cap on the size of edge cartesian products.
 pub fn with_max_edges(c: Config, n: Int) -> Result(Config, ConfigError) {
-  case n <= 0 {
-    True -> Error(NonPositive(field: "max_edges", value: n))
-    False -> Ok(Config(..c, max_edges: n))
-  }
+  positive("max_edges", n, fn() { Config(..c, max_edges: n) })
 }
 
 /// Set a regression file path. The file is created on first failure

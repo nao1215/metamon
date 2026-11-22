@@ -488,29 +488,37 @@ fn forall_failure(
   failure: Failure(a),
 ) -> String {
   let _ = property(failure.input)
-  let report =
-    FailureReport(
-      mr_name: "(plain property)",
-      test_name: test_name,
-      config_seed: seed_module.state(config.seed(cfg)),
-      config_seed_original: seed_module.original_input(config.seed(cfg)),
-      runs_done: failure.run_index,
-      runs_total: total_runs(cfg),
-      shrinks_done: failure.shrinks,
-      shrink_capped: failure.capped,
-      morph_mode: None,
-      relation_name: "",
-      source_input: string.inspect(failure.input),
-      followup_input: "",
-      source_output: "",
-      followup_output: "",
-      input_source: failure.source,
-      diff_enabled: False,
-      annotations: annotate.current_annotations(),
-      footnotes: list.append(annotate.current_footnotes(), failure.notes),
-      coverage_snapshot: Some(failure.coverage),
-    )
-  render_for(cfg, report)
+  render_for(cfg, plain_report(cfg, test_name, failure))
+}
+
+/// The report for a failure of a plain property. The metamorphic report
+/// starts from it and fills in the relation and the outputs.
+fn plain_report(
+  cfg: Config,
+  test_name: String,
+  failure: Failure(a),
+) -> FailureReport {
+  FailureReport(
+    mr_name: "(plain property)",
+    test_name: test_name,
+    config_seed: seed_module.state(config.seed(cfg)),
+    config_seed_original: seed_module.original_input(config.seed(cfg)),
+    runs_done: failure.run_index,
+    runs_total: total_runs(cfg),
+    shrinks_done: failure.shrinks,
+    shrink_capped: failure.capped,
+    morph_mode: None,
+    relation_name: "",
+    source_input: string.inspect(failure.input),
+    followup_input: "",
+    source_output: "",
+    followup_output: "",
+    input_source: failure.source,
+    diff_enabled: False,
+    annotations: annotate.current_annotations(),
+    footnotes: list.append(annotate.current_footnotes(), failure.notes),
+    coverage_snapshot: Some(failure.coverage),
+  )
 }
 
 type Evaluation(b) {
@@ -522,31 +530,21 @@ fn evaluate_spec(
   f: fn(a) -> b,
   input: a,
 ) -> Evaluation(b) {
-  case spec {
-    PlainSpec(_name, t, r) -> {
-      let fol_in = t.apply(input)
-      let src_out = f(input)
-      let fol_out = f(fol_in)
-      Evaluation(
-        followup_input: string.inspect(fol_in),
-        src_output: src_out,
-        fol_output: fol_out,
-        holds: r.holds(src_out, fol_out),
-      )
-    }
-    EquivariantSpec(_name, ti, to, r) -> {
-      let fol_in = ti.apply(input)
-      let raw_src_out = f(input)
-      let src_out = to.apply(raw_src_out)
-      let fol_out = f(fol_in)
-      Evaluation(
-        followup_input: string.inspect(fol_in),
-        src_output: src_out,
-        fol_output: fol_out,
-        holds: r.holds(src_out, fol_out),
-      )
-    }
+  let #(followup_input, src_output, rel) = case spec {
+    PlainSpec(_name, t, r) -> #(t.apply(input), f(input), r)
+    EquivariantSpec(_name, ti, to, r) -> #(
+      ti.apply(input),
+      to.apply(f(input)),
+      r,
+    )
   }
+  let fol_output = f(followup_input)
+  Evaluation(
+    followup_input: string.inspect(followup_input),
+    src_output: src_output,
+    fol_output: fol_output,
+    holds: rel.holds(src_output, fol_output),
+  )
 }
 
 fn morph_mode_of(spec: MorphSpec(a, b)) -> MorphMode {
@@ -581,25 +579,14 @@ fn morph_failure(
   let evaluation = evaluate_spec(spec, f, failure.input)
   let report =
     FailureReport(
+      ..plain_report(cfg, test_name, failure),
       mr_name: spec_name(spec),
-      test_name: test_name,
-      config_seed: seed_module.state(config.seed(cfg)),
-      config_seed_original: seed_module.original_input(config.seed(cfg)),
-      runs_done: failure.run_index,
-      runs_total: total_runs(cfg),
-      shrinks_done: failure.shrinks,
-      shrink_capped: failure.capped,
       morph_mode: Some(morph_mode_of(spec)),
       relation_name: relation_name_of(spec),
-      source_input: string.inspect(failure.input),
       followup_input: evaluation.followup_input,
       source_output: string.inspect(evaluation.src_output),
       followup_output: string.inspect(evaluation.fol_output),
-      input_source: failure.source,
       diff_enabled: config.diff_enabled(cfg),
-      annotations: annotate.current_annotations(),
-      footnotes: list.append(annotate.current_footnotes(), failure.notes),
-      coverage_snapshot: Some(failure.coverage),
     )
   render_for(cfg, report)
 }

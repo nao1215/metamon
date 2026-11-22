@@ -87,11 +87,7 @@ pub fn classify(label: String, condition: Bool) -> Nil {
 /// as a confusing coverage shortfall.
 pub fn cover(target_pct: Float, label: String, condition: Bool) -> Nil {
   validate_target_pct(target_pct)
-  ensure_pct_requirement(label, target_pct)
-  case condition {
-    False -> Nil
-    True -> bump_count(counts_key, label)
-  }
+  require(label, Pct(target_pct), condition)
 }
 
 /// Absolute-count variant of `cover`: assert that the label is hit
@@ -105,11 +101,13 @@ pub fn cover(target_pct: Float, label: String, condition: Bool) -> Nil {
 /// message at the call site.
 pub fn cover_at_least(min_hits: Int, label: String, condition: Bool) -> Nil {
   validate_min_hits(min_hits)
-  ensure_count_requirement(label, min_hits)
-  case condition {
-    False -> Nil
-    True -> bump_count(counts_key, label)
-  }
+  require(label, Count(min_hits), condition)
+}
+
+/// Register the requirement on first use and count the hit.
+fn require(label: String, kind: RequirementKind, condition: Bool) -> Nil {
+  ensure_requirement(label, kind)
+  classify(label, condition)
 }
 
 fn validate_target_pct(target_pct: Float) -> Nil {
@@ -241,14 +239,6 @@ fn read_dict(key: String) -> Dict(String, Int) {
     Error(_) -> dict.new()
     Ok(raw) -> coerce_string_int_dict(raw)
   }
-}
-
-fn ensure_pct_requirement(label: String, target_pct: Float) -> Nil {
-  ensure_requirement(label, Pct(target_pct))
-}
-
-fn ensure_count_requirement(label: String, min_hits: Int) -> Nil {
-  ensure_requirement(label, Count(min_hits))
 }
 
 fn ensure_requirement(label: String, kind: RequirementKind) -> Nil {

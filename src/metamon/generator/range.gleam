@@ -33,11 +33,7 @@ pub fn singleton(value: Int) -> Range {
 /// values are intentionally equal.
 pub fn constant(lo: Int, hi: Int) -> Range {
   let #(lo, hi) = order_bounds(lo, hi)
-  let chosen_origin = case lo <= 0 && 0 <= hi {
-    True -> 0
-    False -> lo
-  }
-  Range(origin: chosen_origin, kind: Const(lo: lo, hi: hi))
+  Range(origin: default_origin(lo, hi), kind: Const(lo: lo, hi: hi))
 }
 
 /// A range that scales linearly: at `size = 0` returns `[origin, origin]`
@@ -46,11 +42,7 @@ pub fn constant(lo: Int, hi: Int) -> Range {
 /// Inverted bounds (`lo > hi`) are auto-swapped.
 pub fn linear(lo: Int, hi: Int) -> Range {
   let #(lo, hi) = order_bounds(lo, hi)
-  let chosen_origin = case lo <= 0 && 0 <= hi {
-    True -> 0
-    False -> lo
-  }
-  Range(origin: chosen_origin, kind: Linear(lo: lo, hi: hi))
+  Range(origin: default_origin(lo, hi), kind: Linear(lo: lo, hi: hi))
 }
 
 /// Like `linear` but the origin is supplied explicitly. Useful when the
@@ -66,7 +58,7 @@ pub fn linear(lo: Int, hi: Int) -> Range {
 /// is always either `0` when inside the interval, or `lo`).
 pub fn linear_from(origin: Int, lo: Int, hi: Int) -> Range {
   let #(lo, hi) = order_bounds(lo, hi)
-  let _ = assert_origin_in_bounds(origin, lo, hi)
+  assert_origin_in_bounds(origin, lo, hi)
   Range(origin: origin, kind: Linear(lo: lo, hi: hi))
 }
 
@@ -76,11 +68,7 @@ pub fn linear_from(origin: Int, lo: Int, hi: Int) -> Range {
 /// Inverted bounds (`lo > hi`) are auto-swapped.
 pub fn exponential(lo: Int, hi: Int) -> Range {
   let #(lo, hi) = order_bounds(lo, hi)
-  let chosen_origin = case lo <= 0 && 0 <= hi {
-    True -> 0
-    False -> lo
-  }
-  Range(origin: chosen_origin, kind: Exponential(lo: lo, hi: hi))
+  Range(origin: default_origin(lo, hi), kind: Exponential(lo: lo, hi: hi))
 }
 
 /// The shrink target for this range.
@@ -110,6 +98,14 @@ pub fn bounds(range: Range, size: Int, max_size: Int) -> #(Int, Int) {
         scale_exponential(range.origin, hi, clamped_size, max_size)
       #(lo_scaled, hi_scaled)
     }
+  }
+}
+
+/// `0` when it lies inside `[lo, hi]`, otherwise `lo`.
+fn default_origin(lo: Int, hi: Int) -> Int {
+  case lo <= 0 && 0 <= hi {
+    True -> 0
+    False -> lo
   }
 }
 

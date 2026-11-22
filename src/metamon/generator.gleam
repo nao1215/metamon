@@ -9,6 +9,7 @@
 //// integrated shrinking via the underlying `Tree(a)` and propagate edges
 //// in a way appropriate for each combinator (see § 4.4 of the spec).
 
+import gleam/bit_array
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -549,18 +550,11 @@ pub fn int(range_value: Range) -> Generator(Int) {
       let #(value, _) = seed_module.next_int_in(s, lo, hi)
       tree.unfold(value, fn(v) { shrink_lib.int_toward(origin, v) })
     },
-    edges: edge_lib.ints_in(extreme_lo(range_value), extreme_hi(range_value)),
+    edges: {
+      let #(lo, hi) = range.bounds(range_value, 99, 99)
+      edge_lib.ints_in(lo, hi)
+    },
   )
-}
-
-fn extreme_lo(r: Range) -> Int {
-  let #(lo, _) = range.bounds(r, 99, 99)
-  lo
-}
-
-fn extreme_hi(r: Range) -> Int {
-  let #(_, hi) = range.bounds(r, 99, 99)
-  hi
 }
 
 // ---------- shortcut generators ----------
@@ -596,7 +590,7 @@ pub fn byte() -> Generator(Int) {
 /// (no sub-byte tail).
 pub fn bit_array(byte_len: Range) -> Generator(BitArray) {
   list_of(byte(), byte_len)
-  |> map(bytes_to_bit_array)
+  |> map(pack_bits(_, 8))
 }
 
 /// Bit array whose every byte is a printable ASCII codepoint
@@ -606,7 +600,7 @@ pub fn bit_array(byte_len: Range) -> Generator(BitArray) {
 /// types, etc.).
 pub fn bit_array_printable(byte_len: Range) -> Generator(BitArray) {
   list_of(int(range.constant(32, 126)), byte_len)
-  |> map(bytes_to_bit_array)
+  |> map(pack_bits(_, 8))
 }
 
 /// Bit array that is guaranteed to be valid UTF-8. `codepoint_len` is
@@ -627,19 +621,17 @@ pub fn bit_array_utf8(codepoint_len: Range) -> Generator(BitArray) {
 /// metric matches byte-oriented properties more naturally.
 pub fn bit_array_unaligned(bit_len: Range) -> Generator(BitArray) {
   list_of(int(range.constant(0, 1)), bit_len)
-  |> map(bits_to_bit_array)
-}
-
-fn bits_to_bit_array(bits: List(Int)) -> BitArray {
-  list.fold(bits, <<>>, fn(acc, b) { <<acc:bits, b:size(1)>> })
+  |> map(pack_bits(_, 1))
 }
 
 fn string_to_utf8_bit_array(s: String) -> BitArray {
   <<s:utf8>>
 }
 
-fn bytes_to_bit_array(bytes: List(Int)) -> BitArray {
-  list.fold(bytes, <<>>, fn(acc, b) { <<acc:bits, b:size(8)>> })
+/// Concatenate `values`, each `width` bits wide.
+fn pack_bits(values: List(Int), width: Int) -> BitArray {
+  list.map(values, fn(value) { <<value:size(width)>> })
+  |> bit_array.concat
 }
 
 /// Generates finite Float values uniformly in the closed interval
@@ -734,16 +726,12 @@ fn negative_zero() -> Float {
 
 /// A single ASCII lowercase letter generator (a-z).
 pub fn ascii_lower() -> Generator(String) {
-  let cp_gen = int(range.constant(97, 122))
-  map(cp_gen, codepoint_to_string)
-  |> override_edges(["a", "z", "m"])
+  ascii_char(97, 122, ["a", "z", "m"])
 }
 
 /// A single ASCII uppercase letter generator (A-Z).
 pub fn ascii_upper() -> Generator(String) {
-  let cp_gen = int(range.constant(65, 90))
-  map(cp_gen, codepoint_to_string)
-  |> override_edges(["A", "Z", "M"])
+  ascii_char(65, 90, ["A", "Z", "M"])
 }
 
 /// A single ASCII letter generator (a-zA-Z).
@@ -753,9 +741,13 @@ pub fn ascii_letter() -> Generator(String) {
 
 /// A single ASCII digit (0-9).
 pub fn ascii_digit() -> Generator(String) {
-  let cp_gen = int(range.constant(48, 57))
-  map(cp_gen, codepoint_to_string)
-  |> override_edges(["0", "9", "5"])
+  ascii_char(48, 57, ["0", "9", "5"])
+}
+
+/// One character with a codepoint in `[lo, hi]` and the given edges.
+fn ascii_char(lo: Int, hi: Int, edges: List(String)) -> Generator(String) {
+  map(int(range.constant(lo, hi)), codepoint_int_to_string)
+  |> override_edges(edges)
 }
 
 /// A single ASCII alphanumeric character.
@@ -765,9 +757,7 @@ pub fn ascii_alphanumeric() -> Generator(String) {
 
 /// A single ASCII printable character (space..~).
 pub fn ascii_printable() -> Generator(String) {
-  let cp_gen = int(range.constant(32, 126))
-  map(cp_gen, codepoint_to_string)
-  |> override_edges([" ", "0", "A", "z", "~"])
+  ascii_char(32, 126, [" ", "0", "A", "z", "~"])
 }
 
 /// A Unicode scalar value (excluding surrogates).
@@ -828,9 +818,7 @@ pub fn string_ascii(len: Range) -> Generator(String) {
 /// boundaries: NUL, `\t`, `\n`, space, digit `0`, letters `A` / `z`,
 /// `~`, and DEL.
 fn ascii_full() -> Generator(String) {
-  let cp_gen = int(range.constant(0, 127))
-  map(cp_gen, codepoint_to_string)
-  |> override_edges([
+  ascii_char(0, 127, [
     "\u{0000}",
     "\t",
     "\n",
@@ -903,10 +891,6 @@ fn strings_in_length_range(
 @external(erlang, "metamon_ffi", "codepoint_to_string")
 @external(javascript, "../metamon_ffi.mjs", "codepoint_to_string")
 fn codepoint_int_to_string(codepoint: Int) -> String
-
-fn codepoint_to_string(codepoint: Int) -> String {
-  codepoint_int_to_string(codepoint)
-}
 
 // ---------- collections ----------
 
