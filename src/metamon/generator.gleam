@@ -590,7 +590,7 @@ pub fn byte() -> Generator(Int) {
 /// (no sub-byte tail).
 pub fn bit_array(byte_len: Range) -> Generator(BitArray) {
   list_of(byte(), byte_len)
-  |> map(pack_bits(_, 8))
+  |> map(pack_bytes)
 }
 
 /// Bit array whose every byte is a printable ASCII codepoint
@@ -600,7 +600,7 @@ pub fn bit_array(byte_len: Range) -> Generator(BitArray) {
 /// types, etc.).
 pub fn bit_array_printable(byte_len: Range) -> Generator(BitArray) {
   list_of(int(range.constant(32, 126)), byte_len)
-  |> map(pack_bits(_, 8))
+  |> map(pack_bytes)
 }
 
 /// Bit array that is guaranteed to be valid UTF-8. `codepoint_len` is
@@ -621,17 +621,23 @@ pub fn bit_array_utf8(codepoint_len: Range) -> Generator(BitArray) {
 /// metric matches byte-oriented properties more naturally.
 pub fn bit_array_unaligned(bit_len: Range) -> Generator(BitArray) {
   list_of(int(range.constant(0, 1)), bit_len)
-  |> map(pack_bits(_, 1))
+  |> map(pack_single_bits)
 }
 
 fn string_to_utf8_bit_array(s: String) -> BitArray {
   <<s:utf8>>
 }
 
-/// Concatenate `values`, each `width` bits wide.
-fn pack_bits(values: List(Int), width: Int) -> BitArray {
-  list.map(values, fn(value) { <<value:size(width)>> })
+fn pack_bytes(bytes: List(Int)) -> BitArray {
+  list.map(bytes, fn(byte) { <<byte:size(8)>> })
   |> bit_array.concat
+}
+
+// Older gleam_stdlib releases allowed by gleam.toml only concatenate whole
+// bytes on JavaScript, so single bits are appended with a bit-array
+// segment instead of `bit_array.concat`.
+fn pack_single_bits(bits: List(Int)) -> BitArray {
+  list.fold(bits, <<>>, fn(acc, bit) { <<acc:bits, bit:size(1)>> })
 }
 
 /// Generates finite Float values uniformly in the closed interval
