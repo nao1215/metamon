@@ -18,12 +18,6 @@
 //// `runs_done`, `runs_total`, `shrinks_done` → Int; `shrink_capped` →
 //// Bool; `annotations`, `footnotes` → Array; `coverage` → Object or
 //// null).
-////
-//// Stateful failures (`metamon/stateful.assert_passed`) panic with
-//// their own text-only header and do not flow through the JSON
-//// formatter, so they are intentionally out of scope for this contract
-//// — the README §JSON output section similarly says nothing about a
-//// stateful JSON shape.
 
 import gleam/list
 import gleam/string

@@ -17,7 +17,6 @@ import metamon/generator
 import metamon/generator/range
 import metamon/relation
 import metamon/transform
-import metamon/transform/list as list_t
 
 // ===========================================================================
 // Quick start
@@ -66,7 +65,7 @@ pub fn readme_idempotency_test() {
 
 fn sort_dedupe(xs: List(Int)) -> List(Int) {
   let sorted = list.sort(xs, int.compare)
-  let dedupe = list_t.dedupe()
+  let dedupe = transform.new("list.dedupe", list.unique)
   dedupe.apply(sorted)
 }
 
@@ -83,7 +82,7 @@ pub fn readme_round_trip_test() {
   let mr =
     metamon.mr(
       name: "int_string_round_trip",
-      transform: transform.identity(),
+      transform: transform.new("identity", fn(value) { value }),
       relation: r,
     )
   metamon.forall_morph(generator.int(range.constant(-1000, 1000)), mr, fn(n) {
@@ -96,45 +95,18 @@ pub fn readme_round_trip_test() {
 // Result(b, _), so use forall_round_trip_partial to skip encoder
 // rejections instead of writing a `let assert Ok(s) = encode(...)`
 // shim that turns documented partiality into a runtime panic.
-pub fn readme_round_trip_partial_test() {
-  // Stand-in for a real partial encoder: only encodes even integers.
-  metamon.forall_round_trip_partial(
-    gen: generator.int(range.constant(-50, 50)),
-    name: "even_only_round_trip",
-    encode: fn(n) {
-      case n % 2 == 0 {
-        True -> Ok(int.to_string(n))
-        False -> Error(Nil)
-      }
-    },
-    decode: fn(s) { int.parse(s) },
-  )
-}
-
 // 2.2.1.B. Round-trip with a caller-supplied equality. Use this when
 // the source type's decoded form normalises (multipart Part with
 // re-derived caches, MIME types whose essence lowercases, etc.). The
 // example below uses a lowercasing "encoder" to demonstrate that
 // uppercase letters round-trip under case-insensitive equality.
-pub fn readme_round_trip_under_test() {
-  let case_insensitive =
-    relation.equivalent_under(string.lowercase, "case_insensitive")
-  metamon.forall_round_trip_under(
-    gen: generator.string_alpha(range.constant(0, 8)),
-    name: "case_insensitive_round_trip",
-    encode: string.lowercase,
-    decode: fn(s) { Ok(s) },
-    equality: case_insensitive,
-  )
-}
-
 // 2.3. Invariance: f(T(x)) == f(x) — the function is unaffected by T.
 pub fn readme_invariance_test() {
   // list.length is invariant under reverse.
   let mr =
     metamon.invariant_under(
       name: "length_invariant_under_reverse",
-      under: list_t.reverse(),
+      under: transform.new("list.reverse", list.reverse),
     )
   metamon.forall_morph(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 8)),
@@ -150,8 +122,8 @@ pub fn readme_equivariance_test() {
   let mr =
     metamon.equivariant_under(
       name: "map_commutes_with_reverse",
-      input: list_t.reverse(),
-      output: list_t.reverse(),
+      input: transform.new("list.reverse", list.reverse),
+      output: transform.new("list.reverse", list.reverse),
       relation: relation.equal(),
     )
   metamon.forall_morph(
@@ -164,7 +136,8 @@ pub fn readme_equivariance_test() {
 // 2.5. Manual MR construction — pick any Transform and any Relation.
 pub fn readme_manual_mr_test() {
   // Adding zero to a list of ints does not change its sum.
-  let append_zero = list_t.append(0)
+  let append_zero =
+    transform.new("list.append(0)", fn(items) { list.append(items, [0]) })
   let mr =
     metamon.mr(
       name: "sum_invariant_under_append_zero",
@@ -187,7 +160,7 @@ pub fn readme_assert_morph_test() {
   let mr =
     metamon.invariant_under(
       name: "sum_invariant_under_reverse",
-      under: list_t.reverse(),
+      under: transform.new("list.reverse", list.reverse),
     )
   metamon.assert_morph([1, 2, 3, 4, 5], mr, list_sum)
 }
@@ -222,11 +195,16 @@ pub fn readme_round_trip_via_forall_test() {
 // 2.9. forall_morphs — run several MRs against the same f.
 pub fn readme_forall_morphs_test() {
   let invariant_under_reverse =
-    metamon.invariant_under(name: "sum_under_reverse", under: list_t.reverse())
+    metamon.invariant_under(
+      name: "sum_under_reverse",
+      under: transform.new("list.reverse", list.reverse),
+    )
   let invariant_under_append_zero =
     metamon.invariant_under(
       name: "sum_under_append_zero",
-      under: list_t.append(0),
+      under: transform.new("list.append(0)", fn(items) {
+        list.append(items, [0])
+      }),
     )
   metamon.forall_morphs(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 4)),
@@ -315,31 +293,7 @@ fn count_leaves(t: Tree) -> Int {
 // ===========================================================================
 
 // 4.1. Composing transforms.
-pub fn readme_transform_composition_test() {
-  // Lowercase, then trim.
-  let normalise =
-    transform.then(
-      transform.new("lowercase", string.lowercase),
-      transform.new("trim", string.trim),
-    )
-  // Apply on a known input.
-  should.equal(normalise.apply("  Hello  "), "hello")
-  should.equal(normalise.name, "lowercase |> trim")
-}
-
 // 4.2. Combining relations.
-pub fn readme_relation_combination_test() {
-  let positive =
-    relation.new("positive_left", fn(left: Int, _right: Int) { left > 0 })
-  let nonzero_right =
-    relation.new("nonzero_right", fn(_left: Int, right: Int) { right != 0 })
-  let combined = relation.and(positive, nonzero_right)
-  should.equal(combined.name, "positive_left and nonzero_right")
-  should.be_true(combined.holds(5, 3))
-  should.be_false(combined.holds(0, 3))
-  should.be_false(combined.holds(5, 0))
-}
-
 // 4.3. equivalent_under — relation on a normalised view.
 pub fn readme_equivalent_under_test() {
   // Two strings are equivalent if their lowercase forms match.

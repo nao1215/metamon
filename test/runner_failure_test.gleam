@@ -11,7 +11,6 @@ import metamon/generator
 import metamon/generator/range
 import metamon/relation
 import metamon/transform
-import metamon/transform/list as list_t
 
 pub type CapturedPanic {
   Reason(message: String)
@@ -114,26 +113,6 @@ pub fn forall_round_trip_panics_on_decode_error_test() {
   }
 }
 
-pub fn forall_observable_renders_predicate_value_in_failure_test() {
-  let outcome =
-    capture(fn() {
-      metamon.forall_observable(
-        generator.int(range.constant(10, 20)),
-        fn(input) {
-          let doubled = input * 2
-          #(doubled, doubled < 0)
-        },
-      )
-    })
-  case outcome {
-    Reason(text) -> {
-      should.be_true(string.contains(text, "× property failed"))
-      should.be_true(string.contains(text, "predicate value:"))
-    }
-    NoPanic -> should.fail()
-  }
-}
-
 pub fn forall_morphs_panics_on_empty_mr_list_test() {
   let outcome =
     capture(fn() {
@@ -166,52 +145,6 @@ pub fn config_seed_zero_renders_with_originally_annotation_test() {
     Reason(text) -> {
       should.be_true(string.contains(text, "config seed:"))
       should.be_true(string.contains(text, "originally seed(0)"))
-    }
-    NoPanic -> should.fail()
-  }
-}
-
-pub fn forall_morph_n_panics_when_outputs_differ_test() {
-  // The head of a list changes when the list is reversed, so asking for
-  // all outputs to be equal must fail rather than pass.
-  let outcome =
-    capture(fn() {
-      metamon.forall_morph_n(
-        generator.list_of(
-          generator.int(range.constant(0, 9)),
-          range.constant(2, 5),
-        ),
-        [list_t.reverse()],
-        relation.all_equal(),
-        fn(items) {
-          case items {
-            [first, ..] -> first
-            [] -> 0
-          }
-        },
-      )
-    })
-  case outcome {
-    Reason(text) -> should.be_true(string.contains(text, "all_equal"))
-    NoPanic -> should.fail()
-  }
-}
-
-pub fn forall_morph_n_panics_on_empty_transforms_test() {
-  let outcome =
-    capture(fn() {
-      metamon.forall_morph_n(
-        generator.int(range.constant(0, 100)),
-        [],
-        relation.all_equal(),
-        fn(n) { n },
-      )
-    })
-  case outcome {
-    Reason(text) -> {
-      should.be_true(string.contains(text, "metamon.forall_morph_n"))
-      should.be_true(string.contains(text, "empty transforms list"))
-      should.be_true(string.contains(text, "vacuous test"))
     }
     NoPanic -> should.fail()
   }

@@ -1,6 +1,6 @@
 //// The plain property runners (`forall`, `forall_with`,
-//// `forall_observable`, `forall_round_trip*`) shrink the failing input
-//// the same way `forall_morph` does.
+//// `forall_round_trip*`) shrink the failing input the same way
+//// `forall_morph` does.
 
 import gleam/int
 import gleam/string
@@ -53,18 +53,6 @@ pub fn forall_shrinks_to_the_boundary_for_every_seed_test() {
       shrunk_to(text, "10")
     },
   )
-}
-
-pub fn forall_observable_shrinks_test() {
-  let text =
-    failure_text(fn() {
-      metamon.forall_observable_with(seeded(7), ints(), fn(x) {
-        #(x * 2, x < 10)
-      })
-    })
-  assert shrunk_to(text, "10")
-  // The observation shown belongs to the reported (shrunk) input.
-  assert string.contains(text, "predicate value: 20")
 }
 
 pub fn forall_round_trip_shrinks_test() {

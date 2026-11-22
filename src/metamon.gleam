@@ -1,7 +1,7 @@
 //// Metamon top-level public API.
 ////
 //// `metamon` exports the small surface that most tests interact with:
-//// `forall`, `forall_observable`, `forall_morph`, `assert_morph`,
+//// `forall`, `forall_morph`, `assert_morph`,
 //// `forall_morphs`, `forall_round_trip`, the `Mr` smart constructors,
 //// and a handful of metamorphic-relation templates (`idempotency_of`,
 //// `invariant_under`, `equivariant_under`, `commutativity_of`).
@@ -12,9 +12,7 @@
 //// and `metamon/coverage`; structural diff in `metamon/diff`.
 
 import gleam/list
-import metamon/annotate
 import metamon/config
-import metamon/coverage
 import metamon/generator.{type Generator}
 import metamon/generator/seed as seed_module
 import metamon/internal/runner.{type MorphSpec}
@@ -178,37 +176,6 @@ pub fn forall_with(
   runner.run_forall(cfg, "forall", "(plain property)", g, property)
 }
 
-/// Run a property whose predicate also exposes its intermediate value.
-///
-/// `predicate` returns `#(observation, holds)`. `holds` decides whether
-/// the property is satisfied (same as `forall`); `observation` is
-/// recorded under the label `predicate value` and shown in the failure
-/// report — no manual `annotate.annotate_value` is needed.
-///
-/// Use this when the predicate's intermediate value (typically `f(input)`)
-/// is what determines the branch. Without it, `forall` failure reports
-/// only show the shrunk source input, which can force a debug round-trip
-/// to recover what `f(input)` actually was.
-pub fn forall_observable(
-  g: Generator(a),
-  predicate: fn(a) -> #(b, Bool),
-) -> Nil {
-  forall_observable_with(default_config(), g, predicate)
-}
-
-/// `forall_observable` with an explicit configuration.
-pub fn forall_observable_with(
-  cfg: Config,
-  g: Generator(a),
-  predicate: fn(a) -> #(b, Bool),
-) -> Nil {
-  runner.run_forall(cfg, "forall_observable", "(plain property)", g, fn(input) {
-    let #(observed, holds) = predicate(input)
-    annotate.annotate_value("predicate value", observed)
-    holds
-  })
-}
-
 /// Run a metamorphic relation over many random inputs.
 pub fn forall_morph(g: Generator(a), m: Mr(a, b), f: fn(a) -> b) -> Nil {
   forall_morph_with(default_config(), g, m, f)
@@ -227,35 +194,6 @@ pub fn forall_morph_with(
 /// Run a metamorphic relation against a single input. Generator-free.
 pub fn assert_morph(input: a, m: Mr(a, b), f: fn(a) -> b) -> Nil {
   runner.run_assert_morph("assert_morph", m.spec, f, input)
-}
-
-/// Run an N-ary metamorphic relation: apply each of `transforms` to
-/// the source input to build follow-up inputs, then assert that the
-/// resulting outputs `[f(x), f(T0(x)), ..., f(Tn(x))]` satisfy
-/// `relation`. Useful when the property requires comparing more than
-/// two outputs in one shot (e.g. `(a, b, c) ↦ op(op(a,b), c)` and its
-/// re-associations all agree).
-///
-/// Passing `[]` for `transforms` is a programming error (vacuous test)
-/// and panics with a structured message.
-pub fn forall_morph_n(
-  g: Generator(a),
-  transforms: List(Transform(a)),
-  rel: relation.RelationN(b),
-  f: fn(a) -> b,
-) -> Nil {
-  forall_morph_n_with(default_config(), g, transforms, rel, f)
-}
-
-/// `forall_morph_n` with an explicit configuration.
-pub fn forall_morph_n_with(
-  cfg: Config,
-  g: Generator(a),
-  transforms: List(Transform(a)),
-  rel: relation.RelationN(b),
-  f: fn(a) -> b,
-) -> Nil {
-  runner.run_forall_morph_n(cfg, "forall_morph_n", g, transforms, rel, f)
 }
 
 /// Run multiple metamorphic relations against the same generator.
@@ -284,7 +222,7 @@ pub fn forall_morphs(
 // call sites read naturally:
 //
 //   metamon.idempotency_of(name: "trim", of: string.trim)
-//   metamon.invariant_under(name: "len_under_reverse", under: list_t.reverse())
+//   metamon.invariant_under(name: "len_under_reverse", under: reverse)
 //
 // Round-trip is not exposed as a Plain MR — MR's two-point output
 // relation cannot express the source-vs-output comparison
@@ -416,148 +354,4 @@ fn decodes_back(
       Error(_) -> False
     }
   }
-}
-
-/// Run a round-trip property where the encoder is partial: the
-/// encoder returns `Result(b, e_enc)` because not every generated
-/// input is a valid input for the codec. Inputs the encoder rejects
-/// (`Error(_)`) are treated as out of scope and skipped — the
-/// property succeeds for them.
-///
-/// Use this variant for codecs whose encoder has structural
-/// preconditions: byte-alignment requirements, value-range checks,
-/// hrp / version constraints, etc. A typical pattern is to combine
-/// `forall_round_trip_partial` with a generator that produces the
-/// surrounding inputs (e.g. arbitrary `BitArray` plus arbitrary
-/// version bytes); the encoder filters down to the valid subset and
-/// the property checks the round-trip on that subset.
-///
-/// The failure report header is `round_trip[<name>]` so it is
-/// immediately obvious from the panic which round-trip broke. The
-/// underlying machinery is the same as `forall`, including shrinking
-/// of the source input.
-///
-/// ```gleam
-/// metamon.forall_round_trip_partial(
-///   gen: generator.tuple2(byte_gen, payload_gen),
-///   name: "base58check",
-///   encode: fn(pair) { base58check.encode(pair.0, pair.1) },
-///   decode: fn(s) {
-///     case base58check.decode(s) {
-///       Ok(decoded) -> Ok(#(decoded.version, decoded.payload))
-///       Error(e) -> Error(e)
-///     }
-///   },
-/// )
-/// ```
-pub fn forall_round_trip_partial(
-  gen gen: Generator(a),
-  name name: String,
-  encode encode: fn(a) -> Result(b, e_enc),
-  decode decode: fn(b) -> Result(a, e_dec),
-) -> Nil {
-  forall_round_trip_partial_with(
-    cfg: default_config(),
-    gen: gen,
-    name: name,
-    encode: encode,
-    decode: decode,
-  )
-}
-
-/// `forall_round_trip_partial` with an explicit configuration.
-///
-/// The runner automatically registers a `coverage.cover_at_least(1,
-/// "encoder_accepted", ok)` requirement so a property whose generator
-/// is so wide that the encoder rejects every sample fails the test
-/// with a structured "coverage shortfall" message rather than passing
-/// silently. To enforce a stricter floor (e.g. "at least 50% of
-/// inputs must round-trip"), call
-/// `coverage.cover(50.0, "encoder_accepted", ok)` inside your own
-/// property body — coverage labels accumulate across calls.
-pub fn forall_round_trip_partial_with(
-  cfg cfg: Config,
-  gen gen: Generator(a),
-  name name: String,
-  encode encode: fn(a) -> Result(b, e_enc),
-  decode decode: fn(b) -> Result(a, e_dec),
-) -> Nil {
-  run_round_trip(cfg, name, gen, fn(input) {
-    case encode(input) {
-      // The encoder declared this input out of scope. Skip it: the
-      // property is vacuously true for inputs the codec does not
-      // accept. The cover_at_least(1, ...) requirement below ensures
-      // the runner panics with a "coverage shortfall" if every input
-      // is rejected, so a 100%-rejection generator does not silently
-      // pass.
-      Error(_) -> {
-        coverage.cover_at_least(1, "encoder_accepted", False)
-        True
-      }
-      Ok(encoded) -> {
-        coverage.cover_at_least(1, "encoder_accepted", True)
-        case decode(encoded) {
-          Ok(decoded) -> decoded == input
-          Error(_) -> False
-        }
-      }
-    }
-  })
-}
-
-/// Run a round-trip property using a caller-supplied equality
-/// `Relation(a)` instead of structural `==`. The decoded value must
-/// satisfy `equality.holds(decoded, input)`.
-///
-/// Use this when the source type carries values that are not
-/// preserved verbatim across encode → decode: opaque types whose
-/// decoded form normalises (e.g. multipart `Part` with re-derived
-/// convenience fields), MIME types that lowercase the essence, JSON
-/// values whose key order is implementation-defined. Composing with
-/// `relation.equivalent_under(via, name)` lets you compare on a
-/// projection (e.g. `headers + body` ignoring derived caches).
-///
-/// The failure report header is `round_trip[<name>]`. The relation's
-/// own `name` appears under `relation:` in the failure block, just
-/// like `forall_morph` failures.
-///
-/// ```gleam
-/// metamon.forall_round_trip_under(
-///   gen: parts_gen(),
-///   name: "multipart_round_trip",
-///   encode: fn(parts) { multipartkit.encode(boundary, parts) },
-///   decode: fn(body) { multipartkit.parse(body, content_type) },
-///   equality: relation.equivalent_under(
-///     fn(parts) { list.map(parts, part_payload) },
-///     "wire_payload",
-///   ),
-/// )
-/// ```
-pub fn forall_round_trip_under(
-  gen gen: Generator(a),
-  name name: String,
-  encode encode: fn(a) -> b,
-  decode decode: fn(b) -> Result(a, e),
-  equality equality: Relation(a),
-) -> Nil {
-  forall_round_trip_under_with(
-    cfg: default_config(),
-    gen: gen,
-    name: name,
-    encode: encode,
-    decode: decode,
-    equality: equality,
-  )
-}
-
-/// `forall_round_trip_under` with an explicit configuration.
-pub fn forall_round_trip_under_with(
-  cfg cfg: Config,
-  gen gen: Generator(a),
-  name name: String,
-  encode encode: fn(a) -> b,
-  decode decode: fn(b) -> Result(a, e),
-  equality equality: Relation(a),
-) -> Nil {
-  run_round_trip(cfg, name, gen, decodes_back(encode, decode, equality.holds))
 }

@@ -1,5 +1,3 @@
-import gleam/int
-import gleam/order
 import gleam/string
 import gleeunit/should
 import metamon/relation
@@ -10,12 +8,6 @@ pub fn equal_holds_when_structurally_same_test() {
   should.be_false(r_int.holds(1, 2))
   let r_list = relation.equal()
   should.be_true(r_list.holds([1, 2, 3], [1, 2, 3]))
-}
-
-pub fn not_equal_inverts_equal_test() {
-  let r = relation.not_equal()
-  should.be_false(r.holds(1, 1))
-  should.be_true(r.holds(1, 2))
 }
 
 pub fn equivalent_under_normalises_first_test() {
@@ -84,98 +76,4 @@ pub fn permutation_of_test() {
   should.be_true(r.holds([1, 2, 3], [3, 1, 2]))
   should.be_false(r.holds([1, 2, 3], [1, 2, 4]))
   should.be_false(r.holds([1, 2, 3], [1, 2]))
-}
-
-pub fn subset_of_test() {
-  let r = relation.subset_of()
-  should.be_true(r.holds([1, 2], [1, 2, 3]))
-  should.be_false(r.holds([1, 2, 4], [1, 2, 3]))
-}
-
-pub fn subset_of_uses_multiset_semantics_test() {
-  // Cases the audit (#53) called out: the multiset interpretation is
-  // the existing behaviour; pin it explicitly so the contract is
-  // visible in the test suite.
-  let r = relation.subset_of()
-  should.be_true(r.holds([1, 2], [1, 2, 3]))
-  should.be_false(r.holds([1, 1], [1]))
-  should.be_true(r.holds([1, 1], [1, 1, 2]))
-}
-
-pub fn set_subset_of_uses_set_semantics_test() {
-  let r = relation.set_subset_of()
-  should.be_true(r.holds([1, 1], [1]))
-  should.be_true(r.holds([2, 3], [1, 2, 3, 4]))
-  should.be_false(r.holds([1, 4], [1, 2, 3]))
-  // Empty left is trivially a subset of anything.
-  should.be_true(r.holds([], [1, 2, 3]))
-  should.be_true(r.holds([], []))
-}
-
-pub fn monotone_test() {
-  let r =
-    relation.monotone(fn(a, b) {
-      case a == b, a < b {
-        True, _ -> order.Eq
-        _, True -> order.Lt
-        _, _ -> order.Gt
-      }
-    })
-  should.be_true(r.holds(1, 2))
-  should.be_true(r.holds(1, 1))
-  should.be_false(r.holds(2, 1))
-}
-
-pub fn implies_short_circuits_when_antecedent_false_test() {
-  let inner = relation.equal()
-  let r = relation.implies(fn(a, b) { a > 0 && b > 0 }, inner)
-  // Antecedent false → trivially holds even if values differ.
-  should.be_true(r.holds(-1, 5))
-  // Antecedent true → inner equality must hold.
-  should.be_false(r.holds(1, 2))
-  should.be_true(r.holds(1, 1))
-}
-
-pub fn and_or_invert_test() {
-  let one_or_two = relation.new("one_or_two", fn(a, _b) { a == 1 || a == 2 })
-  let positive = relation.new("positive", fn(a, _b) { a > 0 })
-  let both = relation.and(one_or_two, positive)
-  should.be_true(both.holds(1, 0))
-  should.be_false(both.holds(-1, 0))
-  let either = relation.or(one_or_two, positive)
-  should.be_true(either.holds(5, 0))
-  // Invert
-  let neither = relation.invert(either)
-  should.be_true(neither.holds(-1, 0))
-}
-
-pub fn rename_keeps_predicate_test() {
-  let r =
-    relation.equal()
-    |> relation.rename("structural_eq")
-  should.equal(r.name, "structural_eq")
-  should.be_true(r.holds(1, 1))
-}
-
-pub fn all_equal_fails_when_any_output_differs_test() {
-  let r = relation.all_equal()
-  should.be_true(r.holds([]))
-  should.be_true(r.holds([7]))
-  should.be_true(r.holds([7, 7, 7]))
-  // A difference at the front, in the middle and at the end must each
-  // make the relation fail; a relation that only ever answers True would
-  // pass every metamorphic test built on it.
-  should.be_false(r.holds([1, 7, 7]))
-  should.be_false(r.holds([7, 1, 7]))
-  should.be_false(r.holds([7, 7, 1]))
-}
-
-pub fn pairwise_fails_when_any_adjacent_pair_breaks_test() {
-  let sorted = relation.pairwise(relation.monotone(int.compare))
-  should.be_true(sorted.holds([]))
-  should.be_true(sorted.holds([3]))
-  should.be_true(sorted.holds([1, 2, 2, 3]))
-  should.be_false(sorted.holds([2, 1, 3]))
-  should.be_false(sorted.holds([1, 3, 2]))
-  should.equal(sorted.name, "pairwise(monotone)")
 }

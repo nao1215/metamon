@@ -14,7 +14,6 @@ import metamon/generator
 import metamon/generator/range
 import metamon/relation
 import metamon/transform
-import metamon/transform/dict as dict_t
 
 // § 8.1 — `naming.to_snake_case` idempotency + keyword coverage.
 //
@@ -120,7 +119,7 @@ pub fn parse_write_round_trip_test() {
   let mr =
     metamon.mr(
       name: "parse_write_round_trip",
-      transform: transform.identity(),
+      transform: transform.new("identity", fn(value) { value }),
       relation: r,
     )
   metamon.forall_morph(
@@ -178,7 +177,9 @@ pub fn field_order_invariance_test() {
   let mr =
     metamon.invariant_under(
       name: "size_invariant_under_shuffle_keys",
-      under: dict_t.shuffle_keys(0),
+      under: transform.new("dict.reinsert_reversed", fn(entries) {
+        entries |> dict.to_list |> list.reverse |> dict.from_list
+      }),
     )
   metamon.forall_morph(
     generator.dict_of(

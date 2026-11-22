@@ -10,13 +10,13 @@ import gleeunit/should
 import metamon
 import metamon/generator
 import metamon/generator/range
-import metamon/transform/list as list_t
+import metamon/transform
 
 pub fn forall_morph_thousand_runs_finishes_quickly_test() {
   let mr =
     metamon.invariant_under(
       name: "length_under_reverse",
-      under: list_t.reverse(),
+      under: transform.new("list.reverse", list.reverse),
     )
   let assert Ok(c) =
     metamon.with_runs(

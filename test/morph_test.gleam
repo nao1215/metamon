@@ -6,8 +6,6 @@ import metamon/generator
 import metamon/generator/range
 import metamon/relation
 import metamon/transform
-import metamon/transform/list as list_t
-import metamon/transform/string as string_t
 
 // A function that is genuinely idempotent: trim removes leading/
 // trailing spaces, applying twice == applying once.
@@ -31,7 +29,7 @@ pub fn invariant_under_reverse_for_length_test() {
   let mr =
     metamon.invariant_under(
       name: "length_invariant_under_reverse",
-      under: list_t.reverse(),
+      under: transform.new("list.reverse", list.reverse),
     )
   metamon.forall_morph(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 5)),
@@ -46,8 +44,8 @@ pub fn equivariant_map_under_reverse_test() {
   let mr =
     metamon.equivariant_under(
       name: "map_commutes_with_reverse",
-      input: list_t.reverse(),
-      output: list_t.reverse(),
+      input: transform.new("list.reverse", list.reverse),
+      output: transform.new("list.reverse", list.reverse),
       relation: relation.equal(),
     )
   metamon.forall_morph(
@@ -61,7 +59,9 @@ pub fn equivariant_map_under_reverse_test() {
 // `string.lowercase` ∘ `string.uppercase` (idempotency-flavoured).
 pub fn manual_plain_mr_test() {
   let upper_then_lower =
-    transform.then(string_t.uppercase(), string_t.lowercase())
+    transform.new("string.uppercase |> string.lowercase", fn(text) {
+      string.lowercase(string.uppercase(text))
+    })
   let mr =
     metamon.mr(
       name: "uppercase_after_normalisation",
@@ -80,7 +80,7 @@ pub fn assert_morph_succeeds_test() {
   let mr =
     metamon.invariant_under(
       name: "sum_invariant_under_reverse",
-      under: list_t.reverse(),
+      under: transform.new("list.reverse", list.reverse),
     )
   metamon.assert_morph([1, 2, 3, 4], mr, list_sum)
 }
@@ -93,11 +93,16 @@ fn list_sum(items: List(Int)) -> Int {
 // are both true for the same function (sum).
 pub fn forall_morphs_runs_each_mr_test() {
   let invariant =
-    metamon.invariant_under(name: "sum_reverse", under: list_t.reverse())
+    metamon.invariant_under(
+      name: "sum_reverse",
+      under: transform.new("list.reverse", list.reverse),
+    )
   let plus_zero =
     metamon.invariant_under(
       name: "sum_append_zero_no_op",
-      under: list_t.append(0),
+      under: transform.new("list.append(0)", fn(items) {
+        list.append(items, [0])
+      }),
     )
   metamon.forall_morphs(
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 4)),
@@ -108,6 +113,10 @@ pub fn forall_morphs_runs_each_mr_test() {
 }
 
 pub fn name_of_returns_constructed_name_test() {
-  let mr = metamon.invariant_under(name: "the_name", under: list_t.reverse())
+  let mr =
+    metamon.invariant_under(
+      name: "the_name",
+      under: transform.new("list.reverse", list.reverse),
+    )
   should.equal(metamon.name_of(mr), "the_name")
 }
