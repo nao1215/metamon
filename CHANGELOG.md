@@ -6,24 +6,60 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Fixed
-
-- `forall`, `forall_with`, `forall_observable` and the `forall_round_trip` runners now shrink a failing input. They used to report the first failing input with `shrinks: 0`.
-- A generated list keeps shrinking after an element is dropped, and never shrinks below the range's minimum length.
-- `with_max_size` now reaches the generators. Ranges used to grow as if `max_size` were 99.
-- The coverage percentage is now hits per run. A label counts at most once per run, and calling `cover` or `classify` several times in a run no longer lowers or raises other labels' percentages.
-- Annotations appear in the order they were registered, and only the annotations of the reported input are shown.
-- `forall_morphs` and `forall_morph_n` now replay and record regression entries, check coverage and shrink, like the other runners.
-- Round-trip runners key their regression entries by the round-trip name, so two round trips sharing a file no longer replay each other's entries.
-- `string` and the `string_*` generators no longer add `" "` and `"\n"` as edge cases outside the character set.
-- Generating a long list on JavaScript no longer overflows the stack.
-- `non_empty_list_of` no longer panics at small sizes. It panics when the range has no length of 1 or more.
-- Failure reports show the structured list and tuple diff again, and strings are no longer escaped twice.
-- A regression file that cannot be written is reported in the failure footnote instead of being ignored. Entries are appended instead of rewriting the file.
-
 ### Changed
 
+- Breaking: the public API is two modules, `metamon` and `metamon/generator`. Everything else is internal or removed. Packages that use metamon in their tests need updating.
+- Breaking: a property is `fn(a) -> Nil` and fails by panicking, so Gleam's `assert` and `let assert` work inside it. The report shows the panic message, and the failing input is shrunk while the property still panics.
+- Breaking: `Config` is a plain record with `runs`, `seed: Option(Int)`, `max_size`, `shrink_limit`, `max_edges`, `regression_file: Option(String)` and `output: Output`. Override fields of `default_config()`; the runners panic on invalid values when they start.
+- Breaking: `Morph(a, b)` replaces the opaque `Mr` and has two constructors, `Morph(name:, transform:, relation:)` and `Equivariant(name:, input:, output:, relation:)`. `forall_morph` takes a list of morphs and reports every one that fails. `Transform` and `Relation` are plain records in `metamon`.
+- Breaking: ranges and character sets are part of `metamon/generator`: `range(from:, to:)`, `linear_range(from:, to:)`, the `Characters` type, `character(of:)`, `string(of:, length:)` and `string_from(characters:, length:)`. Collection generators take labelled lengths, and `sample(generator, count:, seed:)` draws values.
+- Breaking: `classify(label:, when:)`, `cover(at_least:, label:, when:)` and `annotate(label:, value:)` are in `metamon`.
+- The JSON failure report has a `panic_message` key.
 - Regression files use schema version 2, which records `max_size`. Version 1 files are still read, with `max_size` 99. Entries recorded by earlier versions for round trips (under `(plain property)`) or for string and list edge cases may no longer replay; delete and re-record them.
+
+```gleam
+// Before
+let config =
+  metamon.default_config()
+  |> metamon.with_seed(metamon.seed(42))
+  |> metamon.with_runs_or_panic(300)
+metamon.forall_with(
+  config,
+  generator.list_of(generator.int(range.constant(-100, 100)), range.constant(0, 20)),
+  fn(items) { list.reverse(list.reverse(items)) == items },
+)
+
+// After
+let config = metamon.Config(..metamon.default_config(), seed: Some(42), runs: 300)
+metamon.forall_with(
+  config,
+  generator.list_of(
+    generator.int(generator.range(from: -100, to: 100)),
+    length: generator.range(from: 0, to: 20),
+  ),
+  fn(items) { assert list.reverse(list.reverse(items)) == items },
+)
+```
+
+### Removed
+
+- Breaking: the modules `metamon/config`, `metamon/relation`, `metamon/transform`, `metamon/transform/list`, `metamon/transform/string`, `metamon/transform/dict`, `metamon/coverage`, `metamon/annotate`, `metamon/diff`, `metamon/stateful`, `metamon/command` and `metamon/generator/{range,seed,tree,shrink,edges}`.
+- Breaking: the configuration setters, getters and `_or_panic` variants, `seed`, `random_seed`, `mr`, `mr_equivariant`, `equivariant_under`, `name_of`, `forall_observable`, `forall_morphs`, `forall_morph_n`, the partial and `under` round-trip runners, n-ary relations, the relation and transform catalogues beyond `equal`, `approximately`, `equivalent_under` and `permutation_of`, `cover_at_least`, `classify_in_bucket`, `collect`, `footnote`, and the generator shortcuts that one range or character set replaces (`non_negative_int`, `positive_int`, `negative_int`, `byte`, `ascii_*`, `string_*`, `unicode_codepoint`, `bit_array_printable`, `bit_array_utf8`, `float_special_edges`, `non_empty_list_of`, `map7`, `map8`, `tuple7`, `tuple8`, `resize`, `scale`, `statistics`, `add_edges`).
+- The CRDT case study page, which was written for the old API.
+
+### Fixed
+
+- `forall`, `forall_with` and the `forall_round_trip` runners now shrink a failing input. They used to report the first failing input with `shrinks: 0`.
+- A generated list keeps shrinking after an element is dropped, and never shrinks below the range's minimum length.
+- The configured `max_size` now reaches the generators. Ranges used to grow as if `max_size` were 99.
+- The coverage percentage is now hits per run. A label counts at most once per run, and calling `cover` or `classify` several times in a run no longer lowers or raises other labels' percentages.
+- Annotations appear in the order they were registered, and only the annotations of the reported input are shown.
+- `forall_morph` with several morphs now replays and records regression entries, checks coverage and shrinks, like the other runners.
+- Round-trip runners key their regression entries by the round-trip name, so two round trips sharing a file no longer replay each other's entries.
+- String generators no longer add `" "` and `"\n"` as edge cases outside the character set.
+- Generating a long list on JavaScript no longer overflows the stack.
+- Failure reports show the structured list and tuple diff again, and strings are no longer escaped twice.
+- A regression file that cannot be written is reported in the failure footnote instead of being ignored. Entries are appended instead of rewriting the file.
 
 ## [0.13.0] - 2026-11-19
 
