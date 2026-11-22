@@ -227,6 +227,3 @@ fn render_list_diff(
   })
   |> string.join("\n")
 }
-// Walk both sides in lockstep: equal lines are `Common`, and where they
-// diverge the left line is `Removed` and the right line `Added`. This is
-// enough for short, mostly aligned outputs.
