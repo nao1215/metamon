@@ -3,8 +3,8 @@ import gleam/string
 import gleeunit/should
 import metamon/coverage
 
-@external(erlang, "metamon_ffi", "capture_panic")
-@external(javascript, "./metamon_ffi.mjs", "capture_panic")
+@external(erlang, "metamon_test_ffi", "capture_panic")
+@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
 fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
 
 pub fn snapshot_starts_empty_test() {
@@ -14,10 +14,16 @@ pub fn snapshot_starts_empty_test() {
   should.equal(coverage.requirements_of(snap), [])
 }
 
+// The runner calls `count_run` once per run, and a label counts once per
+// run; these tests stand in for the runner with one run per call.
+
 pub fn classify_increments_count_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.classify("zero", True)
+  coverage.count_run()
   coverage.classify("zero", True)
+  coverage.count_run()
   coverage.classify("zero", False)
   let snap = coverage.snapshot()
   should.equal(snap.total, 3)
@@ -26,9 +32,13 @@ pub fn classify_increments_count_test() {
 
 pub fn cover_records_a_requirement_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.cover(50.0, "even", True)
+  coverage.count_run()
   coverage.cover(50.0, "even", False)
+  coverage.count_run()
   coverage.cover(50.0, "even", True)
+  coverage.count_run()
   coverage.cover(50.0, "even", True)
   let snap = coverage.snapshot()
   let assert [req] = coverage.requirements_of(snap)
@@ -39,8 +49,11 @@ pub fn cover_records_a_requirement_test() {
 
 pub fn shortfalls_flags_unmet_requirements_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.cover(80.0, "rare", True)
+  coverage.count_run()
   coverage.cover(80.0, "rare", False)
+  coverage.count_run()
   coverage.cover(80.0, "rare", False)
   let snap = coverage.snapshot()
   let bad = coverage.shortfalls(snap)
@@ -56,9 +69,13 @@ fn count_list(items: List(a)) -> Int {
 
 pub fn shortfalls_empty_when_target_met_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.cover(20.0, "common", True)
+  coverage.count_run()
   coverage.cover(20.0, "common", True)
+  coverage.count_run()
   coverage.cover(20.0, "common", False)
+  coverage.count_run()
   coverage.cover(20.0, "common", False)
   let snap = coverage.snapshot()
   should.equal(coverage.shortfalls(snap), [])
@@ -66,8 +83,11 @@ pub fn shortfalls_empty_when_target_met_test() {
 
 pub fn collect_buckets_values_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.collect("a", fn(s: String) { s })
+  coverage.count_run()
   coverage.collect("a", fn(s: String) { s })
+  coverage.count_run()
   coverage.collect("b", fn(s: String) { s })
   let snap = coverage.snapshot()
   let collected = coverage.collected_of(snap)
@@ -84,8 +104,11 @@ pub fn actual_pct_zero_when_total_zero_test() {
 
 pub fn cover_at_least_records_count_kind_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.cover_at_least(2, "primes", True)
+  coverage.count_run()
   coverage.cover_at_least(2, "primes", False)
+  coverage.count_run()
   coverage.cover_at_least(2, "primes", True)
   let snap = coverage.snapshot()
   let assert [req] = coverage.requirements_of(snap)
@@ -96,8 +119,11 @@ pub fn cover_at_least_records_count_kind_test() {
 
 pub fn cover_at_least_meets_target_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.cover_at_least(2, "ok", True)
+  coverage.count_run()
   coverage.cover_at_least(2, "ok", True)
+  coverage.count_run()
   coverage.cover_at_least(2, "ok", True)
   let snap = coverage.snapshot()
   should.equal(coverage.shortfalls(snap), [])
@@ -105,8 +131,11 @@ pub fn cover_at_least_meets_target_test() {
 
 pub fn cover_at_least_falls_short_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.cover_at_least(5, "ok", True)
+  coverage.count_run()
   coverage.cover_at_least(5, "ok", False)
+  coverage.count_run()
   coverage.cover_at_least(5, "ok", False)
   let snap = coverage.snapshot()
   case coverage.shortfalls(snap) {
@@ -117,8 +146,11 @@ pub fn cover_at_least_falls_short_test() {
 
 pub fn classify_in_bucket_groups_labels_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.classify_in_bucket("size", "small")
+  coverage.count_run()
   coverage.classify_in_bucket("size", "small")
+  coverage.count_run()
   coverage.classify_in_bucket("size", "large")
   let snap = coverage.snapshot()
   should.equal(coverage.hits_for(snap, "size=small"), 2)
@@ -148,6 +180,7 @@ pub fn cover_panics_just_over_100_test() {
 pub fn cover_accepts_zero_boundary_test() {
   coverage.reset()
   // 0.0 is the lower boundary and must be accepted.
+  coverage.count_run()
   coverage.cover(0.0, "edge_lo", True)
   let snap = coverage.snapshot()
   should.equal(coverage.hits_for(snap, "edge_lo"), 1)
@@ -156,6 +189,7 @@ pub fn cover_accepts_zero_boundary_test() {
 pub fn cover_accepts_100_boundary_test() {
   coverage.reset()
   // 100.0 is the upper boundary and must be accepted.
+  coverage.count_run()
   coverage.cover(100.0, "edge_hi", True)
   let snap = coverage.snapshot()
   should.equal(coverage.hits_for(snap, "edge_hi"), 1)
@@ -172,6 +206,7 @@ pub fn cover_at_least_panics_on_negative_min_hits_test() {
 
 pub fn cover_at_least_accepts_zero_test() {
   coverage.reset()
+  coverage.count_run()
   coverage.cover_at_least(0, "edge", True)
   let snap = coverage.snapshot()
   should.equal(coverage.hits_for(snap, "edge"), 1)

@@ -68,8 +68,8 @@ When a relation breaks, the test panics with a named report. This is the report 
     "\n 0Az~\u{007F}"
 
   diff (source_output vs follow-up_output):
-    - "\"\\t\\n 0Az~\\u{007F}\""
-    + "\"\\n 0Az~\\u{007F}\""
+    - "\t\n 0Az~\u{007F}"
+    + "\n 0Az~\u{007F}"
 
   reproduce (paste into a test):
     // The MR failed for this input. To pin it as a regression,
@@ -822,7 +822,7 @@ The panic message has these blocks; only the ones that apply appear:
 ```
 × metamorphic relation `<mr.name>` failed
   test:        <gleeunit test name>
-  source:      edge(<i>) | random(seed=<n>, size=<n>)
+  source:      edge(<i>) | random(seed=<n>, size=<n>, max_size=<n>)
   config seed: <integer>
   runs:        <i> / <total>
   shrinks:     <count> | <count>+ (limit reached)

@@ -17,7 +17,7 @@ pub type InputSource {
   /// The failure happened on the i-th edge value.
   EdgeSource(index: Int)
   /// The failure happened on a randomly generated input.
-  RandomSource(seed_value: Int, size: Int)
+  RandomSource(seed_value: Int, size: Int, max_size: Int)
 }
 
 /// Mode for the metamorphic relation that failed.
@@ -56,6 +56,21 @@ pub type FailureReport {
     footnotes: List(String),
     coverage_snapshot: Option(coverage.Snapshot),
   )
+}
+
+/// Render a source as `edge(i)` or `random(seed=, size=, max_size=)`.
+pub fn format_source(source: InputSource) -> String {
+  case source {
+    EdgeSource(index) -> "edge(" <> int.to_string(index) <> ")"
+    RandomSource(seed_value, size, max_size) ->
+      "random(seed="
+      <> int.to_string(seed_value)
+      <> ", size="
+      <> int.to_string(size)
+      <> ", max_size="
+      <> int.to_string(max_size)
+      <> ")"
+  }
 }
 
 /// Render the `config seed:` header value. The canonical state is
@@ -103,11 +118,12 @@ pub fn render_json(report: FailureReport) -> String {
         #("kind", json.string("edge")),
         #("index", json.int(i)),
       ])
-    RandomSource(seed_value, size) ->
+    RandomSource(seed_value, size, max_size) ->
       json.object([
         #("kind", json.string("random")),
         #("seed", json.int(seed_value)),
         #("size", json.int(size)),
+        #("max_size", json.int(max_size)),
       ])
   }
   let coverage_field = case report.coverage_snapshot {
@@ -185,15 +201,7 @@ fn header_lines(report: FailureReport) -> List(String) {
     None -> "× property failed"
     Some(_) -> "× metamorphic relation `" <> report.mr_name <> "` failed"
   }
-  let source = case report.input_source {
-    EdgeSource(idx) -> "edge(" <> int.to_string(idx) <> ")"
-    RandomSource(seed_value, size) ->
-      "random(seed="
-      <> int.to_string(seed_value)
-      <> ", size="
-      <> int.to_string(size)
-      <> ")"
-  }
+  let source = format_source(report.input_source)
   let shrinks_label = case report.shrink_capped {
     True -> int.to_string(report.shrinks_done) <> "+ (limit reached)"
     False -> int.to_string(report.shrinks_done)
@@ -238,7 +246,10 @@ fn body_lines(report: FailureReport) -> List(String) {
     True, Some(_) -> [
       "  diff (source_output vs follow-up_output):\n"
       <> indent(
-        diff.render(diff.diff(report.source_output, report.followup_output)),
+        diff.render(diff.diff_inspected(
+          report.source_output,
+          report.followup_output,
+        )),
         "    ",
       ),
     ]

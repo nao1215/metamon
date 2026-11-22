@@ -30,8 +30,8 @@ avoid_panic = "error"
 avoid_todo = "error"
 deep_nesting = "error"
 # `Result` discarding is unavoidable in defensive paths
-# (`simplifile.write` for the regression file, `dict.upsert`
-# returning an unchanged value, `int.parse` in lenient parsers).
+# (`dict.upsert` returning an unchanged value, `int.parse` in
+# lenient parsers, file cleanup in tests).
 # The signal-to-noise on a property-testing library is too low for
 # this rule.
 discarded_result = "off"
@@ -40,8 +40,8 @@ duplicate_import = "error"
 echo = "error"
 error_context_lost = "error"
 # The metamon FFI seam (process state, microsecond clock,
-# panic capture) is centralised in `src/metamon_ffi.{erl,mjs}`
-# and the modules that wrap it.
+# environment, IEEE 754 specials) is centralised in
+# `src/metamon_ffi.{erl,mjs}` and the modules that wrap it.
 ffi_usage = "error"
 function_complexity = "error"
 # Labelled-argument adoption is a follow-up project that touches
@@ -96,11 +96,9 @@ unwrap_used = "error"
   "redundant_case",
 ]
 # Runner is the panic delivery mechanism; generator panics on a
-# stuck `filter`; stateful panics on a failing command. Range
-# constructors panic on inverted bounds (lo > hi) — an inverted
-# pair is almost always a bug, and matching the project's existing
-# "fail visibly on misconfiguration" stance is preferable to silent
-# normalisation.
+# stuck `filter`; stateful panics on a failing command.
+# `range.linear_from` panics when the origin lies outside [lo, hi]
+# (inverted bounds are swapped, not rejected).
 "src/metamon/internal/runner.gleam" = ["avoid_panic"]
 "src/metamon/stateful.gleam" = ["avoid_panic"]
 "src/metamon/generator.gleam" = ["avoid_panic", "assert_ok_pattern"]

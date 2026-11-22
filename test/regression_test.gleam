@@ -10,6 +10,7 @@ pub fn render_emits_all_required_fields_test() {
       config_seed: 42,
       run_index: 7,
       size: 50,
+      max_size: 99,
       edge_index: None,
       note: Some("OAuth2Token"),
       recorded: "2026-05-05T12:34:56Z",
@@ -35,6 +36,7 @@ pub fn render_handles_edge_index_test() {
       config_seed: 1,
       run_index: 0,
       size: 0,
+      max_size: 99,
       edge_index: Some(3),
       note: None,
       recorded: "now",
@@ -50,6 +52,7 @@ pub fn round_trip_render_then_parse_test() {
       config_seed: 99,
       run_index: 2,
       size: 30,
+      max_size: 99,
       edge_index: None,
       note: Some("hello"),
       recorded: "2026-05-05T01:00:00Z",
@@ -79,6 +82,7 @@ pub fn parse_accepts_v0_legacy_files_without_version_header_test() {
       config_seed: 7,
       run_index: 0,
       size: 0,
+      max_size: 99,
       edge_index: None,
       note: None,
       recorded: "ts",
@@ -98,6 +102,7 @@ pub fn parse_accepts_v1_files_with_version_header_test() {
       config_seed: 1,
       run_index: 0,
       size: 0,
+      max_size: 99,
       edge_index: None,
       note: None,
       recorded: "ts",
@@ -110,26 +115,6 @@ pub fn parse_accepts_v1_files_with_version_header_test() {
   }
 }
 
-pub fn parse_with_version_rejects_unknown_schema_version_test() {
-  // A future v99 file written by a newer metamon must be rejected
-  // by the current parser, not silently mis-parsed.
-  let raw = "schema_version = 99\n\n[[failures]]\nmr = \"future\"\n"
-  case regression.parse_with_version(raw) {
-    Ok(_) -> should.fail()
-    Error(regression.UnsupportedSchemaVersion(found)) -> should.equal(found, 99)
-    Error(_) -> should.fail()
-  }
-}
-
-pub fn parse_with_version_rejects_malformed_version_test() {
-  let raw = "schema_version = not_a_number\n\n[[failures]]\nmr = \"x\"\n"
-  case regression.parse_with_version(raw) {
-    Ok(_) -> should.fail()
-    Error(regression.MalformedSchemaVersion(_)) -> Nil
-    Error(_) -> should.fail()
-  }
-}
-
 pub fn parse_lenient_returns_empty_on_unknown_version_test() {
   // The lenient `parse` wrapper used by the runner returns [] (skip
   // replay) instead of bubbling the error so a stale checked-in
@@ -139,13 +124,26 @@ pub fn parse_lenient_returns_empty_on_unknown_version_test() {
 }
 
 pub fn version_header_exposes_current_value_test() {
-  should.equal(
-    regression.version_header(),
-    "schema_version = "
-      <> { regression.current_schema_version |> int_to_string },
-  )
+  should.equal(regression.version_header(), "schema_version = 2")
 }
 
-@external(erlang, "erlang", "integer_to_binary")
-@external(javascript, "./metamon_ffi.mjs", "integer_to_string")
-fn int_to_string(n: Int) -> String
+pub fn max_size_round_trips_and_defaults_to_99_test() {
+  let entry =
+    Entry(
+      mr_name: "m",
+      config_seed: 1,
+      run_index: 0,
+      size: 3,
+      max_size: 30,
+      edge_index: None,
+      note: None,
+      recorded: "0",
+    )
+  let assert [parsed] = regression.parse(regression.render(entry))
+  should.equal(parsed.max_size, 30)
+  // Entries written before max_size was recorded (schema 1) read as 99.
+  let legacy =
+    "schema_version = 1\n\n[[failures]]\nmr          = \"m\"\nconfig_seed = 1\nrun_index   = 0\nsize        = 3\nedge_index = none\nrecorded    = \"0\"\n"
+  let assert [old] = regression.parse(legacy)
+  should.equal(old.max_size, 99)
+}

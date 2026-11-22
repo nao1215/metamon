@@ -11,6 +11,7 @@
 //// in `metamon/relation`; per-property context in `metamon/annotate`
 //// and `metamon/coverage`; structural diff in `metamon/diff`.
 
+import gleam/list
 import metamon/annotate
 import metamon/config
 import metamon/coverage
@@ -174,7 +175,7 @@ pub fn forall_with(
   g: Generator(a),
   property: fn(a) -> Bool,
 ) -> Nil {
-  runner.run_forall(cfg, "forall", g, property)
+  runner.run_forall(cfg, "forall", "(plain property)", g, property)
 }
 
 /// Run a property whose predicate also exposes its intermediate value.
@@ -201,7 +202,7 @@ pub fn forall_observable_with(
   g: Generator(a),
   predicate: fn(a) -> #(b, Bool),
 ) -> Nil {
-  runner.run_forall(cfg, "forall_observable", g, fn(input) {
+  runner.run_forall(cfg, "forall_observable", "(plain property)", g, fn(input) {
     let #(observed, holds) = predicate(input)
     annotate.annotate_value("predicate value", observed)
     holds
@@ -272,16 +273,9 @@ pub fn forall_morphs(
     default_config(),
     "forall_morphs",
     g,
-    list_map_specs(ms),
+    list.map(ms, fn(m) { m.spec }),
     f,
   )
-}
-
-fn list_map_specs(ms: List(Mr(a, b))) -> List(MorphSpec(a, b)) {
-  case ms {
-    [] -> []
-    [first, ..rest] -> [first.spec, ..list_map_specs(rest)]
-  }
 }
 
 // ---------- MR templates ----------
@@ -390,12 +384,38 @@ pub fn forall_round_trip_with(
   encode encode: fn(a) -> b,
   decode decode: fn(b) -> Result(a, e),
 ) -> Nil {
-  runner.run_forall(cfg, "round_trip[" <> name <> "]", gen, fn(input) {
+  run_round_trip(
+    cfg,
+    name,
+    gen,
+    decodes_back(encode, decode, fn(decoded, input) { decoded == input }),
+  )
+}
+
+/// Run `property` under the round-trip name, which is both the report's
+/// test name and the regression key.
+fn run_round_trip(
+  cfg: Config,
+  name: String,
+  gen: Generator(a),
+  property: fn(a) -> Bool,
+) -> Nil {
+  let test_name = "round_trip[" <> name <> "]"
+  runner.run_forall(cfg, test_name, test_name, gen, property)
+}
+
+/// `decode(encode(input))` succeeds and `equal(decoded, input)` holds.
+fn decodes_back(
+  encode: fn(a) -> b,
+  decode: fn(b) -> Result(a, e),
+  equal: fn(a, a) -> Bool,
+) -> fn(a) -> Bool {
+  fn(input) {
     case decode(encode(input)) {
-      Ok(decoded) -> decoded == input
+      Ok(decoded) -> equal(decoded, input)
       Error(_) -> False
     }
-  })
+  }
 }
 
 /// Run a round-trip property where the encoder is partial: the
@@ -462,7 +482,7 @@ pub fn forall_round_trip_partial_with(
   encode encode: fn(a) -> Result(b, e_enc),
   decode decode: fn(b) -> Result(a, e_dec),
 ) -> Nil {
-  runner.run_forall(cfg, "round_trip[" <> name <> "]", gen, fn(input) {
+  run_round_trip(cfg, name, gen, fn(input) {
     case encode(input) {
       // The encoder declared this input out of scope. Skip it: the
       // property is vacuously true for inputs the codec does not
@@ -539,10 +559,5 @@ pub fn forall_round_trip_under_with(
   decode decode: fn(b) -> Result(a, e),
   equality equality: Relation(a),
 ) -> Nil {
-  runner.run_forall(cfg, "round_trip[" <> name <> "]", gen, fn(input) {
-    case decode(encode(input)) {
-      Ok(decoded) -> equality.holds(decoded, input)
-      Error(_) -> False
-    }
-  })
+  run_round_trip(cfg, name, gen, decodes_back(encode, decode, equality.holds))
 }

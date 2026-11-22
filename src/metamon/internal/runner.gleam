@@ -74,61 +74,23 @@ pub fn morph_name(spec: MorphSpec(a, b)) -> String {
   spec_name(spec)
 }
 
-/// Run a property test (no metamorphic transform).
+/// Run a property test (no metamorphic transform). `regression_key`
+/// names the property's entries in the regression file.
 pub fn run_forall(
   cfg: Config,
   test_name: String,
+  regression_key: String,
   gen: Generator(a),
   property: fn(a) -> Bool,
 ) -> Nil {
-  reset_state()
-  let regression_entries = load_regression_for(cfg, "(plain property)")
-  case replay_regression_for_forall(gen, regression_entries, property) {
-    Halted(text) -> panic_with(text)
-    Done -> drive_forall(cfg, test_name, gen, property)
-  }
-}
-
-fn drive_forall(
-  cfg: Config,
-  test_name: String,
-  gen: Generator(a),
-  property: fn(a) -> Bool,
-) -> Nil {
-  let outcome =
-    iterate_inputs(cfg, gen, fn(input, source, run_index) {
-      forall_step(cfg, test_name, gen, property, input, source, run_index)
-    })
-  case outcome {
-    Done -> finish_with_coverage_check(cfg, test_name, None)
-    Halted(report_text) -> panic_with(report_text)
-  }
-}
-
-fn forall_step(
-  cfg: Config,
-  test_name: String,
-  gen: Generator(a),
-  property: fn(a) -> Bool,
-  input: a,
-  source: InputSource,
-  run_index: Int,
-) -> Step(a) {
-  case property(input) {
-    True -> Continue
-    False -> {
-      record_regression_for(cfg, "(plain property)", source, input)
-      Stop(forall_failure(
-        cfg,
-        test_name,
-        gen,
-        property,
-        run_index,
-        input,
-        source,
-      ))
-    }
-  }
+  let check =
+    Check(
+      regression_key: regression_key,
+      coverage_name: None,
+      holds: property,
+      report: fn(failure) { forall_failure(cfg, test_name, property, failure) },
+    )
+  run_check(cfg, test_name, gen, check) |> finish
 }
 
 /// Run a metamorphic relation against `f` for many inputs.
@@ -139,59 +101,22 @@ pub fn run_forall_morph(
   spec: MorphSpec(a, b),
   f: fn(a) -> b,
 ) -> Nil {
-  reset_state()
-  let entries = load_regression_for(cfg, spec_name(spec))
-  case replay_regression_for_morph(gen, spec, f, entries) {
-    Halted(text) -> panic_with(text)
-    Done -> drive_morph(cfg, test_name, gen, spec, f)
-  }
+  run_check(cfg, test_name, gen, morph_check(cfg, test_name, spec, f))
+  |> finish
 }
 
-fn drive_morph(
+fn morph_check(
   cfg: Config,
   test_name: String,
-  gen: Generator(a),
   spec: MorphSpec(a, b),
   f: fn(a) -> b,
-) -> Nil {
-  let outcome =
-    iterate_inputs(cfg, gen, fn(input, source, run_index) {
-      morph_step(cfg, test_name, gen, spec, f, input, source, run_index)
-    })
-  case outcome {
-    Done -> finish_with_coverage_check(cfg, test_name, Some(spec_name(spec)))
-    Halted(report_text) -> panic_with(report_text)
-  }
-}
-
-fn morph_step(
-  cfg: Config,
-  test_name: String,
-  gen: Generator(a),
-  spec: MorphSpec(a, b),
-  f: fn(a) -> b,
-  input: a,
-  source: InputSource,
-  run_index: Int,
-) -> Step(a) {
-  let evaluation = evaluate_spec(spec, f, input)
-  case evaluation.holds {
-    True -> Continue
-    False -> {
-      record_regression_for(cfg, spec_name(spec), source, input)
-      Stop(morph_failure(
-        cfg,
-        test_name,
-        gen,
-        spec,
-        f,
-        run_index,
-        input,
-        source,
-        evaluation,
-      ))
-    }
-  }
+) -> Check(a) {
+  Check(
+    regression_key: spec_name(spec),
+    coverage_name: Some(spec_name(spec)),
+    holds: fn(input) { evaluate_spec(spec, f, input).holds },
+    report: fn(failure) { morph_failure(cfg, test_name, spec, f, failure) },
+  )
 }
 
 /// Run a metamorphic relation against a single input. No generator.
@@ -206,8 +131,7 @@ pub fn run_assert_morph(
   case evaluation.holds {
     True -> Nil
     False -> {
-      let report =
-        morph_failure_static(test_name, spec, input, evaluation, 0, 0)
+      let report = morph_failure_static(test_name, spec, input, evaluation)
       panic_with(render_for(config.default_config(), report))
     }
   }
@@ -238,29 +162,16 @@ pub fn run_forall_morph_n(
       )
     _ -> Nil
   }
-  reset_state()
-  case
-    iterate_inputs(cfg, gen, fn(input, source, run_index) {
-      let outputs = compute_n_outputs(transforms, f, input)
-      case rel.holds(outputs) {
-        True -> Continue
-        False ->
-          Stop(morph_n_failure(
-            cfg,
-            test_name,
-            transforms,
-            rel,
-            run_index,
-            input,
-            source,
-            outputs,
-          ))
-      }
-    })
-  {
-    Done -> finish_with_coverage_check(cfg, test_name, Some(rel.name))
-    Halted(text) -> panic_with(text)
-  }
+  let check =
+    Check(
+      regression_key: rel.name,
+      coverage_name: Some(rel.name),
+      holds: fn(input) { rel.holds(compute_n_outputs(transforms, f, input)) },
+      report: fn(failure) {
+        morph_n_failure(cfg, test_name, transforms, rel, f, failure)
+      },
+    )
+  run_check(cfg, test_name, gen, check) |> finish
 }
 
 fn compute_n_outputs(
@@ -279,11 +190,10 @@ fn morph_n_failure(
   test_name: String,
   transforms: List(Transform(a)),
   rel: relation.RelationN(b),
-  run_index: Int,
-  input: a,
-  source: InputSource,
-  outputs: List(b),
+  f: fn(a) -> b,
+  failure: Failure(a),
 ) -> String {
+  let outputs = compute_n_outputs(transforms, f, failure.input)
   let transform_names =
     list.map(transforms, fn(t: Transform(a)) { t.name })
     |> string.join(", ")
@@ -303,25 +213,29 @@ fn morph_n_failure(
       seed_module.original_input(config.seed(cfg)),
     ),
     "\n  runs:        ",
-    int.to_string(run_index),
+    int.to_string(failure.run_index),
     " / ",
     int.to_string(total_runs(cfg)),
-    "\n  source:      ",
-    case source {
-      EdgeSource(i) -> "edge(" <> int.to_string(i) <> ")"
-      RandomSource(s, sz) ->
-        "random(seed="
-        <> int.to_string(s)
-        <> ", size="
-        <> int.to_string(sz)
-        <> ")"
+    "\n  shrinks:     ",
+    int.to_string(failure.shrinks),
+    case failure.capped {
+      True -> "+ (limit reached)"
+      False -> ""
     },
+    "\n  source:      ",
+    report_module.format_source(failure.source),
     "\n  transforms:  ",
     transform_names,
     "\n  source input:\n    ",
-    string.inspect(input),
+    string.inspect(failure.input),
     "\n  outputs (source first, then each follow-up):\n",
     outputs_rendered,
+    case failure.notes {
+      [] -> ""
+      notes ->
+        "\n  footnotes:\n"
+        <> string.join(list.map(notes, fn(note) { "    - " <> note }), "\n")
+    },
   ])
 }
 
@@ -344,27 +258,9 @@ pub fn run_forall_morphs(
   }
   let collected =
     list.fold(specs, [], fn(reports, spec) {
-      reset_state()
-      let outcome =
-        iterate_inputs(cfg, gen, fn(input, source, run_index) {
-          let evaluation = evaluate_spec(spec, f, input)
-          case evaluation.holds {
-            True -> Continue
-            False ->
-              Stop(morph_failure(
-                cfg,
-                test_name,
-                gen,
-                spec,
-                f,
-                run_index,
-                input,
-                source,
-                evaluation,
-              ))
-          }
-        })
-      case outcome {
+      case
+        run_check(cfg, test_name, gen, morph_check(cfg, test_name, spec, f))
+      {
         Done -> reports
         Halted(text) -> [text, ..reports]
       }
@@ -381,7 +277,7 @@ pub fn run_forall_morphs(
 
 // ---------- iteration ----------
 
-type Step(a) {
+type Step {
   Continue
   Stop(report_text: String)
 }
@@ -394,9 +290,9 @@ type Outcome {
 fn iterate_inputs(
   cfg: Config,
   gen: Generator(a),
-  body: fn(a, InputSource, Int) -> Step(a),
+  body: fn(a, InputSource, Int) -> Step,
 ) -> Outcome {
-  let edges = generator.edges_of(gen) |> take_first(config.max_edges(cfg))
+  let edges = generator.edges_of(gen) |> list.take(config.max_edges(cfg))
   let edge_count = list.length(edges)
   let run_total = total_runs(cfg)
   case run_edges(edges, 0, body) {
@@ -405,8 +301,10 @@ fn iterate_inputs(
       let remaining = run_total - edge_count
       case remaining <= 0 {
         True -> Done
-        False ->
-          run_random(cfg, gen, edge_count, remaining, config.seed(cfg), body)
+        False -> {
+          let sizes = Sizes(total: run_total, max: config.max_size(cfg))
+          run_random(gen, sizes, edge_count, remaining, config.seed(cfg), body)
+        }
       }
     }
   }
@@ -415,7 +313,7 @@ fn iterate_inputs(
 fn run_edges(
   edges: List(a),
   index: Int,
-  body: fn(a, InputSource, Int) -> Step(a),
+  body: fn(a, InputSource, Int) -> Step,
 ) -> Outcome {
   case edges {
     [] -> Done
@@ -427,25 +325,42 @@ fn run_edges(
   }
 }
 
+/// The run count and `max_size`, read once per property: the run count
+/// reads `METAMON_RUNS_MULTIPLIER` from the environment.
+type Sizes {
+  Sizes(total: Int, max: Int)
+}
+
 fn run_random(
-  cfg: Config,
   gen: Generator(a),
+  sizes: Sizes,
   start_index: Int,
   remaining: Int,
   s: Seed,
-  body: fn(a, InputSource, Int) -> Step(a),
+  body: fn(a, InputSource, Int) -> Step,
 ) -> Outcome {
   case remaining <= 0 {
     True -> Done
     False -> {
       let #(here, rest_seed) = seed_module.split(s)
-      let size = scaled_size(start_index, total_runs(cfg), config.max_size(cfg))
-      let value = generator.generate(gen, here, size).value
+      let size = scaled_size(start_index, sizes.total, sizes.max)
+      let value = generator.generate_sized(gen, here, size, sizes.max).value
       case
-        body(value, RandomSource(seed_module.state(here), size), start_index)
+        body(
+          value,
+          RandomSource(seed_module.state(here), size, sizes.max),
+          start_index,
+        )
       {
         Continue ->
-          run_random(cfg, gen, start_index + 1, remaining - 1, rest_seed, body)
+          run_random(
+            gen,
+            sizes,
+            start_index + 1,
+            remaining - 1,
+            rest_seed,
+            body,
+          )
         Stop(text) -> Halted(text)
       }
     }
@@ -461,38 +376,159 @@ fn scaled_size(index: Int, total: Int, max_size: Int) -> Int {
 
 // ---------- failure construction ----------
 
+/// What the runner checks for every generated input, and how it turns a
+/// failing (already shrunk) input into the report text.
+type Check(a) {
+  Check(
+    regression_key: String,
+    coverage_name: Option(String),
+    holds: fn(a) -> Bool,
+    report: fn(Failure(a)) -> String,
+  )
+}
+
+/// A failing input after shrinking, with everything the report shows.
+type Failure(a) {
+  Failure(
+    input: a,
+    source: InputSource,
+    run_index: Int,
+    shrinks: Int,
+    capped: Bool,
+    coverage: coverage.Snapshot,
+    /// Runner messages shown as footnotes, such as a regression file
+    /// that could not be written.
+    notes: List(String),
+  )
+}
+
+/// Replay the regression entries, then drive the generated inputs, then
+/// check coverage. Every runner that takes a generator goes through here.
+fn run_check(
+  cfg: Config,
+  test_name: String,
+  gen: Generator(a),
+  check: Check(a),
+) -> Outcome {
+  reset_state()
+  let entries = load_regression_for(cfg, check.regression_key)
+  use <- and_then(replay_regression(gen, check, entries))
+  // The replayed entries are not runs: start counting coverage afresh.
+  reset_state()
+  use <- and_then(
+    iterate_inputs(cfg, gen, fn(input, source, run_index) {
+      check_step(cfg, gen, check, input, source, run_index)
+    }),
+  )
+  coverage_outcome(test_name, check.coverage_name)
+}
+
+fn check_step(
+  cfg: Config,
+  gen: Generator(a),
+  check: Check(a),
+  input: a,
+  source: InputSource,
+  run_index: Int,
+) -> Step {
+  // Annotations describe one run; coverage accumulates across runs.
+  annotate.reset()
+  coverage.count_run()
+  case check.holds(input) {
+    True -> Continue
+    False -> {
+      let notes =
+        record_regression_for(cfg, check.regression_key, source, input)
+      Stop(shrunk_failure(cfg, gen, check, input, source, run_index, notes))
+    }
+  }
+}
+
+fn and_then(outcome: Outcome, next: fn() -> Outcome) -> Outcome {
+  case outcome {
+    Done -> next()
+    Halted(_) -> outcome
+  }
+}
+
+fn finish(outcome: Outcome) -> Nil {
+  case outcome {
+    Done -> Nil
+    Halted(text) -> panic_with(text)
+  }
+}
+
+/// Shrink a failing input and render the report. The annotations are
+/// rebuilt from one more run on the reported input so they describe that
+/// input, not the shrink attempts.
+fn shrunk_failure(
+  cfg: Config,
+  gen: Generator(a),
+  check: Check(a),
+  input: a,
+  source: InputSource,
+  run_index: Int,
+  notes: List(String),
+) -> String {
+  let snapshot = coverage.snapshot()
+  let #(shrunk, shrinks, capped) =
+    shrink_input(
+      cfg,
+      gen,
+      fn(candidate) { !check.holds(candidate) },
+      input,
+      source,
+    )
+  annotate.reset()
+  check.report(Failure(
+    input: shrunk,
+    source: source,
+    run_index: run_index,
+    shrinks: shrinks,
+    capped: capped,
+    coverage: snapshot,
+    notes: notes,
+  ))
+}
+
 fn forall_failure(
   cfg: Config,
   test_name: String,
-  _gen: Generator(a),
-  _property: fn(a) -> Bool,
-  run_index: Int,
-  input: a,
-  source: InputSource,
+  property: fn(a) -> Bool,
+  failure: Failure(a),
 ) -> String {
-  let report =
-    FailureReport(
-      mr_name: "(plain property)",
-      test_name: test_name,
-      config_seed: seed_module.state(config.seed(cfg)),
-      config_seed_original: seed_module.original_input(config.seed(cfg)),
-      runs_done: run_index,
-      runs_total: total_runs(cfg),
-      shrinks_done: 0,
-      shrink_capped: False,
-      morph_mode: None,
-      relation_name: "",
-      source_input: string.inspect(input),
-      followup_input: "",
-      source_output: "",
-      followup_output: "",
-      input_source: source,
-      diff_enabled: False,
-      annotations: annotate.current_annotations(),
-      footnotes: annotate.current_footnotes(),
-      coverage_snapshot: Some(coverage.snapshot()),
-    )
-  render_for(cfg, report)
+  let _ = property(failure.input)
+  render_for(cfg, plain_report(cfg, test_name, failure))
+}
+
+/// The report for a failure of a plain property. The metamorphic report
+/// starts from it and fills in the relation and the outputs.
+fn plain_report(
+  cfg: Config,
+  test_name: String,
+  failure: Failure(a),
+) -> FailureReport {
+  FailureReport(
+    mr_name: "(plain property)",
+    test_name: test_name,
+    config_seed: seed_module.state(config.seed(cfg)),
+    config_seed_original: seed_module.original_input(config.seed(cfg)),
+    runs_done: failure.run_index,
+    runs_total: total_runs(cfg),
+    shrinks_done: failure.shrinks,
+    shrink_capped: failure.capped,
+    morph_mode: None,
+    relation_name: "",
+    source_input: string.inspect(failure.input),
+    followup_input: "",
+    source_output: "",
+    followup_output: "",
+    input_source: failure.source,
+    diff_enabled: False,
+    annotations: annotate.current_annotations(),
+    footnotes: list.append(annotate.current_footnotes(), failure.notes),
+    coverage_snapshot: Some(failure.coverage),
+  )
 }
 
 type Evaluation(b) {
@@ -504,31 +540,21 @@ fn evaluate_spec(
   f: fn(a) -> b,
   input: a,
 ) -> Evaluation(b) {
-  case spec {
-    PlainSpec(_name, t, r) -> {
-      let fol_in = t.apply(input)
-      let src_out = f(input)
-      let fol_out = f(fol_in)
-      Evaluation(
-        followup_input: string.inspect(fol_in),
-        src_output: src_out,
-        fol_output: fol_out,
-        holds: r.holds(src_out, fol_out),
-      )
-    }
-    EquivariantSpec(_name, ti, to, r) -> {
-      let fol_in = ti.apply(input)
-      let raw_src_out = f(input)
-      let src_out = to.apply(raw_src_out)
-      let fol_out = f(fol_in)
-      Evaluation(
-        followup_input: string.inspect(fol_in),
-        src_output: src_out,
-        fol_output: fol_out,
-        holds: r.holds(src_out, fol_out),
-      )
-    }
+  let #(followup_input, src_output, rel) = case spec {
+    PlainSpec(_name, t, r) -> #(t.apply(input), f(input), r)
+    EquivariantSpec(_name, ti, to, r) -> #(
+      ti.apply(input),
+      to.apply(f(input)),
+      r,
+    )
   }
+  let fol_output = f(followup_input)
+  Evaluation(
+    followup_input: string.inspect(followup_input),
+    src_output: src_output,
+    fol_output: fol_output,
+    holds: rel.holds(src_output, fol_output),
+  )
 }
 
 fn morph_mode_of(spec: MorphSpec(a, b)) -> MorphMode {
@@ -556,43 +582,22 @@ fn spec_name(spec: MorphSpec(a, b)) -> String {
 fn morph_failure(
   cfg: Config,
   test_name: String,
-  gen: Generator(a),
   spec: MorphSpec(a, b),
   f: fn(a) -> b,
-  run_index: Int,
-  input: a,
-  source: InputSource,
-  evaluation: Evaluation(b),
+  failure: Failure(a),
 ) -> String {
-  let #(shrunk_input, shrinks_count, capped) =
-    shrink_morph_input(cfg, gen, spec, f, input, source)
-  let final_eval = evaluate_spec(spec, f, shrunk_input)
+  let evaluation = evaluate_spec(spec, f, failure.input)
   let report =
     FailureReport(
+      ..plain_report(cfg, test_name, failure),
       mr_name: spec_name(spec),
-      test_name: test_name,
-      config_seed: seed_module.state(config.seed(cfg)),
-      config_seed_original: seed_module.original_input(config.seed(cfg)),
-      runs_done: run_index,
-      runs_total: total_runs(cfg),
-      shrinks_done: shrinks_count,
-      shrink_capped: capped,
       morph_mode: Some(morph_mode_of(spec)),
       relation_name: relation_name_of(spec),
-      source_input: string.inspect(shrunk_input),
-      followup_input: final_eval.followup_input,
-      source_output: string.inspect(final_eval.src_output),
-      followup_output: string.inspect(final_eval.fol_output),
-      input_source: source,
+      followup_input: evaluation.followup_input,
+      source_output: string.inspect(evaluation.src_output),
+      followup_output: string.inspect(evaluation.fol_output),
       diff_enabled: config.diff_enabled(cfg),
-      annotations: annotate.current_annotations(),
-      footnotes: annotate.current_footnotes(),
-      coverage_snapshot: Some(coverage.snapshot()),
     )
-  // Discard the unused evaluation argument — kept in the signature so
-  // future shrinks can reuse the original failing evaluation if we
-  // decide to short-circuit small inputs.
-  let _ = evaluation
   render_for(cfg, report)
 }
 
@@ -601,15 +606,13 @@ fn morph_failure_static(
   spec: MorphSpec(a, b),
   input: a,
   evaluation: Evaluation(b),
-  run_index: Int,
-  config_seed_value: Int,
 ) -> FailureReport {
   FailureReport(
     mr_name: spec_name(spec),
     test_name: test_name,
-    config_seed: config_seed_value,
+    config_seed: 0,
     config_seed_original: None,
-    runs_done: run_index,
+    runs_done: 0,
     runs_total: 1,
     shrinks_done: 0,
     shrink_capped: False,
@@ -629,28 +632,34 @@ fn morph_failure_static(
 
 // ---------- shrinking ----------
 
-fn shrink_morph_input(
+/// Walk the failing input's shrink tree, keeping the first child that
+/// still fails, until no child fails or the shrink limit is reached.
+/// `fails` is the only thing the loop knows about the property.
+fn shrink_input(
   cfg: Config,
   gen: Generator(a),
-  spec: MorphSpec(a, b),
-  f: fn(a) -> b,
-  current: a,
+  fails: fn(a) -> Bool,
+  input: a,
   source: InputSource,
 ) -> #(a, Int, Bool) {
   case source {
-    EdgeSource(_) -> #(current, 0, False)
-    RandomSource(seed_value, size) -> {
+    EdgeSource(_) -> #(input, 0, False)
+    RandomSource(seed_value, size, max_size) -> {
       let initial_tree =
-        generator.generate(gen, seed_module.seed(seed_value), size)
-      shrink_loop(initial_tree, spec, f, current, config.shrink_limit(cfg), 0)
+        generator.generate_sized(
+          gen,
+          seed_module.seed(seed_value),
+          size,
+          max_size,
+        )
+      shrink_loop(initial_tree, fails, input, config.shrink_limit(cfg), 0)
     }
   }
 }
 
 fn shrink_loop(
   current_tree: Tree(a),
-  spec: MorphSpec(a, b),
-  f: fn(a) -> b,
+  fails: fn(a) -> Bool,
   best: a,
   budget: Int,
   done: Int,
@@ -660,12 +669,11 @@ fn shrink_loop(
     False ->
       case
         tree.shrinks_find(current_tree.shrinks, fn(child: Tree(a)) {
-          let evaluation = evaluate_spec(spec, f, child.value)
-          !evaluation.holds
+          fails(child.value)
         })
       {
         Error(_) -> #(best, done, False)
-        Ok(child) -> shrink_loop(child, spec, f, child.value, budget, done + 1)
+        Ok(child) -> shrink_loop(child, fails, child.value, budget, done + 1)
       }
   }
 }
@@ -677,21 +685,17 @@ fn reset_state() -> Nil {
   coverage.reset()
 }
 
-fn finish_with_coverage_check(
-  _cfg: Config,
-  test_name: String,
-  morph_name: Option(String),
-) -> Nil {
+fn coverage_outcome(test_name: String, morph_name: Option(String)) -> Outcome {
   let snap = coverage.snapshot()
   case coverage.first_shortfall(snap) {
-    None -> Nil
+    None -> Done
     Some(req) -> {
       let prefix = case morph_name {
         None -> "× property `" <> test_name <> "`"
         Some(name) ->
           "× metamorphic relation `" <> name <> "` (" <> test_name <> ")"
       }
-      let message =
+      Halted(
         prefix
         <> " passed but coverage shortfall: label `"
         <> req.label
@@ -703,22 +707,14 @@ fn finish_with_coverage_check(
         <> float.to_string(coverage.actual_pct(req.hits, snap.total))
         <> "%, target≥"
         <> float.to_string(coverage.target_pct_of(req, snap.total))
-        <> "%)"
-      panic_with(message)
+        <> "%)",
+      )
     }
   }
 }
 
 fn panic_with(message: String) -> Nil {
   panic as message
-}
-
-fn take_first(items: List(a), n: Int) -> List(a) {
-  case n, items {
-    n, _ if n <= 0 -> []
-    _, [] -> []
-    n, [first, ..rest] -> [first, ..take_first(rest, n - 1)]
-  }
 }
 
 // ---------- regression file ----------
@@ -743,21 +739,25 @@ fn record_regression_for(
   mr_name: String,
   source: InputSource,
   input: a,
-) -> Nil {
+) -> List(String) {
   case config.regression_file(cfg) {
-    None -> Nil
+    None -> []
     Some(path) -> {
       let edge_index = case source {
         EdgeSource(i) -> Some(i)
-        RandomSource(_, _) -> None
+        RandomSource(..) -> None
       }
-      let #(seed_value, size) = case source {
-        EdgeSource(_) -> #(seed_module.state(config.seed(cfg)), 0)
-        RandomSource(s, sz) -> #(s, sz)
+      let #(seed_value, size, max_size) = case source {
+        EdgeSource(_) -> #(
+          seed_module.state(config.seed(cfg)),
+          0,
+          config.max_size(cfg),
+        )
+        RandomSource(s, sz, max) -> #(s, sz, max)
       }
       let run_index = case source {
         EdgeSource(i) -> i
-        RandomSource(_, _) -> 0
+        RandomSource(..) -> 0
       }
       let entry =
         regression.Entry(
@@ -765,88 +765,78 @@ fn record_regression_for(
           config_seed: seed_value,
           run_index: run_index,
           size: size,
+          max_size: max_size,
           edge_index: edge_index,
           note: Some(string.inspect(input)),
           recorded: int.to_string(now_microseconds()),
         )
-      let existing = case simplifile.read(path) {
-        Ok(c) -> c
-        Error(_) -> ""
+      case append_regression_entry(path, regression.render(entry)) {
+        Ok(Nil) -> []
+        Error(error) -> [
+          "could not write the regression file "
+          <> path
+          <> ": "
+          <> string.inspect(error),
+        ]
       }
-      let prefix = case existing {
-        "" -> regression.version_header() <> "\n\n"
-        _ -> existing <> "\n"
-      }
-      let _ = simplifile.write(path, prefix <> regression.render(entry))
-      Nil
     }
   }
 }
 
-fn replay_regression_for_forall(
+/// Append one rendered entry. A missing or empty file gets the version
+/// header first; an existing file is appended to, not rewritten.
+fn append_regression_entry(
+  path: String,
+  rendered: String,
+) -> Result(Nil, simplifile.FileError) {
+  case simplifile.file_info(path) {
+    Ok(info) if info.size > 0 -> simplifile.append(path, "\n" <> rendered)
+    _ ->
+      simplifile.write(path, regression.version_header() <> "\n\n" <> rendered)
+  }
+}
+
+fn replay_regression(
   gen: Generator(a),
+  check: Check(a),
   entries: List(regression.Entry),
-  property: fn(a) -> Bool,
 ) -> Outcome {
   case entries {
     [] -> Done
     [entry, ..rest] -> {
       let value = reproduce_entry_value(gen, entry)
-      case property(value) {
-        True -> replay_regression_for_forall(gen, rest, property)
+      case check.holds(value) {
+        True -> replay_regression(gen, check, rest)
         False ->
-          Halted(replay_failure_message("(plain property)", entry, value))
-      }
-    }
-  }
-}
-
-fn replay_regression_for_morph(
-  gen: Generator(a),
-  spec: MorphSpec(a, b),
-  f: fn(a) -> b,
-  entries: List(regression.Entry),
-) -> Outcome {
-  case entries {
-    [] -> Done
-    [entry, ..rest] -> {
-      let value = reproduce_entry_value(gen, entry)
-      let evaluation = evaluate_spec(spec, f, value)
-      case evaluation.holds {
-        True -> replay_regression_for_morph(gen, spec, f, rest)
-        False -> Halted(replay_failure_message(spec_name(spec), entry, value))
+          Halted(replay_failure_message(check.regression_key, entry, value))
       }
     }
   }
 }
 
 fn reproduce_entry_value(gen: Generator(a), entry: regression.Entry) -> a {
+  let regenerate = fn() {
+    generator.generate_sized(
+      gen,
+      seed_module.seed(entry.config_seed),
+      entry.size,
+      entry.max_size,
+    ).value
+  }
   case entry.edge_index {
     Some(i) -> {
       // Edge replay: pick the i-th edge of the generator.
-      case list_at(generator.edges_of(gen), i) {
-        Some(value) -> value
-        None ->
+      case list.drop(generator.edges_of(gen), i) {
+        [value, ..] -> value
+        [] ->
           // Edge index drifted; fall back to generating with the
           // recorded seed so the runner still produces a value.
-          generator.generate(
-            gen,
-            seed_module.seed(entry.config_seed),
-            entry.size,
-          ).value
+          regenerate()
       }
     }
     None ->
       // Random replay: same seed + size produces the same value.
-      generator.generate(gen, seed_module.seed(entry.config_seed), entry.size).value
-  }
-}
-
-fn list_at(items: List(a), index: Int) -> Option(a) {
-  case items, index {
-    [], _ -> None
-    [first, ..], 0 -> Some(first)
-    [_, ..rest], i -> list_at(rest, i - 1)
+      regenerate()
   }
 }
 
@@ -866,6 +856,8 @@ fn replay_failure_message(
     int.to_string(entry.run_index),
     "\n  size:        ",
     int.to_string(entry.size),
+    "\n  max_size:    ",
+    int.to_string(entry.max_size),
     "\n  reproduced input:\n    ",
     string.inspect(value),
     case entry.note {

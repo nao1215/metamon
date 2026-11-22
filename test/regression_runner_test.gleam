@@ -3,6 +3,7 @@
 //// must (a) read existing entries on start-up and replay them, (b)
 //// append the failing input to the file when a property fails.
 
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import gleeunit/should
@@ -74,6 +75,7 @@ pub fn read_replays_existing_entry_test() {
       config_seed: 0,
       run_index: 0,
       size: 0,
+      max_size: 99,
       edge_index: Some(0),
       note: Some("from test"),
       recorded: "0",
@@ -115,6 +117,161 @@ pub fn missing_file_is_silent_test() {
   cleanup()
 }
 
-@external(erlang, "metamon_ffi", "capture_panic")
-@external(javascript, "./metamon_ffi.mjs", "capture_panic")
+@external(erlang, "metamon_test_ffi", "capture_panic")
+@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
 fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+
+const shared_path: String = "/tmp/metamon_regression_shared_test.toml"
+
+fn round_trip_with_file(
+  name: String,
+  seed: Int,
+  broken: fn(Int) -> Bool,
+) -> Nil {
+  metamon.forall_round_trip_with(
+    cfg: metamon.default_config()
+      |> metamon.with_seed(metamon.seed(seed))
+      |> metamon.with_regression_file_or_panic(shared_path),
+    gen: generator.int(range.constant(0, 1000)) |> generator.no_edges,
+    name: name,
+    encode: fn(n) { n },
+    decode: fn(n) {
+      case broken(n) {
+        True -> Ok(n + 1)
+        False -> Ok(n)
+      }
+    },
+  )
+}
+
+pub fn round_trips_sharing_a_file_replay_only_their_own_entries_test() {
+  let _ = simplifile.delete(shared_path)
+  // `b` breaks only on 163, which its own seed never generates.
+  let b = fn() { round_trip_with_file("b", 7, fn(n) { n == 163 }) }
+  b()
+  // `a` fails first on 163 and records it.
+  let a = fn() { round_trip_with_file("a", 42, fn(n) { n >= 10 }) }
+  let #(panicked, _) = capture_panic(a)
+  should.be_true(panicked)
+  let assert Ok(content) = simplifile.read(shared_path)
+  should.be_true(string.contains(content, "mr          = \"round_trip[a]\""))
+  should.be_true(string.contains(content, "note        = \"163\""))
+  // The entry recorded for `a` is not replayed against `b`.
+  b()
+  // `a` still replays its own entry.
+  let #(panicked, text) = capture_panic(a)
+  should.be_true(panicked)
+  should.be_true(string.contains(text, "regression replay for `round_trip[a]`"))
+  let _ = simplifile.delete(shared_path)
+  Nil
+}
+
+pub fn unwritable_regression_file_is_reported_test() {
+  let path = "/tmp/metamon-no-such-directory/regressions.toml"
+  let #(panicked, text) =
+    capture_panic(fn() {
+      metamon.forall_with(
+        metamon.default_config()
+          |> metamon.with_regression_file_or_panic(path),
+        generator.int(range.constant(0, 10)),
+        fn(_) { False },
+      )
+    })
+  should.be_true(panicked)
+  should.be_true(string.contains(
+    text,
+    "  footnotes:\n    - could not write the regression file " <> path,
+  ))
+}
+
+pub fn regression_entries_share_one_header_test() {
+  let _ = simplifile.delete(shared_path)
+  let fail = fn(name) {
+    capture_panic(fn() { round_trip_with_file(name, 42, fn(_) { True }) })
+  }
+  let _ = fail("one")
+  let _ = fail("two")
+  let assert Ok(content) = simplifile.read(shared_path)
+  should.be_true(string.starts_with(
+    content,
+    "schema_version = 2\n\n[[failures]]\n",
+  ))
+  should.equal(list.length(string.split(content, "schema_version")), 2)
+  should.equal(list.length(regression.parse(content)), 2)
+  let _ = simplifile.delete(shared_path)
+  Nil
+}
+
+pub fn future_schema_version_file_is_not_replayed_test() {
+  let entry =
+    regression.Entry(
+      mr_name: "(plain property)",
+      config_seed: 0,
+      run_index: 0,
+      size: 0,
+      max_size: 99,
+      edge_index: Some(0),
+      note: None,
+      recorded: "0",
+    )
+  let run = fn(version: String) {
+    cleanup()
+    let _ =
+      simplifile.write(
+        tmp_path,
+        "schema_version = " <> version <> "\n\n" <> regression.render(entry),
+      )
+    let #(panicked, text) =
+      capture_panic(fn() {
+        metamon.forall_with(
+          metamon.default_config()
+            |> metamon.with_regression_file_or_panic(tmp_path),
+          generator.int(range.constant(0, 9)),
+          fn(_) { False },
+        )
+      })
+    cleanup()
+    should.be_true(panicked)
+    string.contains(text, "regression replay")
+  }
+  // The current schema replays the entry; a newer one is skipped and
+  // the property fails on its own runs instead.
+  should.be_true(run("1"))
+  should.be_false(run("99"))
+}
+
+pub fn replay_uses_the_recorded_max_size_test() {
+  cleanup()
+  let gen = generator.int(range.linear(0, 1_000_000)) |> generator.no_edges
+  // Record a failure under max_size 30.
+  let #(panicked, _) =
+    capture_panic(fn() {
+      metamon.forall_with(
+        metamon.default_config()
+          |> metamon.with_seed(metamon.seed(5))
+          |> metamon.with_max_size_or_panic(30)
+          |> metamon.with_regression_file_or_panic(tmp_path),
+        gen,
+        fn(x) { x < 1000 },
+      )
+    })
+  should.be_true(panicked)
+  let assert Ok(content) = simplifile.read(tmp_path)
+  let assert [entry] = regression.parse(content)
+  let assert Some(recorded) = entry.note
+  // A later run with the default max_size must replay the same input.
+  let #(panicked, text) =
+    capture_panic(fn() {
+      metamon.forall_with(
+        metamon.default_config()
+          |> metamon.with_seed(metamon.seed(6))
+          |> metamon.with_regression_file_or_panic(tmp_path),
+        gen,
+        fn(x) { string.inspect(x) != recorded },
+      )
+    })
+  cleanup()
+  should.be_true(panicked)
+  should.be_true(string.contains(text, "regression replay"))
+  should.be_true(string.contains(text, "reproduced input:\n    " <> recorded))
+}

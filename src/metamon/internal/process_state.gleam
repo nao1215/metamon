@@ -6,7 +6,7 @@
 //// JavaScript target the storage is a single module-level Map and the
 //// runner is responsible for clearing it between runs.
 ////
-//// The FFI surface is intentionally minimal: get / put / erase / keys.
+//// The FFI surface is intentionally minimal: get / put / erase.
 //// All type-safe usage lives in the modules above this one.
 
 import gleam/dynamic.{type Dynamic}
@@ -27,9 +27,3 @@ pub fn get(key: String) -> Result(Dynamic, Nil)
 @external(erlang, "metamon_ffi", "state_erase")
 @external(javascript, "../../metamon_ffi.mjs", "state_erase")
 pub fn erase(key: String) -> Nil
-
-/// List every key currently stored. Used by tests; never used by
-/// the runner itself.
-@external(erlang, "metamon_ffi", "state_keys")
-@external(javascript, "../../metamon_ffi.mjs", "state_keys")
-pub fn keys() -> List(String)

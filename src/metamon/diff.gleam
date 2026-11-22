@@ -48,13 +48,22 @@ pub type Segment {
 pub fn diff(left: a, right: a) -> Diff {
   case left == right {
     True -> Same(rendered: string.inspect(left))
+    False -> diff_inspected(string.inspect(left), string.inspect(right))
+  }
+}
+
+/// `diff` for two values already rendered with `string.inspect`. The
+/// failure report keeps only the rendered outputs, so it diffs them with
+/// this rather than inspecting the strings a second time.
+@internal
+pub fn diff_inspected(left: String, right: String) -> Diff {
+  case left == right {
+    True -> Same(rendered: left)
     False -> shape_aware_diff(left, right)
   }
 }
 
-fn shape_aware_diff(left: a, right: a) -> Diff {
-  let l_str = string.inspect(left)
-  let r_str = string.inspect(right)
+fn shape_aware_diff(l_str: String, r_str: String) -> Diff {
   case
     is_list_inspect(l_str),
     is_list_inspect(r_str),
@@ -148,31 +157,58 @@ fn split_top_level(inspected: String) -> List(String) {
         _, _ -> inspected
       }
   }
-  walk_and_split(string.to_graphemes(inner), 0, "", [])
+  walk_and_split(string.to_graphemes(inner), Outside, 0, [], [])
 }
 
+/// Where `walk_and_split` is relative to string literals: commas and
+/// brackets inside `"..."` do not split, and `\` escapes the next
+/// character. Outside strings, `[`, `(` and each `<` of `<<` open a level.
+type Scan {
+  Outside
+  InString
+  Escaped
+}
+
+/// `acc` holds the current item's graphemes in reverse.
 fn walk_and_split(
   graphemes: List(String),
+  scan: Scan,
   depth: Int,
-  acc: String,
+  acc: List(String),
   results: List(String),
 ) -> List(String) {
   case graphemes {
     [] -> finish_split(acc, results)
     [first, ..rest] ->
-      case first, depth {
-        "[", _ -> walk_and_split(rest, depth + 1, acc <> first, results)
-        "]", d if d > 0 -> walk_and_split(rest, d - 1, acc <> first, results)
-        "(", _ -> walk_and_split(rest, depth + 1, acc <> first, results)
-        ")", d if d > 0 -> walk_and_split(rest, d - 1, acc <> first, results)
-        ",", 0 -> walk_and_split(rest, 0, "", [string.trim(acc), ..results])
-        _, _ -> walk_and_split(rest, depth, acc <> first, results)
+      case scan, first, depth {
+        Escaped, _, _ ->
+          walk_and_split(rest, InString, depth, [first, ..acc], results)
+        InString, "\\", _ ->
+          walk_and_split(rest, Escaped, depth, [first, ..acc], results)
+        InString, "\"", _ ->
+          walk_and_split(rest, Outside, depth, [first, ..acc], results)
+        InString, _, _ ->
+          walk_and_split(rest, InString, depth, [first, ..acc], results)
+        Outside, "\"", _ ->
+          walk_and_split(rest, InString, depth, [first, ..acc], results)
+        Outside, "[", _ | Outside, "(", _ | Outside, "<", _ ->
+          walk_and_split(rest, Outside, depth + 1, [first, ..acc], results)
+        Outside, "]", d | Outside, ")", d | Outside, ">", d if d > 0 ->
+          walk_and_split(rest, Outside, d - 1, [first, ..acc], results)
+        Outside, ",", 0 ->
+          walk_and_split(rest, Outside, 0, [], [item_text(acc), ..results])
+        Outside, _, _ ->
+          walk_and_split(rest, Outside, depth, [first, ..acc], results)
       }
   }
 }
 
-fn finish_split(acc: String, results: List(String)) -> List(String) {
-  case string.trim(acc) {
+fn item_text(reversed: List(String)) -> String {
+  reversed |> list.reverse |> string.concat |> string.trim
+}
+
+fn finish_split(acc: List(String), results: List(String)) -> List(String) {
+  case item_text(acc) {
     "" -> list.reverse(results)
     trimmed -> list.reverse([trimmed, ..results])
   }
@@ -188,8 +224,7 @@ pub fn diff_string(left: String, right: String) -> Diff {
     False -> {
       let l_lines = string.split(left, "\n")
       let r_lines = string.split(right, "\n")
-      let lcs_table = build_lcs(l_lines, r_lines)
-      let segments = backtrack_diff(l_lines, r_lines, lcs_table)
+      let segments = line_diff(l_lines, r_lines)
       StringDiff(left: left, right: right, segments: segments)
     }
   }
@@ -242,98 +277,24 @@ fn render_string_diff(segments: List(Segment), indent: String) -> String {
   |> string.join("\n")
 }
 
-// ---------- LCS ----------
-//
-// Naive LCS table over Erlang lists, O(m*n). Acceptable for the diff-
-// for-failure-output use case.
-
-type LcsTable =
-  List(List(Int))
-
-fn build_lcs(left: List(String), right: List(String)) -> LcsTable {
-  build_rows(left, right, [])
+// Walk both sides in lockstep: equal lines are `Common`, and where they
+// diverge the left line is `Removed` and the right line `Added`. This is
+// enough for short, mostly aligned outputs.
+fn line_diff(left: List(String), right: List(String)) -> List(Segment) {
+  line_diff_loop(left, right, [])
 }
 
-fn build_rows(
-  remaining_left: List(String),
-  right: List(String),
-  acc: LcsTable,
-) -> LcsTable {
-  case remaining_left {
-    [] -> {
-      let row_for_empty = list.map(right, fn(_x) { 0 })
-      list.reverse([[0, ..row_for_empty], ..acc])
-    }
-    [first, ..rest] -> {
-      let prev_row = case acc {
-        [] -> empty_row(right)
-        [most_recent, ..] -> most_recent
-      }
-      let row = build_row(first, right, prev_row, [], 0)
-      build_rows(rest, right, [row, ..acc])
-    }
-  }
-}
-
-fn empty_row(right: List(String)) -> List(Int) {
-  [0, ..list.map(right, fn(_x) { 0 })]
-}
-
-fn build_row(
-  l: String,
-  remaining: List(String),
-  prev_row: List(Int),
-  acc: List(Int),
-  current_left_value: Int,
-) -> List(Int) {
-  case remaining, prev_row {
-    [], _ -> list.reverse([current_left_value, ..acc])
-    [r, ..rs], [_, ..rest_prev] -> {
-      let above = case rest_prev {
-        [v, ..] -> v
-        [] -> 0
-      }
-      let diagonal = case prev_row {
-        [v, ..] -> v
-        [] -> 0
-      }
-      let value = case l == r {
-        True -> diagonal + 1
-        False -> max_int(above, current_left_value)
-      }
-      build_row(l, rs, rest_prev, [current_left_value, ..acc], value)
-    }
-    _, [] -> list.reverse([current_left_value, ..acc])
-  }
-}
-
-fn max_int(a: Int, b: Int) -> Int {
-  case a >= b {
-    True -> a
-    False -> b
-  }
-}
-
-fn backtrack_diff(
+fn line_diff_loop(
   left: List(String),
   right: List(String),
-  _table: LcsTable,
+  acc: List(Segment),
 ) -> List(Segment) {
-  // For the failure-report use case we accept a degraded but
-  // deterministic diff: walk both sides in lockstep, and whenever
-  // they diverge emit `Removed` for the left line and `Added` for
-  // the right line. This produces useful diffs for short, mostly-
-  // aligned outputs (which is the common case for serialised AST /
-  // OpenAPI specs in oaspec) without paying the cost of a precise
-  // backtrack through the LCS table.
   case left, right {
-    [], [] -> []
-    [], [r, ..rs] -> [Added(r), ..backtrack_diff([], rs, [])]
-    [l, ..ls], [] -> [Removed(l), ..backtrack_diff(ls, [], [])]
+    [], [] -> list.reverse(acc)
+    [], [r, ..rs] -> line_diff_loop([], rs, [Added(r), ..acc])
+    [l, ..ls], [] -> line_diff_loop(ls, [], [Removed(l), ..acc])
+    [l, ..ls], [r, ..rs] if l == r -> line_diff_loop(ls, rs, [Common(l), ..acc])
     [l, ..ls], [r, ..rs] ->
-      case l == r {
-        True -> [Common(l), ..backtrack_diff(ls, rs, [])]
-        False -> [Removed(l), Added(r), ..backtrack_diff(ls, rs, [])]
-      }
+      line_diff_loop(ls, rs, [Added(r), Removed(l), ..acc])
   }
 }

@@ -9,6 +9,7 @@
 //// integrated shrinking via the underlying `Tree(a)` and propagate edges
 //// in a way appropriate for each combinator (see § 4.4 of the spec).
 
+import gleam/bit_array
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -24,10 +25,16 @@ import metamon/internal/float_special
 
 const default_max_edges: Int = 16
 
+/// The size bound used when a generator runs outside the runner
+/// (`generate`, `sample`); it matches the default `max_size`.
+const default_max_size: Int = 99
+
 /// A generator of `a`. Use the constructors in this module rather than
 /// pattern-matching on the opaque structure.
 pub opaque type Generator(a) {
-  Generator(run: fn(Seed, Int) -> Tree(a), edges: List(a))
+  // `run` takes the seed, the current size and the largest size of the
+  // run, so ranges can scale to the configured `max_size`.
+  Generator(run: fn(Seed, Int, Int) -> Tree(a), edges: List(a))
 }
 
 // ---------- public access ----------
@@ -35,7 +42,18 @@ pub opaque type Generator(a) {
 /// Run the generator at the given seed and size. Used by the runner;
 /// most user code should not call this directly.
 pub fn generate(g: Generator(a), s: Seed, size: Int) -> Tree(a) {
-  g.run(s, size)
+  g.run(s, size, default_max_size)
+}
+
+/// Run the generator with the runner's configured `max_size`.
+@internal
+pub fn generate_sized(
+  g: Generator(a),
+  s: Seed,
+  size: Int,
+  max_size: Int,
+) -> Tree(a) {
+  g.run(s, size, max_size)
 }
 
 /// Inspect the must-try edge values associated with a generator.
@@ -60,7 +78,7 @@ fn sample_loop(
     True -> list.reverse(acc)
     False -> {
       let #(left, right) = seed_module.split(s)
-      let value = g.run(left, size).value
+      let value = g.run(left, size, default_max_size).value
       sample_loop(g, right, remaining - 1, size, [value, ..acc])
     }
   }
@@ -90,13 +108,13 @@ pub fn statistics(
 /// Add a fixed list of must-try inputs that the runner will exercise
 /// before random generation.
 pub fn with_examples(g: Generator(a), examples: List(a)) -> Generator(a) {
-  Generator(run: g.run, edges: list_append(g.edges, examples))
+  Generator(run: g.run, edges: list.append(g.edges, examples))
 }
 
 /// Append more edges to an existing generator. Symmetric to
 /// `with_examples` but reads better for library authors.
 pub fn add_edges(g: Generator(a), more: List(a)) -> Generator(a) {
-  Generator(run: g.run, edges: list_append(g.edges, more))
+  Generator(run: g.run, edges: list.append(g.edges, more))
 }
 
 /// Strip the edges from a generator. Useful when composing into a
@@ -109,15 +127,18 @@ pub fn no_edges(g: Generator(a)) -> Generator(a) {
 
 /// A constant generator that always returns `value` and has no shrinks.
 pub fn return(value: a) -> Generator(a) {
-  Generator(run: fn(_seed: Seed, _size: Int) { tree.singleton(value) }, edges: [
-    value,
-  ])
+  Generator(
+    run: fn(_seed: Seed, _size: Int, _max_size: Int) { tree.singleton(value) },
+    edges: [value],
+  )
 }
 
 /// Functor map. Edges are mapped element-wise.
 pub fn map(g: Generator(a), f: fn(a) -> b) -> Generator(b) {
   Generator(
-    run: fn(s: Seed, size: Int) { tree.map(g.run(s, size), f) },
+    run: fn(s: Seed, size: Int, max_size: Int) {
+      tree.map(g.run(s, size, max_size), f)
+    },
     edges: list.map(g.edges, f),
   )
 }
@@ -128,16 +149,16 @@ pub fn map(g: Generator(a), f: fn(a) -> b) -> Generator(b) {
 /// seed).
 pub fn bind(g: Generator(a), k: fn(a) -> Generator(b)) -> Generator(b) {
   Generator(
-    run: fn(s: Seed, size: Int) {
+    run: fn(s: Seed, size: Int, max_size: Int) {
       let #(s_outer, s_inner) = seed_module.split(s)
-      let outer_tree = g.run(s_outer, size)
+      let outer_tree = g.run(s_outer, size, max_size)
       tree.bind(outer_tree, fn(value) {
         let inner_gen = k(value)
-        inner_gen.run(s_inner, size)
+        inner_gen.run(s_inner, size, max_size)
       })
     },
     edges: list.flat_map(g.edges, fn(a) { k(a).edges })
-      |> take(default_max_edges),
+      |> list.take(default_max_edges),
   )
 }
 
@@ -149,9 +170,10 @@ pub fn map2(
   f: fn(a, b) -> c,
 ) -> Generator(c) {
   Generator(
-    run: fn(s: Seed, size: Int) {
+    run: fn(s: Seed, size: Int, max_size: Int) {
       let #(s1, s2) = seed_module.split(s)
-      let zipped = tree.zip(g1.run(s1, size), g2.run(s2, size))
+      let zipped =
+        tree.zip(g1.run(s1, size, max_size), g2.run(s2, size, max_size))
       tree.map(zipped, fn(pair) { f(pair.0, pair.1) })
     },
     edges: cartesian_capped(g1.edges, g2.edges, f, default_max_edges),
@@ -347,16 +369,16 @@ pub fn one_of(generators: List(Generator(a))) -> Generator(a) {
   let assert [first, ..] = generators as "metamon.one_of: empty list"
   let count = list.length(generators)
   Generator(
-    run: fn(s: Seed, size: Int) {
+    run: fn(s: Seed, size: Int, max_size: Int) {
       let #(idx, s_rest) = seed_module.next_int_in(s, 0, count - 1)
-      let chosen = case list_at(generators, idx) {
-        Some(g) -> g
-        None -> first
+      let chosen = case list.drop(generators, idx) {
+        [g, ..] -> g
+        [] -> first
       }
-      chosen.run(s_rest, size)
+      chosen.run(s_rest, size, max_size)
     },
     edges: list.flat_map(generators, fn(g) { g.edges })
-      |> take(default_max_edges),
+      |> list.take(default_max_edges),
   )
 }
 
@@ -382,13 +404,13 @@ pub fn frequency(weighted: List(#(Int, Generator(a)))) -> Generator(a) {
   validate_weights(weighted, 0)
   let total = list.fold(weighted, 0, fn(acc, pair) { acc + pair.0 })
   Generator(
-    run: fn(s: Seed, size: Int) {
+    run: fn(s: Seed, size: Int, max_size: Int) {
       let #(roll, s_rest) = seed_module.next_int_in(s, 0, total - 1)
       let chosen = pick_by_weight(weighted, roll, first)
-      chosen.run(s_rest, size)
+      chosen.run(s_rest, size, max_size)
     },
     edges: list.flat_map(weighted, fn(pair) { pair.1.edges })
-      |> take(default_max_edges),
+      |> list.take(default_max_edges),
   )
 }
 
@@ -430,9 +452,9 @@ fn pick_by_weight(
 /// Construct a generator whose strategy depends on the current size.
 pub fn sized(builder: fn(Int) -> Generator(a)) -> Generator(a) {
   Generator(
-    run: fn(s: Seed, size: Int) {
+    run: fn(s: Seed, size: Int, max_size: Int) {
       let inner = builder(size)
-      inner.run(s, size)
+      inner.run(s, size, max_size)
     },
     edges: builder(0).edges,
   )
@@ -440,12 +462,18 @@ pub fn sized(builder: fn(Int) -> Generator(a)) -> Generator(a) {
 
 /// Override the size used by a generator.
 pub fn resize(g: Generator(a), new_size: Int) -> Generator(a) {
-  Generator(run: fn(s: Seed, _size: Int) { g.run(s, new_size) }, edges: g.edges)
+  Generator(
+    run: fn(s: Seed, _size: Int, max_size: Int) { g.run(s, new_size, max_size) },
+    edges: g.edges,
+  )
 }
 
 /// Transform the size given to a generator.
 pub fn scale(g: Generator(a), f: fn(Int) -> Int) -> Generator(a) {
-  Generator(run: fn(s: Seed, size: Int) { g.run(s, f(size)) }, edges: g.edges)
+  Generator(
+    run: fn(s: Seed, size: Int, max_size: Int) { g.run(s, f(size), max_size) },
+    edges: g.edges,
+  )
 }
 
 /// Reject values that fail `predicate`. The implementation retries
@@ -458,8 +486,8 @@ pub fn scale(g: Generator(a), f: fn(Int) -> Int) -> Generator(a) {
 /// anyway).
 pub fn filter(g: Generator(a), predicate: fn(a) -> Bool) -> Generator(a) {
   Generator(
-    run: fn(s: Seed, size: Int) {
-      filter_run(g, predicate, s, size, filter_retry_limit)
+    run: fn(s: Seed, size: Int, max_size: Int) {
+      filter_run(g, predicate, s, size, max_size, filter_retry_limit)
     },
     edges: list.filter(g.edges, predicate),
   )
@@ -472,9 +500,10 @@ fn filter_run(
   predicate: fn(a) -> Bool,
   s: Seed,
   size: Int,
+  max_size: Int,
   retries_left: Int,
 ) -> Tree(a) {
-  let candidate = g.run(s, size)
+  let candidate = g.run(s, size, max_size)
   case predicate(candidate.value) {
     True -> tree.filter(candidate, predicate)
     False -> {
@@ -483,7 +512,7 @@ fn filter_run(
           panic as "metamon.filter: predicate rejected the configured number of candidates in a row; the predicate is too strict"
         False -> {
           let #(_, s2) = seed_module.split(s)
-          filter_run(g, predicate, s2, size, retries_left - 1)
+          filter_run(g, predicate, s2, size, max_size, retries_left - 1)
         }
       }
     }
@@ -516,25 +545,16 @@ pub fn recursive(
 pub fn int(range_value: Range) -> Generator(Int) {
   let origin = range.origin(range_value)
   Generator(
-    run: fn(s: Seed, size: Int) {
-      let #(lo, hi) = range.bounds(range_value, size, 99)
+    run: fn(s: Seed, size: Int, max_size: Int) {
+      let #(lo, hi) = range.bounds(range_value, size, max_size)
       let #(value, _) = seed_module.next_int_in(s, lo, hi)
-      let shrinks = shrink_lib.int_toward(origin, value)
       tree.unfold(value, fn(v) { shrink_lib.int_toward(origin, v) })
-      |> attach_known_root(value, shrinks)
     },
-    edges: edge_lib.ints_in(extreme_lo(range_value), extreme_hi(range_value)),
+    edges: {
+      let #(lo, hi) = range.bounds(range_value, 99, 99)
+      edge_lib.ints_in(lo, hi)
+    },
   )
-}
-
-fn extreme_lo(r: Range) -> Int {
-  let #(lo, _) = range.bounds(r, 99, 99)
-  lo
-}
-
-fn extreme_hi(r: Range) -> Int {
-  let #(_, hi) = range.bounds(r, 99, 99)
-  hi
 }
 
 // ---------- shortcut generators ----------
@@ -570,7 +590,7 @@ pub fn byte() -> Generator(Int) {
 /// (no sub-byte tail).
 pub fn bit_array(byte_len: Range) -> Generator(BitArray) {
   list_of(byte(), byte_len)
-  |> map(bytes_to_bit_array)
+  |> map(pack_bytes)
 }
 
 /// Bit array whose every byte is a printable ASCII codepoint
@@ -580,7 +600,7 @@ pub fn bit_array(byte_len: Range) -> Generator(BitArray) {
 /// types, etc.).
 pub fn bit_array_printable(byte_len: Range) -> Generator(BitArray) {
   list_of(int(range.constant(32, 126)), byte_len)
-  |> map(bytes_to_bit_array)
+  |> map(pack_bytes)
 }
 
 /// Bit array that is guaranteed to be valid UTF-8. `codepoint_len` is
@@ -601,32 +621,23 @@ pub fn bit_array_utf8(codepoint_len: Range) -> Generator(BitArray) {
 /// metric matches byte-oriented properties more naturally.
 pub fn bit_array_unaligned(bit_len: Range) -> Generator(BitArray) {
   list_of(int(range.constant(0, 1)), bit_len)
-  |> map(bits_to_bit_array)
-}
-
-fn bits_to_bit_array(bits: List(Int)) -> BitArray {
-  list.fold(bits, <<>>, fn(acc, b) { <<acc:bits, b:size(1)>> })
+  |> map(pack_single_bits)
 }
 
 fn string_to_utf8_bit_array(s: String) -> BitArray {
   <<s:utf8>>
 }
 
-fn bytes_to_bit_array(bytes: List(Int)) -> BitArray {
-  list.fold(bytes, <<>>, fn(acc, b) { <<acc:bits, b:size(8)>> })
+fn pack_bytes(bytes: List(Int)) -> BitArray {
+  list.map(bytes, fn(byte) { <<byte:size(8)>> })
+  |> bit_array.concat
 }
 
-fn attach_known_root(
-  unfolded: Tree(Int),
-  expected_root: Int,
-  _shrinks: List(Int),
-) -> Tree(Int) {
-  // unfold already produces the right shape; this hook exists so future
-  // generators can override the root without recomputing the tree.
-  case unfolded.value == expected_root {
-    True -> unfolded
-    False -> tree.singleton(expected_root)
-  }
+// Older gleam_stdlib releases allowed by gleam.toml only concatenate whole
+// bytes on JavaScript, so single bits are appended with a bit-array
+// segment instead of `bit_array.concat`.
+fn pack_single_bits(bits: List(Int)) -> BitArray {
+  list.fold(bits, <<>>, fn(acc, bit) { <<acc:bits, bit:size(1)>> })
 }
 
 /// Generates finite Float values uniformly in the closed interval
@@ -645,7 +656,7 @@ pub fn float(lo: Float, hi: Float) -> Generator(Float) {
     False -> #(lo, hi)
   }
   Generator(
-    run: fn(s: Seed, _size: Int) {
+    run: fn(s: Seed, _size: Int, _max_size: Int) {
       let #(scaled, _) = seed_module.next_int_in(s, 0, 1_000_000)
       let fraction = int.to_float(scaled) /. 1_000_000.0
       let value = low +. { high -. low } *. fraction
@@ -680,9 +691,12 @@ pub fn float(lo: Float, hi: Float) -> Generator(Float) {
 pub fn float_special() -> Generator(Float) {
   let edges = float_special_edges()
   Generator(
-    run: fn(s: Seed, _size: Int) {
+    run: fn(s: Seed, _size: Int, _max_size: Int) {
       let #(idx, _) = seed_module.next_int_in(s, 0, 7)
-      let value = pick_special(edges, idx)
+      let value = case list.drop(edges, idx) {
+        [value, ..] -> value
+        [] -> 0.0
+      }
       tree.singleton(value)
     },
     edges: edges,
@@ -714,28 +728,16 @@ fn negative_zero() -> Float {
   0.0 *. -1.0
 }
 
-fn pick_special(values: List(Float), index: Int) -> Float {
-  case values, index {
-    [], _ -> 0.0
-    [first, ..], 0 -> first
-    [_, ..rest], n -> pick_special(rest, n - 1)
-  }
-}
-
 // ---------- string / codepoint ----------
 
 /// A single ASCII lowercase letter generator (a-z).
 pub fn ascii_lower() -> Generator(String) {
-  let cp_gen = int(range.constant(97, 122))
-  map(cp_gen, codepoint_to_string)
-  |> override_edges(["a", "z", "m"])
+  ascii_char(97, 122, ["a", "z", "m"])
 }
 
 /// A single ASCII uppercase letter generator (A-Z).
 pub fn ascii_upper() -> Generator(String) {
-  let cp_gen = int(range.constant(65, 90))
-  map(cp_gen, codepoint_to_string)
-  |> override_edges(["A", "Z", "M"])
+  ascii_char(65, 90, ["A", "Z", "M"])
 }
 
 /// A single ASCII letter generator (a-zA-Z).
@@ -745,9 +747,13 @@ pub fn ascii_letter() -> Generator(String) {
 
 /// A single ASCII digit (0-9).
 pub fn ascii_digit() -> Generator(String) {
-  let cp_gen = int(range.constant(48, 57))
-  map(cp_gen, codepoint_to_string)
-  |> override_edges(["0", "9", "5"])
+  ascii_char(48, 57, ["0", "9", "5"])
+}
+
+/// One character with a codepoint in `[lo, hi]` and the given edges.
+fn ascii_char(lo: Int, hi: Int, edges: List(String)) -> Generator(String) {
+  map(int(range.constant(lo, hi)), codepoint_int_to_string)
+  |> override_edges(edges)
 }
 
 /// A single ASCII alphanumeric character.
@@ -757,9 +763,7 @@ pub fn ascii_alphanumeric() -> Generator(String) {
 
 /// A single ASCII printable character (space..~).
 pub fn ascii_printable() -> Generator(String) {
-  let cp_gen = int(range.constant(32, 126))
-  map(cp_gen, codepoint_to_string)
-  |> override_edges([" ", "0", "A", "z", "~"])
+  ascii_char(32, 126, [" ", "0", "A", "z", "~"])
 }
 
 /// A Unicode scalar value (excluding surrogates).
@@ -782,9 +786,22 @@ pub fn unicode_codepoint() -> Generator(Int) {
 
 /// A string built from `char_gen` characters with length in `len`.
 pub fn string(char_gen: Generator(String), len: Range) -> Generator(String) {
-  list_of(char_gen, len)
-  |> map(string.concat)
-  |> with_examples(strings_in_length_range(["", " ", "\n"], len))
+  string_with_edges(char_gen, len, [])
+}
+
+/// `string` whose edges are the ones built from `char_gen`'s edges plus
+/// the `curated` strings that fit the length range, without duplicates.
+/// `curated` must only use characters `char_gen` can produce.
+fn string_with_edges(
+  char_gen: Generator(String),
+  len: Range,
+  curated: List(String),
+) -> Generator(String) {
+  let built = list_of(char_gen, len) |> map(string.concat)
+  let edges =
+    list.append(built.edges, strings_in_length_range(curated, len))
+    |> list.unique
+  override_edges(built, edges)
 }
 
 /// An ASCII string with length in `len`.
@@ -798,8 +815,7 @@ pub fn string(char_gen: Generator(String), len: Range) -> Generator(String) {
 /// Curated edges include both control bytes (`\t`, `\n`) and
 /// printable boundaries (`" "`, `"~"`).
 pub fn string_ascii(len: Range) -> Generator(String) {
-  string(ascii_full(), len)
-  |> with_examples(strings_in_length_range(edge_lib.strings_ascii(), len))
+  string_with_edges(ascii_full(), len, edge_lib.strings_ascii())
 }
 
 /// A single ASCII codepoint generator (`0x00`..`0x7F`). Includes
@@ -808,9 +824,7 @@ pub fn string_ascii(len: Range) -> Generator(String) {
 /// boundaries: NUL, `\t`, `\n`, space, digit `0`, letters `A` / `z`,
 /// `~`, and DEL.
 fn ascii_full() -> Generator(String) {
-  let cp_gen = int(range.constant(0, 127))
-  map(cp_gen, codepoint_to_string)
-  |> override_edges([
+  ascii_char(0, 127, [
     "\u{0000}",
     "\t",
     "\n",
@@ -861,15 +875,13 @@ pub fn string_printable_ascii(len: Range) -> Generator(String) {
 /// depends on them.
 pub fn string_unicode(len: Range) -> Generator(String) {
   let cp_gen = unicode_codepoint() |> map(codepoint_int_to_string)
-  string(cp_gen, len)
-  |> with_examples(strings_in_length_range(edge_lib.strings_unicode(), len))
+  string_with_edges(cp_gen, len, edge_lib.strings_unicode())
 }
 
 /// Filter a candidate string-edge list down to entries whose length lies
-/// inside the user-supplied `Range`, then dedupe so the same value does
-/// not appear multiple times across the merged edge set. Range bounds are
-/// resolved at the maximum size (`size = max_size`) so the full
-/// user-visible window is admitted regardless of how the range scales.
+/// inside the user-supplied `Range`. Range bounds are resolved at the
+/// maximum size (`size = max_size`) so the full user-visible window is
+/// admitted regardless of how the range scales.
 fn strings_in_length_range(
   candidates: List(String),
   len: Range,
@@ -880,65 +892,155 @@ fn strings_in_length_range(
     let length = string.length(s)
     length >= lo && length <= hi
   })
-  |> list.unique
 }
 
 @external(erlang, "metamon_ffi", "codepoint_to_string")
 @external(javascript, "../metamon_ffi.mjs", "codepoint_to_string")
 fn codepoint_int_to_string(codepoint: Int) -> String
 
-fn codepoint_to_string(codepoint: Int) -> String {
-  codepoint_int_to_string(codepoint)
-}
-
 // ---------- collections ----------
 
 /// A list of values whose length is drawn from `len`. Shrinking removes
 /// elements via `shrink/list_drops` and shrinks each remaining element.
 pub fn list_of(element: Generator(a), len: Range) -> Generator(List(a)) {
+  list_at_least(element, len, 0)
+}
+
+/// `list_of` whose length, and every shrink of it, is at least
+/// `floor` and at least the range's lower bound.
+fn list_at_least(
+  element: Generator(a),
+  len: Range,
+  floor: Int,
+) -> Generator(List(a)) {
   let #(lo_len, hi_len) = range.bounds(len, 99, 99)
+  let min_length = int.max(lo_len, floor)
   Generator(
-    run: fn(s: Seed, size: Int) {
+    run: fn(s: Seed, size: Int, max_size: Int) {
       let #(s_len, s_items) = seed_module.split(s)
-      let #(lo, hi) = range.bounds(len, size, 99)
-      let #(length, _) = seed_module.next_int_in(s_len, lo, hi)
-      generate_list_tree(element, s_items, size, length)
+      let #(lo, hi) = range.bounds(len, size, max_size)
+      let lo = int.max(lo, min_length)
+      let #(length, _) = seed_module.next_int_in(s_len, lo, int.max(hi, lo))
+      generate_element_trees(element, s_items, size, max_size, length, [])
+      |> list_tree(min_length)
     },
-    edges: list_edges_in_range(element.edges, lo_len, hi_len),
+    edges: list_edges_in_range(element.edges, min_length, hi_len),
   )
 }
 
-fn generate_list_tree(
+fn generate_element_trees(
   element: Generator(a),
   s: Seed,
   size: Int,
-  length: Int,
-) -> Tree(List(a)) {
-  case length <= 0 {
-    True -> tree.singleton([])
+  max_size: Int,
+  remaining: Int,
+  acc: List(Tree(a)),
+) -> List(Tree(a)) {
+  case remaining <= 0 {
+    True -> list.reverse(acc)
     False -> {
       let #(s_head, s_tail) = seed_module.split(s)
-      let head_tree = element.run(s_head, size)
-      let tail_tree = generate_list_tree(element, s_tail, size, length - 1)
-      let combined =
-        tree.zip(head_tree, tail_tree)
-        |> tree.map(fn(pair) { [pair.0, ..pair.1] })
-      attach_drop_shrinks(combined)
+      let head = element.run(s_head, size, max_size)
+      generate_element_trees(element, s_tail, size, max_size, remaining - 1, [
+        head,
+        ..acc
+      ])
     }
   }
 }
 
-/// The drop candidates are listed only when shrinking forces them. This
-/// runs for every suffix of every generated list, so computing them
-/// eagerly made generating a list of length n cost O(n^2) even when the
-/// property passed.
-fn attach_drop_shrinks(t: Tree(List(a))) -> Tree(List(a)) {
+/// The tree of a list built from its elements' trees. It shrinks by
+/// dropping windows of elements (largest first, never below
+/// `min_length`), then by shrinking one element at a time. Every
+/// candidate is again a list tree, so shrinking continues from it.
+///
+/// Each candidate is built only when shrinking reaches it, and the
+/// streams are joined pairwise so forcing them never nests deeper than
+/// the log of the length.
+fn list_tree(trees: List(Tree(a)), min_length: Int) -> Tree(List(a)) {
+  let length = list.length(trees)
   let drops =
-    tree.lazy_shrinks(fn() {
-      shrink_lib.list_drops(t.value)
-      |> list.map(tree.singleton)
+    drop_windows(length, min_length)
+    |> list.map(fn(window) {
+      let #(start, count) = window
+      tree.lazy_shrinks(fn() {
+        let kept =
+          list.append(list.take(trees, start), list.drop(trees, start + count))
+        [list_tree(kept, min_length)]
+      })
     })
-  Tree(value: t.value, shrinks: tree.append_shrinks(drops, t.shrinks))
+  let element_shrinks =
+    list.index_map(trees, fn(element, index) {
+      tree.map_shrinks(element.shrinks, fn(child) {
+        let replaced =
+          list.append(list.take(trees, index), [
+            child,
+            ..list.drop(trees, index + 1)
+          ])
+        list_tree(replaced, min_length)
+      })
+    })
+  Tree(
+    value: list.map(trees, fn(element) { element.value }),
+    shrinks: concat_shrinks(list.append(drops, element_shrinks)),
+  )
+}
+
+/// `(start, count)` windows to drop, in the order `shrink.list_drops`
+/// tries them: the whole list, then halves, quarters and so on, each
+/// size from the end of the list towards the start.
+fn drop_windows(length: Int, min_length: Int) -> List(#(Int, Int)) {
+  drop_windows_loop(length, length, length - min_length, [])
+  |> list.reverse
+}
+
+fn drop_windows_loop(
+  length: Int,
+  window: Int,
+  max_drop: Int,
+  acc: List(#(Int, Int)),
+) -> List(#(Int, Int)) {
+  case window <= 0 {
+    True -> acc
+    False -> {
+      let acc = case window <= max_drop {
+        True -> window_starts(length - window, window, acc)
+        False -> acc
+      }
+      drop_windows_loop(length, window / 2, max_drop, acc)
+    }
+  }
+}
+
+fn window_starts(
+  start: Int,
+  window: Int,
+  acc: List(#(Int, Int)),
+) -> List(#(Int, Int)) {
+  case start < 0 {
+    True -> acc
+    False -> window_starts(start - window, window, [#(start, window), ..acc])
+  }
+}
+
+fn concat_shrinks(streams: List(tree.Shrinks(b))) -> tree.Shrinks(b) {
+  case streams {
+    [] -> tree.no_shrinks()
+    [only] -> only
+    _ -> concat_shrinks(pair_up(streams, []))
+  }
+}
+
+fn pair_up(
+  streams: List(tree.Shrinks(b)),
+  acc: List(tree.Shrinks(b)),
+) -> List(tree.Shrinks(b)) {
+  case streams {
+    [left, right, ..rest] ->
+      pair_up(rest, [tree.append_shrinks(left, right), ..acc])
+    [last] -> list.reverse([last, ..acc])
+    [] -> list.reverse(acc)
+  }
 }
 
 fn list_edges_in_range(
@@ -956,18 +1058,20 @@ fn list_edges_in_range(
   })
 }
 
-/// Non-empty list. Wraps `list_of` and rejects empty lists from edges.
+/// Non-empty list. Like `list_of`, but the length is at least 1.
+///
+/// ## Panics
+///
+/// Panics when `len` allows no length of 1 or more (its upper bound is 0).
 pub fn non_empty_list_of(
   element: Generator(a),
   len: Range,
 ) -> Generator(List(a)) {
-  list_of(element, len)
-  |> filter(fn(items) {
-    case items {
-      [] -> False
-      _ -> True
-    }
-  })
+  case range.bounds(len, 99, 99) {
+    #(_, hi) if hi < 1 ->
+      panic as "metamon.non_empty_list_of: the length range has no length of 1 or more"
+    _ -> list_at_least(element, len, 1)
+  }
 }
 
 /// Generate a `dict.Dict(k, v)` of size in `len`. Duplicate keys are
@@ -1025,7 +1129,7 @@ fn result_edges(ok_edges: List(a), err_edges: List(e)) -> List(Result(a, e)) {
     [] -> []
     [first, ..] -> [Error(first)]
   }
-  list_append(ok_part, err_part)
+  list.append(ok_part, err_part)
 }
 
 // ---------- internal helpers ----------
@@ -1041,28 +1145,5 @@ fn cartesian_capped(
   cap: Int,
 ) -> List(c) {
   list.flat_map(left, fn(l) { list.map(right, fn(r) { combine(l, r) }) })
-  |> take(cap)
-}
-
-fn take(items: List(a), n: Int) -> List(a) {
-  case n, items {
-    _, [] -> []
-    n, _ if n <= 0 -> []
-    n, [first, ..rest] -> [first, ..take(rest, n - 1)]
-  }
-}
-
-fn list_at(items: List(a), index: Int) -> Option(a) {
-  case items, index {
-    [], _ -> None
-    [first, ..], 0 -> Some(first)
-    [_, ..rest], i -> list_at(rest, i - 1)
-  }
-}
-
-fn list_append(left: List(a), right: List(a)) -> List(a) {
-  case left {
-    [] -> right
-    [first, ..rest] -> [first, ..list_append(rest, right)]
-  }
+  |> list.take(cap)
 }

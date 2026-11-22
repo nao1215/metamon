@@ -54,9 +54,17 @@ pub fn default_config() -> Config {
 
 /// Override the number of successful runs.
 pub fn with_runs(c: Config, n: Int) -> Result(Config, ConfigError) {
+  positive("runs", n, fn() { Config(..c, runs: n) })
+}
+
+fn positive(
+  field: String,
+  n: Int,
+  set: fn() -> Config,
+) -> Result(Config, ConfigError) {
   case n <= 0 {
-    True -> Error(NonPositive(field: "runs", value: n))
-    False -> Ok(Config(..c, runs: n))
+    True -> Error(NonPositive(field: field, value: n))
+    False -> Ok(set())
   }
 }
 
@@ -67,40 +75,30 @@ pub fn with_seed(c: Config, s: Seed) -> Config {
 
 /// Override `max_size`.
 pub fn with_max_size(c: Config, n: Int) -> Result(Config, ConfigError) {
-  case n <= 0 {
-    True -> Error(NonPositive(field: "max_size", value: n))
-    False -> Ok(Config(..c, max_size: n))
-  }
+  positive("max_size", n, fn() { Config(..c, max_size: n) })
 }
 
 /// Override the shrink limit.
 pub fn with_shrink_limit(c: Config, n: Int) -> Result(Config, ConfigError) {
-  case n <= 0 {
-    True -> Error(NonPositive(field: "shrink_limit", value: n))
-    False -> Ok(Config(..c, shrink_limit: n))
-  }
+  positive("shrink_limit", n, fn() { Config(..c, shrink_limit: n) })
 }
 
 /// Override the cap on the size of edge cartesian products.
 pub fn with_max_edges(c: Config, n: Int) -> Result(Config, ConfigError) {
-  case n <= 0 {
-    True -> Error(NonPositive(field: "max_edges", value: n))
-    False -> Ok(Config(..c, max_edges: n))
-  }
+  positive("max_edges", n, fn() { Config(..c, max_edges: n) })
 }
 
 /// Set a regression file path. The file is created on first failure
 /// and read on every subsequent run.
 ///
-/// File format (TOML-flavoured, schema version 1) is documented in
+/// File format (TOML-flavoured, schema version 2) is documented in
 /// `metamon/internal/regression`. A version mismatch (a file written
 /// by a newer metamon) makes the runner skip replay rather than
 /// silently mis-parse forward-incompatible content; legacy v0 files
 /// without a `schema_version` header are still accepted.
 ///
-/// Concurrency: each call to `record_regression_for` reads the file,
-/// appends one entry, and writes back. Concurrent test workers
-/// pointed at the same path can lose entries; use distinct paths per
+/// Concurrency: each failure appends one entry to the file. Concurrent
+/// test workers pointed at the same path can interleave entries; use distinct paths per
 /// worker if you run properties in parallel within the same process
 /// (especially on the JavaScript target — on the BEAM, gleeunit's
 /// per-test process isolation already serialises file access for the

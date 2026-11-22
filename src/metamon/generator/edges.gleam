@@ -4,6 +4,8 @@
 //// biggest win for property-based testing on real-world code, so each
 //// builder here is documented with the rationale.
 
+import gleam/list
+
 /// Edge ints in the closed interval `[lo, hi]`.
 ///
 /// Always-tried candidates: `0`, `1`, `-1`, `lo`, `hi`. We also include
@@ -26,8 +28,8 @@ pub fn ints_in(lo: Int, hi: Int) -> List(Int) {
     -9_007_199_254_740_991,
   ]
   candidates
-  |> filter_in_range(lo, hi)
-  |> dedupe()
+  |> list.filter(fn(n) { n >= lo && n <= hi })
+  |> list.unique
 }
 
 /// Edge floats in `[lo, hi]`.
@@ -38,8 +40,8 @@ pub fn ints_in(lo: Int, hi: Int) -> List(Int) {
 pub fn floats_in(lo: Float, hi: Float) -> List(Float) {
   let candidates = [lo, hi, 0.0, 1.0, -1.0]
   candidates
-  |> filter_floats_in_range(lo, hi)
-  |> dedupe_floats()
+  |> list.filter(fn(x) { x >=. lo && x <=. hi })
+  |> list.unique
 }
 
 /// Edge ASCII strings.
@@ -82,105 +84,5 @@ pub fn strings_unicode() -> List(String) {
     "𝕏 unicode",
     "🦊",
   ]
-  list_append(strings_ascii(), extras)
-}
-
-fn filter_in_range(items: List(Int), lo: Int, hi: Int) -> List(Int) {
-  case items {
-    [] -> []
-    [first, ..rest] ->
-      case first >= lo && first <= hi {
-        True -> [first, ..filter_in_range(rest, lo, hi)]
-        False -> filter_in_range(rest, lo, hi)
-      }
-  }
-}
-
-fn filter_floats_in_range(
-  items: List(Float),
-  lo: Float,
-  hi: Float,
-) -> List(Float) {
-  case items {
-    [] -> []
-    [first, ..rest] ->
-      case first >=. lo && first <=. hi {
-        True -> [first, ..filter_floats_in_range(rest, lo, hi)]
-        False -> filter_floats_in_range(rest, lo, hi)
-      }
-  }
-}
-
-fn dedupe(items: List(Int)) -> List(Int) {
-  dedupe_loop(items, [], [])
-}
-
-fn dedupe_loop(items: List(Int), seen: List(Int), acc: List(Int)) -> List(Int) {
-  case items {
-    [] -> reverse(acc)
-    [first, ..rest] ->
-      case contains(seen, first) {
-        True -> dedupe_loop(rest, seen, acc)
-        False -> dedupe_loop(rest, [first, ..seen], [first, ..acc])
-      }
-  }
-}
-
-fn dedupe_floats(items: List(Float)) -> List(Float) {
-  dedupe_floats_loop(items, [], [])
-}
-
-fn dedupe_floats_loop(
-  items: List(Float),
-  seen: List(Float),
-  acc: List(Float),
-) -> List(Float) {
-  case items {
-    [] -> reverse(acc)
-    [first, ..rest] ->
-      case contains_float(seen, first) {
-        True -> dedupe_floats_loop(rest, seen, acc)
-        False -> dedupe_floats_loop(rest, [first, ..seen], [first, ..acc])
-      }
-  }
-}
-
-fn contains(items: List(Int), needle: Int) -> Bool {
-  case items {
-    [] -> False
-    [first, ..rest] ->
-      case first == needle {
-        True -> True
-        False -> contains(rest, needle)
-      }
-  }
-}
-
-fn contains_float(items: List(Float), needle: Float) -> Bool {
-  case items {
-    [] -> False
-    [first, ..rest] ->
-      case first == needle {
-        True -> True
-        False -> contains_float(rest, needle)
-      }
-  }
-}
-
-fn reverse(items: List(a)) -> List(a) {
-  reverse_into(items, [])
-}
-
-fn reverse_into(items: List(a), acc: List(a)) -> List(a) {
-  case items {
-    [] -> acc
-    [first, ..rest] -> reverse_into(rest, [first, ..acc])
-  }
-}
-
-fn list_append(left: List(a), right: List(a)) -> List(a) {
-  case left {
-    [] -> right
-    [first, ..rest] -> [first, ..list_append(rest, right)]
-  }
+  list.append(strings_ascii(), extras)
 }

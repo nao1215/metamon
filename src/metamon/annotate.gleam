@@ -47,25 +47,25 @@ pub fn reset() -> Nil {
 /// order in which they were registered.
 @internal
 pub fn current_annotations() -> List(String) {
-  read(annotations_key)
+  read(annotations_key) |> list.reverse
 }
 
 /// Read the footnotes recorded since the last `reset`.
 @internal
 pub fn current_footnotes() -> List(String) {
-  read(footnotes_key)
+  read(footnotes_key) |> list.reverse
 }
 
+// The buffer is stored newest first so adding a message is O(1); the
+// readers reverse it once.
 fn push(key: String, message: String) -> Nil {
-  let updated = [message, ..read(key)]
-  process_state.put(key, updated)
-  Nil
+  process_state.put(key, [message, ..read(key)])
 }
 
 fn read(key: String) -> List(String) {
   case process_state.get(key) {
     Error(_) -> []
-    Ok(raw) -> coerce_string_list(raw) |> list.reverse()
+    Ok(raw) -> coerce_string_list(raw)
   }
 }
 

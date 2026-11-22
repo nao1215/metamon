@@ -13,22 +13,7 @@ pub fn reverse() -> Transform(List(a)) {
 
 /// Drop duplicates, keeping the first occurrence of each element.
 pub fn dedupe() -> Transform(List(a)) {
-  transform.new("list.dedupe", dedupe_keep_first)
-}
-
-fn dedupe_keep_first(items: List(a)) -> List(a) {
-  loop_dedupe(items, [], [])
-}
-
-fn loop_dedupe(items: List(a), seen: List(a), acc: List(a)) -> List(a) {
-  case items {
-    [] -> list.reverse(acc)
-    [first, ..rest] ->
-      case list.contains(seen, first) {
-        True -> loop_dedupe(rest, seen, acc)
-        False -> loop_dedupe(rest, [first, ..seen], [first, ..acc])
-      }
-  }
+  transform.new("list.dedupe", list.unique)
 }
 
 /// Prepend `value` to the list.

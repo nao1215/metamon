@@ -4,8 +4,8 @@
 
 import gleam/dict.{type Dict}
 import gleam/int
-import metamon/generator/seed.{type Seed}
 import metamon/transform.{type Transform}
+import metamon/transform/list as list_t
 
 /// Insert / overwrite the binding `key -> value`.
 pub fn insert(key: k, value: v) -> Transform(Dict(k, v)) {
@@ -23,83 +23,8 @@ pub fn remove(key: k) -> Transform(Dict(k, v)) {
 /// will see a different sequence — exactly the property metamorphic
 /// tests want to catch.
 pub fn shuffle_keys(seed_value: Int) -> Transform(Dict(k, v)) {
+  let shuffle = list_t.shuffle(seed_value)
   transform.new("dict.shuffle_keys(" <> int.to_string(seed_value) <> ")", fn(d) {
-    reorder_dict(d, seed.seed(seed_value))
+    dict.to_list(d) |> shuffle.apply |> dict.from_list
   })
-}
-
-fn reorder_dict(d: Dict(k, v), s: Seed) -> Dict(k, v) {
-  let pairs = dict.to_list(d)
-  let length = list_length(pairs)
-  case length <= 1 {
-    True -> d
-    False -> {
-      let shuffled = assign_keys_and_sort(pairs, s, length)
-      dict.from_list(shuffled)
-    }
-  }
-}
-
-fn assign_keys_and_sort(
-  pairs: List(#(k, v)),
-  s: Seed,
-  length: Int,
-) -> List(#(k, v)) {
-  let folded = fold_assign_keys(pairs, s, length, [])
-  let #(_, with_keys) = folded
-  with_keys
-  |> sort_by_first_int()
-  |> drop_first_int()
-}
-
-fn fold_assign_keys(
-  pairs: List(#(k, v)),
-  s: Seed,
-  length: Int,
-  acc: List(#(Int, #(k, v))),
-) -> #(Seed, List(#(Int, #(k, v)))) {
-  case pairs {
-    [] -> #(s, acc)
-    [first, ..rest] -> {
-      let #(key, next_state) = seed.next_int_in(s, 0, length * 100)
-      fold_assign_keys(rest, next_state, length, [#(key, first), ..acc])
-    }
-  }
-}
-
-fn list_length(items: List(a)) -> Int {
-  count(items, 0)
-}
-
-fn count(items: List(a), acc: Int) -> Int {
-  case items {
-    [] -> acc
-    [_, ..rest] -> count(rest, acc + 1)
-  }
-}
-
-fn sort_by_first_int(items: List(#(Int, a))) -> List(#(Int, a)) {
-  // Insertion sort; small N, simple, no stdlib dependency on `list.sort`.
-  case items {
-    [] -> []
-    [first, ..rest] -> insert_sorted(first, sort_by_first_int(rest))
-  }
-}
-
-fn insert_sorted(item: #(Int, a), sorted: List(#(Int, a))) -> List(#(Int, a)) {
-  case sorted {
-    [] -> [item]
-    [first, ..rest] ->
-      case item.0 <= first.0 {
-        True -> [item, first, ..rest]
-        False -> [first, ..insert_sorted(item, rest)]
-      }
-  }
-}
-
-fn drop_first_int(items: List(#(Int, a))) -> List(a) {
-  case items {
-    [] -> []
-    [first, ..rest] -> [first.1, ..drop_first_int(rest)]
-  }
 }

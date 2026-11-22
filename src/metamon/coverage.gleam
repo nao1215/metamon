@@ -24,6 +24,9 @@ const requirements_key: String = "coverage_requirements"
 
 const collected_key: String = "coverage_collected"
 
+/// Labels already hit in the current run, so a label counts once per run.
+const run_hits_key: String = "coverage_run_hits"
+
 /// One coverage requirement. A requirement is met when the label's
 /// hit count is at least `target_pct`% of total runs (Pct kind) or
 /// at least `min_hits` absolute occurrences (Count kind).
@@ -67,14 +70,30 @@ pub type Snapshot {
   )
 }
 
-/// Tag the current input with `label` if `condition` is true. Only
-/// labelled hits are counted, but every call to `classify` advances
-/// the total-runs denominator.
+/// Tag the current input with `label` if `condition` is true. A label
+/// counts at most once per run; the denominator is the number of runs.
 pub fn classify(label: String, condition: Bool) -> Nil {
-  bump_total()
   case condition {
     False -> Nil
-    True -> bump_count(counts_key, label)
+    True -> hit(label)
+  }
+}
+
+fn hit(label: String) -> Nil {
+  let run_hits = read_run_hits()
+  case list.contains(run_hits, label) {
+    True -> Nil
+    False -> {
+      process_state.put(run_hits_key, [label, ..run_hits])
+      bump_count(counts_key, label)
+    }
+  }
+}
+
+fn read_run_hits() -> List(String) {
+  case process_state.get(run_hits_key) {
+    Error(_) -> []
+    Ok(raw) -> coerce_string_list(raw)
   }
 }
 
@@ -89,12 +108,7 @@ pub fn classify(label: String, condition: Bool) -> Nil {
 /// as a confusing coverage shortfall.
 pub fn cover(target_pct: Float, label: String, condition: Bool) -> Nil {
   validate_target_pct(target_pct)
-  bump_total()
-  ensure_pct_requirement(label, target_pct)
-  case condition {
-    False -> Nil
-    True -> bump_count(counts_key, label)
-  }
+  require(label, Pct(target_pct), condition)
 }
 
 /// Absolute-count variant of `cover`: assert that the label is hit
@@ -108,12 +122,13 @@ pub fn cover(target_pct: Float, label: String, condition: Bool) -> Nil {
 /// message at the call site.
 pub fn cover_at_least(min_hits: Int, label: String, condition: Bool) -> Nil {
   validate_min_hits(min_hits)
-  bump_total()
-  ensure_count_requirement(label, min_hits)
-  case condition {
-    False -> Nil
-    True -> bump_count(counts_key, label)
-  }
+  require(label, Count(min_hits), condition)
+}
+
+/// Register the requirement on first use and count the hit.
+fn require(label: String, kind: RequirementKind, condition: Bool) -> Nil {
+  ensure_requirement(label, kind)
+  classify(label, condition)
 }
 
 fn validate_target_pct(target_pct: Float) -> Nil {
@@ -158,7 +173,6 @@ pub fn classify_in_bucket(group: String, bucket: String) -> Nil {
 /// Render `value` via `show` and add the result to the histogram of
 /// collected values.
 pub fn collect(value: a, show: fn(a) -> String) -> Nil {
-  bump_total()
   bump_count(collected_key, show(value))
 }
 
@@ -170,6 +184,7 @@ pub fn reset() -> Nil {
   process_state.erase(total_key)
   process_state.erase(requirements_key)
   process_state.erase(collected_key)
+  process_state.erase(run_hits_key)
   Nil
 }
 
@@ -214,10 +229,12 @@ pub fn actual_pct(hits: Int, total: Int) -> Float {
   }
 }
 
-fn bump_total() -> Nil {
-  let updated = read_total() + 1
-  process_state.put(total_key, updated)
-  Nil
+/// Count one run of the property. Called by the runner once per
+/// generated input, so the percentages are over runs, not over calls.
+@internal
+pub fn count_run() -> Nil {
+  process_state.erase(run_hits_key)
+  process_state.put(total_key, read_total() + 1)
 }
 
 fn read_total() -> Int {
@@ -245,14 +262,6 @@ fn read_dict(key: String) -> Dict(String, Int) {
     Error(_) -> dict.new()
     Ok(raw) -> coerce_string_int_dict(raw)
   }
-}
-
-fn ensure_pct_requirement(label: String, target_pct: Float) -> Nil {
-  ensure_requirement(label, Pct(target_pct))
-}
-
-fn ensure_count_requirement(label: String, min_hits: Int) -> Nil {
-  ensure_requirement(label, Count(min_hits))
 }
 
 fn ensure_requirement(label: String, kind: RequirementKind) -> Nil {
@@ -319,6 +328,10 @@ pub fn first_shortfall(snap: Snapshot) -> Option(Requirement) {
 @external(erlang, "metamon_ffi", "identity")
 @external(javascript, "../metamon_ffi.mjs", "identity")
 fn coerce_int(raw: Dynamic) -> Int
+
+@external(erlang, "metamon_ffi", "identity")
+@external(javascript, "../metamon_ffi.mjs", "identity")
+fn coerce_string_list(raw: Dynamic) -> List(String)
 
 @external(erlang, "metamon_ffi", "identity")
 @external(javascript, "../metamon_ffi.mjs", "identity")

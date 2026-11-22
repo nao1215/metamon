@@ -6,7 +6,7 @@
 //// boundary cases (zero, negative, very large) are pinned by inspecting
 //// the returned `Result`. `range.constant` / `linear` / `exponential` /
 //// `linear_from` panic on inverted bounds — those cases are pinned via
-//// the same `metamon_ffi:capture_panic` helper that `range_test.gleam`
+//// the same `metamon_test_ffi:capture_panic` helper that `range_test.gleam`
 //// already uses for `linear_from`.
 
 import gleam/option.{None}

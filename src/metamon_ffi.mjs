@@ -17,41 +17,6 @@ export function codepoint_to_string(codepoint) {
   return String.fromCodePoint(codepoint);
 }
 
-export function integer_to_string(n) {
-  return String(n);
-}
-
-export function float_to_string(n) {
-  return String(n);
-}
-
-export function string_length_js(s) {
-  // Codepoint length, not UTF-16 code-unit length, to match the Erlang
-  // `string:length/1` behaviour used in the generator tests.
-  let count = 0;
-  for (const _ of s) count += 1;
-  return count;
-}
-
-export function capture_panic(thunk) {
-  // Mirror of `metamon_ffi:capture_panic/1` — runs `thunk` and reports
-  // `(panicked, message)` to the caller. Used by tests that exercise
-  // the failure path of `metamon.forall` without aborting the test
-  // process.
-  try {
-    thunk();
-    return [false, ""];
-  } catch (error) {
-    let message;
-    if (error && typeof error === "object" && error.message) {
-      message = error.message;
-    } else {
-      message = String(error);
-    }
-    return [true, message];
-  }
-}
-
 const stateStore = new Map();
 
 export function state_put(key, value) {
@@ -73,13 +38,6 @@ export function state_erase(key) {
 
 export function identity(x) {
   return x;
-}
-
-export function state_keys() {
-  return Array.from(stateStore.keys()).reduce(
-    (acc, key) => ({ head: key, tail: acc }),
-    { head: undefined, tail: undefined, isEmpty: true },
-  );
 }
 
 // IEEE 754 special-value constructors used by `generator.float_special`.
