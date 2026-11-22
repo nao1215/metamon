@@ -3,6 +3,7 @@
 //// must (a) read existing entries on start-up and replay them, (b)
 //// append the failing input to the file when a property fails.
 
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import gleeunit/should
@@ -160,6 +161,42 @@ pub fn round_trips_sharing_a_file_replay_only_their_own_entries_test() {
   let #(panicked, text) = capture_panic(a)
   should.be_true(panicked)
   should.be_true(string.contains(text, "regression replay for `round_trip[a]`"))
+  let _ = simplifile.delete(shared_path)
+  Nil
+}
+
+pub fn unwritable_regression_file_is_reported_test() {
+  let path = "/tmp/metamon-no-such-directory/regressions.toml"
+  let #(panicked, text) =
+    capture_panic(fn() {
+      metamon.forall_with(
+        metamon.default_config()
+          |> metamon.with_regression_file_or_panic(path),
+        generator.int(range.constant(0, 10)),
+        fn(_) { False },
+      )
+    })
+  should.be_true(panicked)
+  should.be_true(string.contains(
+    text,
+    "  footnotes:\n    - could not write the regression file " <> path,
+  ))
+}
+
+pub fn regression_entries_share_one_header_test() {
+  let _ = simplifile.delete(shared_path)
+  let fail = fn(name) {
+    capture_panic(fn() { round_trip_with_file(name, 42, fn(_) { True }) })
+  }
+  let _ = fail("one")
+  let _ = fail("two")
+  let assert Ok(content) = simplifile.read(shared_path)
+  should.be_true(string.starts_with(
+    content,
+    "schema_version = 1\n\n[[failures]]\n",
+  ))
+  should.equal(list.length(string.split(content, "schema_version")), 2)
+  should.equal(list.length(regression.parse(content)), 2)
   let _ = simplifile.delete(shared_path)
   Nil
 }

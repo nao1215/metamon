@@ -239,6 +239,12 @@ fn morph_n_failure(
     string.inspect(failure.input),
     "\n  outputs (source first, then each follow-up):\n",
     outputs_rendered,
+    case failure.notes {
+      [] -> ""
+      notes ->
+        "\n  footnotes:\n"
+        <> string.join(list.map(notes, fn(note) { "    - " <> note }), "\n")
+    },
   ])
 }
 
@@ -381,6 +387,9 @@ type Failure(a) {
     shrinks: Int,
     capped: Bool,
     coverage: coverage.Snapshot,
+    /// Runner messages shown as footnotes, such as a regression file
+    /// that could not be written.
+    notes: List(String),
   )
 }
 
@@ -419,8 +428,9 @@ fn check_step(
   case check.holds(input) {
     True -> Continue
     False -> {
-      record_regression_for(cfg, check.regression_key, source, input)
-      Stop(shrunk_failure(cfg, gen, check, input, source, run_index))
+      let notes =
+        record_regression_for(cfg, check.regression_key, source, input)
+      Stop(shrunk_failure(cfg, gen, check, input, source, run_index, notes))
     }
   }
 }
@@ -449,6 +459,7 @@ fn shrunk_failure(
   input: a,
   source: InputSource,
   run_index: Int,
+  notes: List(String),
 ) -> String {
   let snapshot = coverage.snapshot()
   let #(shrunk, shrinks, capped) =
@@ -467,6 +478,7 @@ fn shrunk_failure(
     shrinks: shrinks,
     capped: capped,
     coverage: snapshot,
+    notes: notes,
   ))
 }
 
@@ -496,7 +508,7 @@ fn forall_failure(
       input_source: failure.source,
       diff_enabled: False,
       annotations: annotate.current_annotations(),
-      footnotes: annotate.current_footnotes(),
+      footnotes: list.append(annotate.current_footnotes(), failure.notes),
       coverage_snapshot: Some(failure.coverage),
     )
   render_for(cfg, report)
@@ -587,7 +599,7 @@ fn morph_failure(
       input_source: failure.source,
       diff_enabled: config.diff_enabled(cfg),
       annotations: annotate.current_annotations(),
-      footnotes: annotate.current_footnotes(),
+      footnotes: list.append(annotate.current_footnotes(), failure.notes),
       coverage_snapshot: Some(failure.coverage),
     )
   render_for(cfg, report)
@@ -741,9 +753,9 @@ fn record_regression_for(
   mr_name: String,
   source: InputSource,
   input: a,
-) -> Nil {
+) -> List(String) {
   case config.regression_file(cfg) {
-    None -> Nil
+    None -> []
     Some(path) -> {
       let edge_index = case source {
         EdgeSource(i) -> Some(i)
@@ -767,17 +779,29 @@ fn record_regression_for(
           note: Some(string.inspect(input)),
           recorded: int.to_string(now_microseconds()),
         )
-      let existing = case simplifile.read(path) {
-        Ok(c) -> c
-        Error(_) -> ""
+      case append_regression_entry(path, regression.render(entry)) {
+        Ok(Nil) -> []
+        Error(error) -> [
+          "could not write the regression file "
+          <> path
+          <> ": "
+          <> string.inspect(error),
+        ]
       }
-      let prefix = case existing {
-        "" -> regression.version_header() <> "\n\n"
-        _ -> existing <> "\n"
-      }
-      let _ = simplifile.write(path, prefix <> regression.render(entry))
-      Nil
     }
+  }
+}
+
+/// Append one rendered entry. A missing or empty file gets the version
+/// header first; an existing file is appended to, not rewritten.
+fn append_regression_entry(
+  path: String,
+  rendered: String,
+) -> Result(Nil, simplifile.FileError) {
+  case simplifile.file_info(path) {
+    Ok(info) if info.size > 0 -> simplifile.append(path, "\n" <> rendered)
+    _ ->
+      simplifile.write(path, regression.version_header() <> "\n\n" <> rendered)
   }
 }
 
