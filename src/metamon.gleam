@@ -114,7 +114,8 @@ pub type Relation(b) {
   Relation(name: String, holds: fn(b, b) -> Bool)
 }
 
-/// A metamorphic relation of a function `f` from `a` to `b`.
+/// A metamorphic relation of a function `f` from `a` to `b`. The name
+/// identifies the morph in failure reports and in the regression file.
 pub type Morph(a, b) {
   /// `f(x)` and `f(transform.apply(x))` satisfy `relation`.
   Morph(name: String, transform: Transform(a), relation: Relation(b))
@@ -135,7 +136,7 @@ pub type Morph(a, b) {
 /// that input and its panic message.
 ///
 /// ```gleam
-/// metamon.forall(generator.int(generator.range(-100, 100)), fn(n) {
+/// metamon.forall(generator.int(generator.range(from: -100, to: 100)), fn(n) {
 ///   assert n + 0 == n
 /// })
 /// ```
@@ -169,10 +170,15 @@ pub fn forall_with(
 /// shrunk and the runner panics with the report of every failing morph.
 ///
 /// ```gleam
+/// let lists =
+///   generator.list_of(
+///     generator.int(generator.range(from: 0, to: 9)),
+///     length: generator.range(from: 0, to: 10),
+///   )
+/// let reverse = metamon.Transform(name: "reverse", apply: list.reverse)
 /// metamon.forall_morph(
-///   generator.list_of(generator.int(generator.range(from: 0, to: 9)),
-///     length: generator.range(from: 0, to: 10)),
-///   [metamon.invariant_under(name: "sum", under: metamon.Transform("reverse", list.reverse))],
+///   lists,
+///   [metamon.invariant_under(name: "sum_under_reverse", under: reverse)],
 ///   int.sum,
 /// )
 /// ```

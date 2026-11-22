@@ -107,7 +107,7 @@ pub fn render(entry: Entry) -> String {
 /// malformed `[[failures]]` blocks are skipped without failing, since
 /// the regression file is also human-edited.
 ///
-/// A version mismatch is **not** lenient: an unknown
+/// A version mismatch is strict: an unknown
 /// `schema_version` (e.g. a file written by a newer metamon) returns
 /// an error and the runner should skip replay. The legacy v0 shape
 /// (no `schema_version` line) is accepted for backward compatibility.

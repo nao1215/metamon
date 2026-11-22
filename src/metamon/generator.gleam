@@ -6,12 +6,13 @@
 //// size grows from 0 on the first run to `Config.max_size` on the last.
 ////
 //// ```gleam
-//// let users =
-////   generator.map2(
-////     generator.string(of: generator.Alphabetic, length: generator.range(from: 1, to: 12)),
-////     generator.int(generator.range(from: 0, to: 120)),
-////     with: User,
+//// let names =
+////   generator.string(
+////     of: generator.Alphabetic,
+////     length: generator.range(from: 1, to: 12),
 ////   )
+//// let ages = generator.int(generator.range(from: 0, to: 120))
+//// let users = generator.map2(names, ages, with: User)
 //// ```
 
 import gleam/bit_array
@@ -92,7 +93,8 @@ pub fn edges_of(generator: Generator(a)) -> List(a) {
 /// values are not included. A `count` below 1 gives `[]`.
 ///
 /// ```gleam
-/// generator.sample(generator.int(generator.range(from: 0, to: 9)), count: 3, seed: 42)
+/// let digits = generator.int(generator.range(from: 0, to: 9))
+/// generator.sample(digits, count: 3, seed: 42)
 /// // -> three integers between 0 and 9
 /// ```
 pub fn sample(
@@ -668,7 +670,10 @@ pub fn character(of characters: Characters) -> Generator(String) {
 /// `Unicode`) when they fit `length`.
 ///
 /// ```gleam
-/// generator.string(of: generator.Alphanumeric, length: generator.range(from: 1, to: 16))
+/// generator.string(
+///   of: generator.Alphanumeric,
+///   length: generator.range(from: 1, to: 16),
+/// )
 /// ```
 pub fn string(
   of characters: Characters,

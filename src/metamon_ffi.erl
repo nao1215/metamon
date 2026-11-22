@@ -63,7 +63,7 @@ identity(X) -> X.
 %% target keeps the genuine non-finite values via `Number.{NaN,
 %% POSITIVE_INFINITY, NEGATIVE_INFINITY}`. Properties that depend on
 %% the genuine non-finite values must run on the JavaScript target;
-%% the README and `float_special` docstring call out this asymmetry.
+%% the `float_special` documentation calls out this asymmetry.
 
 ieee_nan() ->
     %% Largest finite double. On the BEAM, NaN cannot be constructed

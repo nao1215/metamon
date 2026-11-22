@@ -62,7 +62,7 @@ pub type FailureReport {
 }
 
 /// Render a source as `edge(i)` or `random(seed=, size=, max_size=)`.
-pub fn format_source(source: InputSource) -> String {
+fn format_source(source: InputSource) -> String {
   case source {
     EdgeSource(index) -> "edge(" <> int.to_string(index) <> ")"
     RandomSource(seed_value, size, max_size) ->
@@ -81,7 +81,7 @@ pub fn format_source(source: InputSource) -> String {
 /// `seed(n)` whose normalised form differs from `n`), the original
 /// integer is appended in parentheses so the user can map the report
 /// back to source.
-pub fn format_config_seed(state: Int, original: Option(Int)) -> String {
+fn format_config_seed(state: Int, original: Option(Int)) -> String {
   case original {
     None -> int.to_string(state)
     Some(n) ->
@@ -97,7 +97,7 @@ pub fn format_config_seed(state: Int, original: Option(Int)) -> String {
 }
 
 /// Render a failure report as a single-line JSON object. Stable
-/// schema suitable for CI dashboards and LLM-driven analysis. The
+/// schema suitable for CI dashboards and other tools. The
 /// fields mirror the human-readable layout 1:1 so neither output is
 /// the source of truth — the same `FailureReport` produces both.
 pub fn render_json(report: FailureReport) -> String {
