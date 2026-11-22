@@ -19,13 +19,13 @@ import metamon/annotate
 import metamon/config.{type Config}
 import metamon/coverage
 import metamon/generator.{type Generator}
-import metamon/generator/seed.{type Seed} as seed_module
-import metamon/generator/tree.{type Tree}
 import metamon/internal/regression
 import metamon/internal/report.{
   type FailureReport, type InputSource, type MorphMode, EdgeSource, Equivariant,
   FailureReport, Plain, RandomSource,
 } as report_module
+import metamon/internal/seed.{type Seed} as seed_module
+import metamon/internal/tree.{type Tree}
 import metamon/relation.{type Relation}
 import metamon/transform.{type Transform}
 import simplifile
@@ -249,7 +249,7 @@ fn run_random(
     False -> {
       let #(here, rest_seed) = seed_module.split(s)
       let size = scaled_size(start_index, sizes.total, sizes.max)
-      let value = generator.generate_sized(gen, here, size, sizes.max).value
+      let value = generator.generate(gen, here, size, sizes.max).value
       case
         body(
           value,
@@ -551,12 +551,7 @@ fn shrink_input(
     EdgeSource(_) -> #(input, 0, False)
     RandomSource(seed_value, size, max_size) -> {
       let initial_tree =
-        generator.generate_sized(
-          gen,
-          seed_module.seed(seed_value),
-          size,
-          max_size,
-        )
+        generator.generate(gen, seed_module.seed(seed_value), size, max_size)
       shrink_loop(initial_tree, fails, input, config.shrink_limit(cfg), 0)
     }
   }
@@ -721,7 +716,7 @@ fn replay_regression(
 
 fn reproduce_entry_value(gen: Generator(a), entry: regression.Entry) -> a {
   let regenerate = fn() {
-    generator.generate_sized(
+    generator.generate(
       gen,
       seed_module.seed(entry.config_seed),
       entry.size,

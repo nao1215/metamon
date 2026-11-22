@@ -72,7 +72,7 @@ pub fn original_input(s: Seed) -> Option(Int) {
 
 /// Advance the seed once and return the next non-negative integer
 /// alongside the advanced seed.
-pub fn next_int(s: Seed) -> #(Int, Seed) {
+fn next_int(s: Seed) -> #(Int, Seed) {
   let next_state = step(s.state)
   #(next_state, Seed(state: next_state, original_input: None))
 }

@@ -14,7 +14,11 @@
 
 import gleam/list
 import gleeunit/should
-import metamon/generator/shrink
+import metamon/generator
+import metamon/generator/range
+import metamon/internal/seed
+import metamon/internal/shrink
+import metamon/internal/tree
 
 // ---------- int_toward ----------
 
@@ -119,39 +123,60 @@ fn count(items: List(a)) -> Int {
   }
 }
 
-// ---------- list_drops ----------
+// ---------- list shrinks ----------
 
-pub fn list_drops_includes_empty_for_non_empty_input_test() {
-  // The most aggressive drop is the full list — the drop strategy
-  // must include the empty list so the runner can find "the empty
-  // list also fails" counter-examples quickly.
-  let drops = shrink.list_drops([1, 2, 3, 4])
-  should.be_true(list.contains(drops, []))
+/// A generated list of four elements and the values of its direct
+/// shrinks.
+fn list_shrinks() -> #(List(Int), List(List(Int))) {
+  four_elements(0)
 }
 
-pub fn list_drops_for_empty_input_is_empty_test() {
-  // Nothing to drop from an empty list.
-  should.equal(shrink.list_drops([]), [])
+fn four_elements(seed_value: Int) -> #(List(Int), List(List(Int))) {
+  let g =
+    generator.list_of(generator.int(range.constant(1, 9)), range.constant(0, 4))
+  let t = generator.generate(g, seed.seed(seed_value), 99, 99)
+  case count(t.value) == 4 {
+    False -> four_elements(seed_value + 1)
+    True -> #(
+      t.value,
+      list.map(to_list(t.shrinks), fn(child: tree.Tree(List(Int))) {
+        child.value
+      }),
+    )
+  }
 }
 
-pub fn list_drops_includes_short_alternatives_test() {
-  // A four-element list should suggest at least one shorter list of
-  // length ≥ 1 (i.e. not just the full drop).
-  let drops = shrink.list_drops([1, 2, 3, 4])
+fn to_list(stream: tree.Shrinks(a)) -> List(a) {
+  case stream.step() {
+    tree.Done -> []
+    tree.More(head, tail) -> [head, ..to_list(tail)]
+  }
+}
+
+pub fn list_shrinks_start_with_the_empty_list_test() {
+  // The most aggressive drop is the full list, so the runner finds
+  // "the empty list also fails" counter-examples in one step.
+  let #(_, shrinks) = list_shrinks()
+  should.equal(list.first(shrinks), Ok([]))
+}
+
+pub fn list_shrinks_include_shorter_lists_test() {
+  let #(_, shrinks) = list_shrinks()
   let has_shorter =
-    list.any(drops, fn(d) {
+    list.any(shrinks, fn(d) {
       let len = count(d)
       len > 0 && len < 4
     })
   should.be_true(has_shorter)
 }
 
-pub fn list_drops_produces_only_sub_lists_of_input_test() {
-  // Every candidate must consist of elements from the original list,
-  // in original relative order.
-  let original = [1, 2, 3, 4, 5]
-  let drops = shrink.list_drops(original)
-  list.each(drops, fn(candidate) {
+pub fn list_drops_are_in_order_sub_lists_of_the_input_test() {
+  // Every dropping candidate consists of elements of the original list,
+  // in their original relative order.
+  let #(original, shrinks) = list_shrinks()
+  shrinks
+  |> list.filter(fn(candidate) { count(candidate) < 4 })
+  |> list.each(fn(candidate) {
     should.be_true(is_in_order_subsequence(candidate, original))
   })
 }

@@ -16,12 +16,12 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/set.{type Set}
 import gleam/string
-import metamon/generator/edges as edge_lib
 import metamon/generator/range.{type Range}
-import metamon/generator/seed.{type Seed} as seed_module
-import metamon/generator/shrink as shrink_lib
-import metamon/generator/tree.{type Tree, Tree}
+import metamon/internal/edges as edge_lib
 import metamon/internal/float_special
+import metamon/internal/seed.{type Seed} as seed_module
+import metamon/internal/shrink as shrink_lib
+import metamon/internal/tree.{type Tree, Tree}
 
 const default_max_edges: Int = 16
 
@@ -39,24 +39,15 @@ pub opaque type Generator(a) {
 
 // ---------- public access ----------
 
-/// Run the generator at the given seed and size. Used by the runner;
-/// most user code should not call this directly.
-pub fn generate(g: Generator(a), s: Seed, size: Int) -> Tree(a) {
-  g.run(s, size, default_max_size)
-}
-
-/// Run the generator with the runner's configured `max_size`.
+/// Run the generator at the given seed, size and largest size. Used by
+/// the runner.
 @internal
-pub fn generate_sized(
-  g: Generator(a),
-  s: Seed,
-  size: Int,
-  max_size: Int,
-) -> Tree(a) {
+pub fn generate(g: Generator(a), s: Seed, size: Int, max_size: Int) -> Tree(a) {
   g.run(s, size, max_size)
 }
 
-/// Inspect the must-try edge values associated with a generator.
+/// The must-try edge values of a generator. Used by the runner.
+@internal
 pub fn edges_of(g: Generator(a)) -> List(a) {
   g.edges
 }
@@ -901,7 +892,7 @@ fn codepoint_int_to_string(codepoint: Int) -> String
 // ---------- collections ----------
 
 /// A list of values whose length is drawn from `len`. Shrinking removes
-/// elements via `shrink/list_drops` and shrinks each remaining element.
+/// elements and shrinks each remaining element.
 pub fn list_of(element: Generator(a), len: Range) -> Generator(List(a)) {
   list_at_least(element, len, 0)
 }
@@ -986,9 +977,9 @@ fn list_tree(trees: List(Tree(a)), min_length: Int) -> Tree(List(a)) {
   )
 }
 
-/// `(start, count)` windows to drop, in the order `shrink.list_drops`
-/// tries them: the whole list, then halves, quarters and so on, each
-/// size from the end of the list towards the start.
+/// `(start, count)` windows to drop, in the order they are tried: the
+/// whole list, then halves, quarters and so on, each size from the end
+/// of the list towards the start.
 fn drop_windows(length: Int, min_length: Int) -> List(#(Int, Int)) {
   drop_windows_loop(length, length, length - min_length, [])
   |> list.reverse

@@ -5,7 +5,7 @@
 
 import gleam/int
 import gleam/option.{type Option, None, Some}
-import metamon/generator/seed.{type Seed} as seed_module
+import metamon/internal/seed.{type Seed} as seed_module
 
 /// Errors returned by `with_*` builders for invalid inputs.
 pub type ConfigError {

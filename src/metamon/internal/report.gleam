@@ -10,7 +10,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import metamon/coverage
-import metamon/diff
+import metamon/internal/diff
 
 /// Identifies the source of a failing input.
 pub type InputSource {

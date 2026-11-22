@@ -25,9 +25,6 @@ pub type Diff {
 
   /// Element-wise diff for tuples.
   TupleDiff(items: List(IndexedDiff))
-
-  /// Multi-line diff for strings (line-by-line LCS).
-  StringDiff(left: String, right: String, segments: List(Segment))
 }
 
 /// A list element together with its position.
@@ -35,27 +32,9 @@ pub type IndexedDiff {
   IndexedDiff(index: Int, diff: Diff)
 }
 
-/// One section of a multi-line string diff.
-pub type Segment {
-  Common(text: String)
-  Removed(text: String)
-  Added(text: String)
-}
-
-/// Compute a structural diff between two values. Equal inputs collapse
-/// to `Same`; otherwise the result depends on whether
-/// `string.inspect` exposes list-shaped or string-shaped output.
-pub fn diff(left: a, right: a) -> Diff {
-  case left == right {
-    True -> Same(rendered: string.inspect(left))
-    False -> diff_inspected(string.inspect(left), string.inspect(right))
-  }
-}
-
-/// `diff` for two values already rendered with `string.inspect`. The
-/// failure report keeps only the rendered outputs, so it diffs them with
-/// this rather than inspecting the strings a second time.
-@internal
+/// Diff two values already rendered with `string.inspect`. Equal
+/// renderings collapse to `Same`; lists and tuples are compared element
+/// by element; anything else becomes a single `Differ`.
 pub fn diff_inspected(left: String, right: String) -> Diff {
   case left == right {
     True -> Same(rendered: left)
@@ -214,22 +193,6 @@ fn finish_split(acc: List(String), results: List(String)) -> List(String) {
   }
 }
 
-/// Multi-line string diff using a longest-common-subsequence (LCS) on
-/// lines. Lines unique to the left side are shown as `Removed`, lines
-/// unique to the right are shown as `Added`, lines present in both
-/// are shown as `Common`.
-pub fn diff_string(left: String, right: String) -> Diff {
-  case left == right {
-    True -> Same(rendered: left)
-    False -> {
-      let l_lines = string.split(left, "\n")
-      let r_lines = string.split(right, "\n")
-      let segments = line_diff(l_lines, r_lines)
-      StringDiff(left: left, right: right, segments: segments)
-    }
-  }
-}
-
 /// Render a `Diff` as a human-readable multi-line string.
 pub fn render(d: Diff) -> String {
   render_with_indent(d, "")
@@ -242,7 +205,6 @@ fn render_with_indent(d: Diff, indent: String) -> String {
       indent <> "- " <> left <> "\n" <> indent <> "+ " <> right
     ListDiff(items) -> render_list_diff(items, indent, "[#")
     TupleDiff(items) -> render_list_diff(items, indent, "#.")
-    StringDiff(_, _, segments) -> render_string_diff(segments, indent)
   }
 }
 
@@ -265,36 +227,6 @@ fn render_list_diff(
   })
   |> string.join("\n")
 }
-
-fn render_string_diff(segments: List(Segment), indent: String) -> String {
-  list.map(segments, fn(segment) {
-    case segment {
-      Common(text) -> indent <> "  " <> text
-      Removed(text) -> indent <> "- " <> text
-      Added(text) -> indent <> "+ " <> text
-    }
-  })
-  |> string.join("\n")
-}
-
 // Walk both sides in lockstep: equal lines are `Common`, and where they
 // diverge the left line is `Removed` and the right line `Added`. This is
 // enough for short, mostly aligned outputs.
-fn line_diff(left: List(String), right: List(String)) -> List(Segment) {
-  line_diff_loop(left, right, [])
-}
-
-fn line_diff_loop(
-  left: List(String),
-  right: List(String),
-  acc: List(Segment),
-) -> List(Segment) {
-  case left, right {
-    [], [] -> list.reverse(acc)
-    [], [r, ..rs] -> line_diff_loop([], rs, [Added(r), ..acc])
-    [l, ..ls], [] -> line_diff_loop(ls, [], [Removed(l), ..acc])
-    [l, ..ls], [r, ..rs] if l == r -> line_diff_loop(ls, rs, [Common(l), ..acc])
-    [l, ..ls], [r, ..rs] ->
-      line_diff_loop(ls, rs, [Added(r), Removed(l), ..acc])
-  }
-}

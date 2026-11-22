@@ -12,7 +12,7 @@
 import gleeunit/should
 import metamon/generator
 import metamon/generator/range
-import metamon/generator/seed
+import metamon/internal/seed
 
 // ---------- functor laws ----------
 
@@ -22,8 +22,8 @@ pub fn map_identity_law_test() {
   let mapped = generator.map(g, fn(x) { x })
   let s = seed.seed(7)
   should.equal(
-    generator.generate(g, s, 50).value,
-    generator.generate(mapped, s, 50).value,
+    generator.generate(g, s, 50, 99).value,
+    generator.generate(mapped, s, 50, 99).value,
   )
 }
 
@@ -36,8 +36,8 @@ pub fn map_composition_law_test() {
   let rhs = generator.map(g, fn(x) { h(f(x)) })
   let s = seed.seed(13)
   should.equal(
-    generator.generate(lhs, s, 50).value,
-    generator.generate(rhs, s, 50).value,
+    generator.generate(lhs, s, 50, 99).value,
+    generator.generate(rhs, s, 50, 99).value,
   )
 }
 
@@ -50,8 +50,8 @@ pub fn map2_with_pair_constructor_equals_tuple2_test() {
   let by_tuple = generator.tuple2(g1, g2)
   let s = seed.seed(41)
   should.equal(
-    generator.generate(by_map2, s, 99).value,
-    generator.generate(by_tuple, s, 99).value,
+    generator.generate(by_map2, s, 99, 99).value,
+    generator.generate(by_tuple, s, 99, 99).value,
   )
 }
 
@@ -64,8 +64,8 @@ pub fn bind_left_identity_for_pure_test() {
     generator.bind(generator.return(7), fn(x) { generator.return(x + 1) })
   let rhs = generator.return(8)
   should.equal(
-    generator.generate(lhs, s, 0).value,
-    generator.generate(rhs, s, 0).value,
+    generator.generate(lhs, s, 0, 99).value,
+    generator.generate(rhs, s, 0, 99).value,
   )
 }
 
@@ -81,8 +81,8 @@ pub fn same_seed_yields_same_value_test() {
     )
   let s = seed.seed(2026)
   should.equal(
-    generator.generate(g, s, 50).value,
-    generator.generate(g, s, 50).value,
+    generator.generate(g, s, 50, 99).value,
+    generator.generate(g, s, 50, 99).value,
   )
 }
 
@@ -96,7 +96,7 @@ pub fn map3_distributes_over_tuple3_test() {
   let by_tuple = generator.tuple3(g1, g2, g3)
   let s = seed.seed(7)
   should.equal(
-    generator.generate(by_map3, s, 99).value,
-    generator.generate(by_tuple, s, 99).value,
+    generator.generate(by_map3, s, 99, 99).value,
+    generator.generate(by_tuple, s, 99, 99).value,
   )
 }

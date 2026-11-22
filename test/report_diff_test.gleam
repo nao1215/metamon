@@ -5,9 +5,9 @@ import gleam/int
 import gleam/list
 import gleam/string
 import metamon
-import metamon/diff.{Differ, IndexedDiff, ListDiff, Same, TupleDiff}
 import metamon/generator
 import metamon/generator/range
+import metamon/internal/diff.{Differ, IndexedDiff, ListDiff, Same, TupleDiff}
 import metamon/relation
 import metamon/transform
 
@@ -64,12 +64,12 @@ pub fn report_diff_escapes_strings_once_test() {
 }
 
 pub fn string_elements_with_separators_stay_whole_test() {
-  assert diff.diff(["a,b", "]"], ["a,c", "]"])
+  assert inspected(["a,b", "]"], ["a,c", "]"])
     == ListDiff([
       IndexedDiff(0, Differ("\"a,b\"", "\"a,c\"")),
       IndexedDiff(1, Same("\"]\"")),
     ])
-  assert diff.diff(#("(", "\"x,"), #("(", "\"y,"))
+  assert inspected(#("(", "\"x,"), #("(", "\"y,"))
     == TupleDiff([
       IndexedDiff(0, Same("\"(\"")),
       IndexedDiff(1, Differ("\"\\\"x,\"", "\"\\\"y,\"")),
@@ -90,7 +90,7 @@ pub fn list_diff_has_one_item_per_element_test() {
     ),
     fn(pair) {
       let #(left, right) = pair
-      case left == right, diff.diff(left, right) {
+      case left == right, inspected(left, right) {
         True, Same(_) -> True
         False, ListDiff(items) ->
           list.length(items) == int.max(list.length(left), list.length(right))
@@ -102,9 +102,13 @@ pub fn list_diff_has_one_item_per_element_test() {
 
 pub fn bit_array_elements_stay_whole_test() {
   // Bytes that are not UTF-8, so both targets render `<<...>>`.
-  assert diff.diff([<<255, 2>>, <<200>>], [<<255, 2>>, <<201>>])
+  assert inspected([<<255, 2>>, <<200>>], [<<255, 2>>, <<201>>])
     == ListDiff([
       IndexedDiff(0, Same("<<255, 2>>")),
       IndexedDiff(1, Differ("<<200>>", "<<201>>")),
     ])
+}
+
+fn inspected(left: a, right: a) -> diff.Diff {
+  diff.diff_inspected(string.inspect(left), string.inspect(right))
 }

@@ -9,13 +9,13 @@
 //// Configuration lives in `metamon/config`; generators in
 //// `metamon/generator`; transforms in `metamon/transform`; relations
 //// in `metamon/relation`; per-property context in `metamon/annotate`
-//// and `metamon/coverage`; structural diff in `metamon/diff`.
+//// and `metamon/coverage`.
 
 import gleam/list
 import metamon/config
 import metamon/generator.{type Generator}
-import metamon/generator/seed as seed_module
 import metamon/internal/runner.{type MorphSpec}
+import metamon/internal/seed as seed_module
 import metamon/relation.{type Relation}
 import metamon/transform.{type Transform}
 

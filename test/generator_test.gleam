@@ -8,18 +8,18 @@ import gleeunit/should
 import metamon
 import metamon/generator
 import metamon/generator/range
-import metamon/generator/seed
+import metamon/internal/seed
 import test_helpers
 
 pub fn return_is_constant_test() {
   let g = generator.return(42)
-  let t = generator.generate(g, seed.seed(0), 10)
+  let t = generator.generate(g, seed.seed(0), 10, 99)
   should.equal(t.value, 42)
 }
 
 pub fn map_transforms_value_and_edges_test() {
   let g = generator.return(5) |> generator.map(fn(n) { n * 2 })
-  should.equal(generator.generate(g, seed.seed(0), 10).value, 10)
+  should.equal(generator.generate(g, seed.seed(0), 10, 99).value, 10)
   should.equal(generator.edges_of(g), [10])
 }
 
@@ -27,7 +27,7 @@ pub fn int_respects_range_bounds_test() {
   let g = generator.int(range.constant(10, 20))
   test_helpers.integers_from(0, 30)
   |> list.each(fn(i) {
-    let value = generator.generate(g, seed.seed(i), 50).value
+    let value = generator.generate(g, seed.seed(i), 50, 99).value
     should.be_true(value >= 10 && value <= 20)
   })
 }
@@ -47,7 +47,7 @@ pub fn map2_combines_independent_generators_test() {
       generator.int(range.constant(100, 199)),
       fn(a, b) { #(a, b) },
     )
-  let t = generator.generate(g, seed.seed(7), 99)
+  let t = generator.generate(g, seed.seed(7), 99, 99)
   should.be_true(t.value.0 >= 0 && t.value.0 <= 9)
   should.be_true(t.value.1 >= 100 && t.value.1 <= 199)
 }
@@ -59,7 +59,7 @@ pub fn tuple3_propagates_to_three_components_test() {
       generator.return("two"),
       generator.return(3.0),
     )
-  let t = generator.generate(g, seed.seed(0), 0)
+  let t = generator.generate(g, seed.seed(0), 0, 99)
   should.equal(t.value, #(1, "two", 3.0))
 }
 
@@ -67,7 +67,7 @@ pub fn one_of_picks_a_branch_test() {
   let g = generator.one_of([generator.return("a"), generator.return("b")])
   let observed =
     test_helpers.integers_from(0, 30)
-    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 0).value })
+    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 0, 99).value })
   should.be_true(list.contains(observed, "a"))
   should.be_true(list.contains(observed, "b"))
 }
@@ -76,7 +76,7 @@ pub fn element_of_picks_a_value_test() {
   let g = generator.element_of(["red", "green", "blue"])
   let observed =
     test_helpers.integers_from(0, 90)
-    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 0).value })
+    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 0, 99).value })
   should.be_true(list.contains(observed, "red"))
   should.be_true(list.contains(observed, "green"))
   should.be_true(list.contains(observed, "blue"))
@@ -86,7 +86,7 @@ pub fn element_of_only_yields_listed_values_test() {
   let g = generator.element_of([1, 2, 3])
   test_helpers.integers_from(0, 50)
   |> list.each(fn(i) {
-    let v = generator.generate(g, seed.seed(i), 0).value
+    let v = generator.generate(g, seed.seed(i), 0, 99).value
     should.be_true(v == 1 || v == 2 || v == 3)
   })
 }
@@ -95,7 +95,7 @@ pub fn element_of_singleton_is_constant_test() {
   let g = generator.element_of(["only"])
   test_helpers.integers_from(0, 10)
   |> list.each(fn(i) {
-    should.equal(generator.generate(g, seed.seed(i), 0).value, "only")
+    should.equal(generator.generate(g, seed.seed(i), 0, 99).value, "only")
   })
 }
 
@@ -116,7 +116,7 @@ pub fn frequency_respects_weights_test() {
     ])
   let observations =
     test_helpers.integers_from(0, 200)
-    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 0).value })
+    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 0, 99).value })
   let hot_count = list.filter(observations, fn(v) { v == "hot" }) |> list.length
   // Loose bound — random fluctuation, but heavily weighted should win.
   should.be_true(hot_count > 150)
@@ -211,7 +211,7 @@ pub fn map7_combines_seven_generators_test() {
       generator.return(7),
       fn(a, b, c, d, e, f, g) { a + b + c + d + e + f + g },
     )
-  should.equal(generator.generate(g, seed.seed(0), 10).value, 28)
+  should.equal(generator.generate(g, seed.seed(0), 10, 99).value, 28)
 }
 
 pub fn map8_combines_eight_generators_test() {
@@ -227,7 +227,7 @@ pub fn map8_combines_eight_generators_test() {
       generator.return(8),
       fn(a, b, c, d, e, f, g, h) { a + b + c + d + e + f + g + h },
     )
-  should.equal(generator.generate(g, seed.seed(0), 10).value, 36)
+  should.equal(generator.generate(g, seed.seed(0), 10, 99).value, 36)
 }
 
 pub fn tuple6_packs_six_components_test() {
@@ -240,7 +240,7 @@ pub fn tuple6_packs_six_components_test() {
       generator.return(5),
       generator.return(6),
     )
-  should.equal(generator.generate(g, seed.seed(0), 10).value, #(
+  should.equal(generator.generate(g, seed.seed(0), 10, 99).value, #(
     1,
     2,
     3,
@@ -261,7 +261,7 @@ pub fn tuple7_packs_seven_components_test() {
       generator.return(6),
       generator.return(7),
     )
-  should.equal(generator.generate(g, seed.seed(0), 10).value, #(
+  should.equal(generator.generate(g, seed.seed(0), 10, 99).value, #(
     1,
     2,
     3,
@@ -284,7 +284,7 @@ pub fn tuple8_packs_eight_components_test() {
       generator.return(7),
       generator.return(8),
     )
-  should.equal(generator.generate(g, seed.seed(0), 10).value, #(
+  should.equal(generator.generate(g, seed.seed(0), 10, 99).value, #(
     1,
     2,
     3,
@@ -313,7 +313,7 @@ pub fn map7_uses_random_components_test() {
     )
   test_helpers.integers_from(0, 30)
   |> list.each(fn(i) {
-    let value = generator.generate(g, seed.seed(i), 50).value
+    let value = generator.generate(g, seed.seed(i), 50, 99).value
     should.be_true(value.0 >= 0 && value.0 <= 9)
     should.be_true(value.6 >= 0 && value.6 <= 9)
   })
@@ -324,7 +324,7 @@ pub fn list_of_within_length_bounds_test() {
     generator.list_of(generator.int(range.constant(0, 9)), range.constant(2, 5))
   test_helpers.integers_from(0, 20)
   |> list.each(fn(i) {
-    let items = generator.generate(g, seed.seed(i), 99).value
+    let items = generator.generate(g, seed.seed(i), 99, 99).value
     let len = list.length(items)
     should.be_true(len >= 2 && len <= 5)
   })
@@ -342,14 +342,14 @@ pub fn dict_of_produces_dict_test() {
       generator.return("v"),
       range.constant(2, 4),
     )
-  let value = generator.generate(g, seed.seed(0), 99).value
+  let value = generator.generate(g, seed.seed(0), 99, 99).value
   should.be_true(dict.size(value) >= 1)
 }
 
 pub fn set_of_is_unique_test() {
   let g =
     generator.set_of(generator.int(range.constant(0, 9)), range.constant(3, 6))
-  let value = generator.generate(g, seed.seed(0), 99).value
+  let value = generator.generate(g, seed.seed(0), 99, 99).value
   // size <= length(input list)
   should.be_true(set.size(value) <= 6)
 }
@@ -400,8 +400,8 @@ pub fn filter_drops_failing_edges_test() {
 
 pub fn sized_observes_size_test() {
   let g = generator.sized(fn(size) { generator.return(size) })
-  let value_at_5 = generator.generate(g, seed.seed(0), 5).value
-  let value_at_50 = generator.generate(g, seed.seed(0), 50).value
+  let value_at_5 = generator.generate(g, seed.seed(0), 5, 99).value
+  let value_at_50 = generator.generate(g, seed.seed(0), 50, 99).value
   should.equal(value_at_5, 5)
   should.equal(value_at_50, 50)
 }
@@ -410,14 +410,14 @@ pub fn resize_overrides_size_test() {
   let g =
     generator.sized(fn(size) { generator.return(size) })
     |> generator.resize(7)
-  should.equal(generator.generate(g, seed.seed(0), 99).value, 7)
+  should.equal(generator.generate(g, seed.seed(0), 99, 99).value, 7)
 }
 
 pub fn ascii_lower_only_lowercase_test() {
   let g = generator.ascii_lower()
   test_helpers.integers_from(0, 30)
   |> list.each(fn(i) {
-    let value = generator.generate(g, seed.seed(i), 99).value
+    let value = generator.generate(g, seed.seed(i), 99, 99).value
     let codepoints = string.to_utf_codepoints(value)
     let assert [single] = codepoints
     let cp = string.utf_codepoint_to_int(single)
@@ -429,7 +429,7 @@ pub fn string_ascii_within_length_bounds_test() {
   let g = generator.string_ascii(range.constant(3, 5))
   test_helpers.integers_from(0, 30)
   |> list.each(fn(i) {
-    let value = generator.generate(g, seed.seed(i), 99).value
+    let value = generator.generate(g, seed.seed(i), 99, 99).value
     let len = string.length(value)
     should.be_true(len >= 3 && len <= 5)
   })
@@ -443,7 +443,7 @@ pub fn string_ascii_codepoints_within_full_ascii_range_test() {
   // leakage past ASCII.
   test_helpers.integers_from(0, 60)
   |> list.each(fn(i) {
-    let value = generator.generate(g, seed.seed(i), 99).value
+    let value = generator.generate(g, seed.seed(i), 99, 99).value
     string.to_utf_codepoints(value)
     |> list.each(fn(cp) {
       let n = string.utf_codepoint_to_int(cp)
@@ -461,7 +461,7 @@ pub fn string_ascii_random_sampling_includes_control_bytes_test() {
   let g = generator.string_ascii(range.constant(1, 8))
   let samples =
     test_helpers.integers_from(0, 200)
-    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 50).value })
+    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 50, 99).value })
   let any_control =
     list.any(samples, fn(value) {
       string.to_utf_codepoints(value)
@@ -477,7 +477,7 @@ pub fn string_alpha_only_letters_test() {
   let g = generator.string_alpha(range.constant(1, 6))
   test_helpers.integers_from(0, 30)
   |> list.each(fn(i) {
-    let value = generator.generate(g, seed.seed(i), 50).value
+    let value = generator.generate(g, seed.seed(i), 50, 99).value
     string.to_utf_codepoints(value)
     |> list.each(fn(cp) {
       let n = string.utf_codepoint_to_int(cp)
@@ -490,7 +490,7 @@ pub fn string_alphanumeric_only_letters_or_digits_test() {
   let g = generator.string_alphanumeric(range.constant(1, 6))
   test_helpers.integers_from(0, 30)
   |> list.each(fn(i) {
-    let value = generator.generate(g, seed.seed(i), 50).value
+    let value = generator.generate(g, seed.seed(i), 50, 99).value
     string.to_utf_codepoints(value)
     |> list.each(fn(cp) {
       let n = string.utf_codepoint_to_int(cp)
@@ -507,7 +507,7 @@ pub fn string_digit_only_digits_test() {
   let g = generator.string_digit(range.constant(1, 6))
   test_helpers.integers_from(0, 30)
   |> list.each(fn(i) {
-    let value = generator.generate(g, seed.seed(i), 50).value
+    let value = generator.generate(g, seed.seed(i), 50, 99).value
     string.to_utf_codepoints(value)
     |> list.each(fn(cp) {
       let n = string.utf_codepoint_to_int(cp)
@@ -520,7 +520,7 @@ pub fn string_printable_ascii_only_printable_test() {
   let g = generator.string_printable_ascii(range.constant(1, 6))
   test_helpers.integers_from(0, 30)
   |> list.each(fn(i) {
-    let value = generator.generate(g, seed.seed(i), 50).value
+    let value = generator.generate(g, seed.seed(i), 50, 99).value
     string.to_utf_codepoints(value)
     |> list.each(fn(cp) {
       let n = string.utf_codepoint_to_int(cp)
@@ -533,7 +533,7 @@ pub fn bit_array_printable_only_printable_bytes_test() {
   let g = generator.bit_array_printable(range.constant(1, 8))
   test_helpers.integers_from(0, 30)
   |> list.each(fn(i) {
-    let value = generator.generate(g, seed.seed(i), 50).value
+    let value = generator.generate(g, seed.seed(i), 50, 99).value
     each_byte_in_bit_array(value, fn(b) { should.be_true(b >= 32 && b <= 126) })
   })
 }
@@ -542,7 +542,7 @@ pub fn bit_array_utf8_decodes_back_to_string_test() {
   let g = generator.bit_array_utf8(range.constant(0, 6))
   test_helpers.integers_from(0, 30)
   |> list.each(fn(i) {
-    let value = generator.generate(g, seed.seed(i), 50).value
+    let value = generator.generate(g, seed.seed(i), 50, 99).value
     case bit_array.to_string(value) {
       Ok(_) -> Nil
       Error(_) -> should.fail()
@@ -555,7 +555,7 @@ pub fn bit_array_unaligned_total_bits_within_range_test() {
   let g = generator.bit_array_unaligned(range.constant(0, 13))
   test_helpers.integers_from(0, 30)
   |> list.each(fn(i) {
-    let value = generator.generate(g, seed.seed(i), 50).value
+    let value = generator.generate(g, seed.seed(i), 50, 99).value
     let bits = bit_array.bit_size(value)
     should.be_true(bits >= 0 && bits <= 13)
   })
@@ -569,7 +569,7 @@ pub fn bit_array_unaligned_can_produce_sub_byte_lengths_test() {
   let g = generator.bit_array_unaligned(range.constant(1, 23))
   let any_unaligned =
     test_helpers.integers_from(0, 60)
-    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 50).value })
+    |> list.map(fn(i) { generator.generate(g, seed.seed(i), 50, 99).value })
     |> list.any(fn(value) { bit_array.bit_size(value) % 8 != 0 })
   should.be_true(any_unaligned)
 }
