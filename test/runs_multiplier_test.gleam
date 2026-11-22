@@ -52,8 +52,8 @@ fn list_each(items: List(a), f: fn(a) -> Nil) -> Nil {
   }
 }
 
-@external(erlang, "metamon_ffi", "capture_panic")
-@external(javascript, "./metamon_ffi.mjs", "capture_panic")
+@external(erlang, "metamon_test_ffi", "capture_panic")
+@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
 fn capture_panic(thunk: fn() -> a) -> #(Bool, String)
 
 @external(erlang, "metamon_env_test_ffi", "set_env")

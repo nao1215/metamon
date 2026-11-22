@@ -10,8 +10,8 @@ import simplifile
 
 const tmp_path: String = "/tmp/metamon_coverage_denominator_test.toml"
 
-@external(erlang, "metamon_ffi", "capture_panic")
-@external(javascript, "./metamon_ffi.mjs", "capture_panic")
+@external(erlang, "metamon_test_ffi", "capture_panic")
+@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
 fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
 
 pub fn two_covers_per_run_count_each_run_once_test() {

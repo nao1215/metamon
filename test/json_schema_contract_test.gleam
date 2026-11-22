@@ -37,8 +37,8 @@ import metamon/transform
 
 // ---------- panic capture ----------
 
-@external(erlang, "metamon_ffi", "capture_panic")
-@external(javascript, "./metamon_ffi.mjs", "capture_panic")
+@external(erlang, "metamon_test_ffi", "capture_panic")
+@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
 fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
 
 fn json_from_failure(thunk: fn() -> Nil) -> String {

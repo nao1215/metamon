@@ -10,8 +10,8 @@ import metamon/generator
 import metamon/generator/range
 import test_helpers
 
-@external(erlang, "metamon_ffi", "capture_panic")
-@external(javascript, "./metamon_ffi.mjs", "capture_panic")
+@external(erlang, "metamon_test_ffi", "capture_panic")
+@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
 fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
 
 fn failure_text(thunk: fn() -> Nil) -> String {

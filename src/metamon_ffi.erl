@@ -7,7 +7,6 @@
     state_get/1,
     state_erase/1,
     identity/1,
-    capture_panic/1,
     ieee_nan/0,
     ieee_positive_infinity/0,
     ieee_negative_infinity/0,
@@ -45,30 +44,6 @@ state_erase(Key) ->
 %% smallest possible escape hatch from the dynamic decoder dance and is
 %% used only on the FFI seam.
 identity(X) -> X.
-
-%% Run a thunk and report `{Panicked, Message}` to the caller. Used
-%% by tests that exercise the failure path of `metamon.forall` and
-%% `metamon.forall_morph` without aborting the test process.
-capture_panic(Thunk) ->
-    try Thunk() of
-        _ -> {false, <<"">>}
-    catch
-        error:#{gleam_error := panic, message := Message} ->
-            Bin = case is_binary(Message) of
-                true -> Message;
-                false -> unicode:characters_to_binary(io_lib:format("~p", [Message]))
-            end,
-            {true, Bin};
-        error:Reason ->
-            Bin = unicode:characters_to_binary(io_lib:format("~p", [Reason])),
-            {true, Bin};
-        throw:Thrown ->
-            Bin = unicode:characters_to_binary(io_lib:format("~p", [Thrown])),
-            {true, Bin};
-        exit:Exit ->
-            Bin = unicode:characters_to_binary(io_lib:format("~p", [Exit])),
-            {true, Bin}
-    end.
 
 %% IEEE 754 special-value constructors used by `generator.float_special`.
 %%
