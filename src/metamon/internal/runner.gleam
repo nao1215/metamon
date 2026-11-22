@@ -300,7 +300,7 @@ fn iterate_inputs(
   gen: Generator(a),
   body: fn(a, InputSource, Int) -> Step,
 ) -> Outcome {
-  let edges = generator.edges_of(gen) |> take_first(config.max_edges(cfg))
+  let edges = generator.edges_of(gen) |> list.take(config.max_edges(cfg))
   let edge_count = list.length(edges)
   let run_total = total_runs(cfg)
   case run_edges(edges, 0, body) {
@@ -720,14 +720,6 @@ fn panic_with(message: String) -> Nil {
   panic as message
 }
 
-fn take_first(items: List(a), n: Int) -> List(a) {
-  case n, items {
-    n, _ if n <= 0 -> []
-    _, [] -> []
-    n, [first, ..rest] -> [first, ..take_first(rest, n - 1)]
-  }
-}
-
 // ---------- regression file ----------
 
 fn load_regression_for(cfg: Config, mr_name: String) -> List(regression.Entry) {
@@ -837,9 +829,9 @@ fn reproduce_entry_value(
   case entry.edge_index {
     Some(i) -> {
       // Edge replay: pick the i-th edge of the generator.
-      case list_at(generator.edges_of(gen), i) {
-        Some(value) -> value
-        None ->
+      case list.drop(generator.edges_of(gen), i) {
+        [value, ..] -> value
+        [] ->
           // Edge index drifted; fall back to generating with the
           // recorded seed so the runner still produces a value.
           regenerate()
@@ -848,14 +840,6 @@ fn reproduce_entry_value(
     None ->
       // Random replay: same seed + size produces the same value.
       regenerate()
-  }
-}
-
-fn list_at(items: List(a), index: Int) -> Option(a) {
-  case items, index {
-    [], _ -> None
-    [first, ..], 0 -> Some(first)
-    [_, ..rest], i -> list_at(rest, i - 1)
   }
 }
 

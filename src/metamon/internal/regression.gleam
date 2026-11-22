@@ -173,12 +173,12 @@ fn parse_block(raw: String) -> Result(Entry, Nil) {
 
 fn parse_block_body(pairs: List(#(String, String))) -> Result(Entry, Nil) {
   case
-    lookup(pairs, "mr"),
-    lookup(pairs, "config_seed"),
-    lookup(pairs, "run_index"),
-    lookup(pairs, "size"),
-    lookup(pairs, "edge_index"),
-    lookup(pairs, "recorded")
+    list.key_find(pairs, "mr"),
+    list.key_find(pairs, "config_seed"),
+    list.key_find(pairs, "run_index"),
+    list.key_find(pairs, "size"),
+    list.key_find(pairs, "edge_index"),
+    list.key_find(pairs, "recorded")
   {
     Ok(mr), Ok(seed_str), Ok(run_str), Ok(size_str), Ok(edge_str), Ok(rec) ->
       build_entry(pairs, mr, seed_str, run_str, size_str, edge_str, rec)
@@ -216,7 +216,7 @@ fn build_entry(
 }
 
 fn lookup_note(pairs: List(#(String, String))) -> Option(String) {
-  case lookup(pairs, "note") {
+  case list.key_find(pairs, "note") {
     Ok(text) -> Some(strip_quotes(text))
     Error(_) -> None
   }
@@ -231,17 +231,6 @@ fn parse_pair(line: String) -> Result(#(String, String), Nil) {
   case string.split_once(line, "=") {
     Ok(#(left, right)) -> Ok(#(string.trim(left), string.trim(right)))
     Error(_) -> Error(Nil)
-  }
-}
-
-fn lookup(pairs: List(#(String, String)), key: String) -> Result(String, Nil) {
-  case pairs {
-    [] -> Error(Nil)
-    [#(k, v), ..rest] ->
-      case k == key {
-        True -> Ok(v)
-        False -> lookup(rest, key)
-      }
   }
 }
 

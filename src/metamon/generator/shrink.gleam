@@ -19,7 +19,7 @@ pub fn int_toward(origin: Int, value: Int) -> List(Int) {
       let diff = value - origin
       compute_halves(diff)
       |> list.map(fn(h) { value - h })
-      |> dedupe_keeping_first()
+      |> list.unique
     }
   }
 }
@@ -31,32 +31,6 @@ fn compute_halves(n: Int) -> List(Int) {
   }
 }
 
-fn reverse(items: List(a)) -> List(a) {
-  reverse_into(items, [])
-}
-
-fn reverse_into(items: List(a), acc: List(a)) -> List(a) {
-  case items {
-    [] -> acc
-    [first, ..rest] -> reverse_into(rest, [first, ..acc])
-  }
-}
-
-fn dedupe_keeping_first(items: List(Int)) -> List(Int) {
-  dedupe_loop(items, [], [])
-}
-
-fn dedupe_loop(items: List(Int), seen: List(Int), acc: List(Int)) -> List(Int) {
-  case items {
-    [] -> reverse(acc)
-    [first, ..rest] ->
-      case list.contains(seen, first) {
-        True -> dedupe_loop(rest, seen, acc)
-        False -> dedupe_loop(rest, [first, ..seen], [first, ..acc])
-      }
-  }
-}
-
 /// Shrink a list by trying progressively smaller drops:
 /// drop everything, then drop half, then drop a quarter, etc.
 ///
@@ -65,7 +39,7 @@ fn dedupe_loop(items: List(Int), seen: List(Int), acc: List(Int)) -> List(Int) {
 pub fn list_drops(items: List(a)) -> List(List(a)) {
   let length = list.length(items)
   drop_at_each_size(items, length, length, [])
-  |> reverse()
+  |> list.reverse
 }
 
 fn drop_at_each_size(
@@ -106,7 +80,7 @@ fn drop_window(
   acc: List(a),
 ) -> List(a) {
   case items, drop_start, drop_count {
-    [], _, _ -> reverse(acc)
+    [], _, _ -> list.reverse(acc)
     [_, ..rest], 0, dc if dc > 0 -> drop_window(rest, 0, dc - 1, acc)
     [first, ..rest], 0, _ -> drop_window(rest, 0, 0, [first, ..acc])
     [first, ..rest], ds, _ ->

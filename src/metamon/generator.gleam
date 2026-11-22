@@ -107,13 +107,13 @@ pub fn statistics(
 /// Add a fixed list of must-try inputs that the runner will exercise
 /// before random generation.
 pub fn with_examples(g: Generator(a), examples: List(a)) -> Generator(a) {
-  Generator(run: g.run, edges: list_append(g.edges, examples))
+  Generator(run: g.run, edges: list.append(g.edges, examples))
 }
 
 /// Append more edges to an existing generator. Symmetric to
 /// `with_examples` but reads better for library authors.
 pub fn add_edges(g: Generator(a), more: List(a)) -> Generator(a) {
-  Generator(run: g.run, edges: list_append(g.edges, more))
+  Generator(run: g.run, edges: list.append(g.edges, more))
 }
 
 /// Strip the edges from a generator. Useful when composing into a
@@ -157,7 +157,7 @@ pub fn bind(g: Generator(a), k: fn(a) -> Generator(b)) -> Generator(b) {
       })
     },
     edges: list.flat_map(g.edges, fn(a) { k(a).edges })
-      |> take(default_max_edges),
+      |> list.take(default_max_edges),
   )
 }
 
@@ -370,14 +370,14 @@ pub fn one_of(generators: List(Generator(a))) -> Generator(a) {
   Generator(
     run: fn(s: Seed, size: Int, max_size: Int) {
       let #(idx, s_rest) = seed_module.next_int_in(s, 0, count - 1)
-      let chosen = case list_at(generators, idx) {
-        Some(g) -> g
-        None -> first
+      let chosen = case list.drop(generators, idx) {
+        [g, ..] -> g
+        [] -> first
       }
       chosen.run(s_rest, size, max_size)
     },
     edges: list.flat_map(generators, fn(g) { g.edges })
-      |> take(default_max_edges),
+      |> list.take(default_max_edges),
   )
 }
 
@@ -409,7 +409,7 @@ pub fn frequency(weighted: List(#(Int, Generator(a)))) -> Generator(a) {
       chosen.run(s_rest, size, max_size)
     },
     edges: list.flat_map(weighted, fn(pair) { pair.1.edges })
-      |> take(default_max_edges),
+      |> list.take(default_max_edges),
   )
 }
 
@@ -695,7 +695,10 @@ pub fn float_special() -> Generator(Float) {
   Generator(
     run: fn(s: Seed, _size: Int, _max_size: Int) {
       let #(idx, _) = seed_module.next_int_in(s, 0, 7)
-      let value = pick_special(edges, idx)
+      let value = case list.drop(edges, idx) {
+        [value, ..] -> value
+        [] -> 0.0
+      }
       tree.singleton(value)
     },
     edges: edges,
@@ -725,14 +728,6 @@ fn negative_zero() -> Float {
   // negation rather than literal so the pattern is uniform across
   // targets.
   0.0 *. -1.0
-}
-
-fn pick_special(values: List(Float), index: Int) -> Float {
-  case values, index {
-    [], _ -> 0.0
-    [first, ..], 0 -> first
-    [_, ..rest], n -> pick_special(rest, n - 1)
-  }
 }
 
 // ---------- string / codepoint ----------
@@ -1136,7 +1131,7 @@ fn result_edges(ok_edges: List(a), err_edges: List(e)) -> List(Result(a, e)) {
     [] -> []
     [first, ..] -> [Error(first)]
   }
-  list_append(ok_part, err_part)
+  list.append(ok_part, err_part)
 }
 
 // ---------- internal helpers ----------
@@ -1152,28 +1147,5 @@ fn cartesian_capped(
   cap: Int,
 ) -> List(c) {
   list.flat_map(left, fn(l) { list.map(right, fn(r) { combine(l, r) }) })
-  |> take(cap)
-}
-
-fn take(items: List(a), n: Int) -> List(a) {
-  case n, items {
-    _, [] -> []
-    n, _ if n <= 0 -> []
-    n, [first, ..rest] -> [first, ..take(rest, n - 1)]
-  }
-}
-
-fn list_at(items: List(a), index: Int) -> Option(a) {
-  case items, index {
-    [], _ -> None
-    [first, ..], 0 -> Some(first)
-    [_, ..rest], i -> list_at(rest, i - 1)
-  }
-}
-
-fn list_append(left: List(a), right: List(a)) -> List(a) {
-  case left {
-    [] -> right
-    [first, ..rest] -> [first, ..list_append(rest, right)]
-  }
+  |> list.take(cap)
 }

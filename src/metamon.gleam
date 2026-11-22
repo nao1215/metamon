@@ -11,6 +11,7 @@
 //// in `metamon/relation`; per-property context in `metamon/annotate`
 //// and `metamon/coverage`; structural diff in `metamon/diff`.
 
+import gleam/list
 import metamon/annotate
 import metamon/config
 import metamon/coverage
@@ -272,16 +273,9 @@ pub fn forall_morphs(
     default_config(),
     "forall_morphs",
     g,
-    list_map_specs(ms),
+    list.map(ms, fn(m) { m.spec }),
     f,
   )
-}
-
-fn list_map_specs(ms: List(Mr(a, b))) -> List(MorphSpec(a, b)) {
-  case ms {
-    [] -> []
-    [first, ..rest] -> [first.spec, ..list_map_specs(rest)]
-  }
 }
 
 // ---------- MR templates ----------
