@@ -10,7 +10,7 @@ import metamon/generator/range
 const var = "METAMON_RUNS_MULTIPLIER"
 
 fn run_counting(runs: Int) -> Int {
-  let cfg = metamon.default_config() |> metamon.with_runs_or_panic(runs)
+  let cfg = metamon.Config(..metamon.default_config(), runs: runs)
   count_reset()
   metamon.forall_with(cfg, generator.int(range.constant(0, 1000)), fn(_) {
     count_bump()

@@ -23,7 +23,6 @@ import gleam/list
 import gleam/string
 import gleeunit/should
 import metamon
-import metamon/config
 import metamon/generator
 import metamon/generator/range
 import metamon/relation
@@ -50,9 +49,7 @@ fn json_from_failure(thunk: fn() -> Nil) -> String {
 // ---------- failure triggers (one per public JSON-emitting shape) ----------
 
 fn json_for_forall_failure() -> String {
-  let cfg =
-    metamon.default_config()
-    |> metamon.with_output_format(config.Json)
+  let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   json_from_failure(fn() {
     metamon.forall_with(cfg, generator.int(range.constant(0, 10)), fn(_n) {
       False
@@ -68,9 +65,7 @@ fn json_for_forall_morph_failure() -> String {
       transform: increment,
       relation: relation.equal(),
     )
-  let cfg =
-    metamon.default_config()
-    |> metamon.with_output_format(config.Json)
+  let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   json_from_failure(fn() {
     metamon.forall_morph_with(
       cfg,
@@ -82,9 +77,7 @@ fn json_for_forall_morph_failure() -> String {
 }
 
 fn json_for_forall_round_trip_failure() -> String {
-  let cfg =
-    metamon.default_config()
-    |> metamon.with_output_format(config.Json)
+  let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   json_from_failure(fn() {
     // A trivially broken codec: encoder and decoder do not invert.
     metamon.forall_round_trip_with(

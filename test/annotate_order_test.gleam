@@ -3,6 +3,7 @@
 
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/annotate
@@ -39,7 +40,7 @@ pub fn annotations_keep_registration_order_test() {
 
 pub fn annotations_keep_order_for_any_count_test() {
   metamon.forall_with(
-    metamon.default_config() |> metamon.with_runs_or_panic(30),
+    metamon.Config(..metamon.default_config(), runs: 30),
     generator.int(range.constant(1, 40)),
     fn(count) {
       let labels = list.map(test_helpers.integers_from(0, count), int.to_string)
@@ -56,10 +57,7 @@ pub fn annotations_keep_order_for_any_count_test() {
 }
 
 pub fn passing_runs_do_not_leak_annotations_test() {
-  let cfg =
-    metamon.default_config()
-    |> metamon.with_seed(metamon.seed(5))
-    |> metamon.with_runs_or_panic(200)
+  let cfg = metamon.Config(..metamon.default_config(), seed: Some(5), runs: 200)
   let text =
     failure_text(fn() {
       metamon.forall_with(

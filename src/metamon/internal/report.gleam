@@ -32,7 +32,7 @@ pub type FailureReport {
     mr_name: String,
     test_name: String,
     config_seed: Int,
-    /// `Some(n)` when the user passed `metamon.seed(n)` and the
+    /// `Some(n)` when the user set `Config.seed` to `Some(n)` and the
     /// runner normalised it into a different canonical state (e.g.
     /// `seed(0)` → `0xDEADBEEF`). The header annotates with
     /// "originally seed(n)" so a user pinning `seed(0)` in source
@@ -51,7 +51,6 @@ pub type FailureReport {
     source_output: String,
     followup_output: String,
     input_source: InputSource,
-    diff_enabled: Bool,
     annotations: List(String),
     footnotes: List(String),
     coverage_snapshot: Option(coverage.Snapshot),
@@ -242,8 +241,8 @@ fn body_lines(report: FailureReport) -> List(String) {
       "  follow-up output:\n    " <> report.followup_output,
     ]
   }
-  let diff_block = case report.diff_enabled, report.morph_mode {
-    True, Some(_) -> [
+  let diff_block = case report.morph_mode {
+    Some(_) -> [
       "  diff (source_output vs follow-up_output):\n"
       <> indent(
         diff.render(diff.diff_inspected(
@@ -253,7 +252,7 @@ fn body_lines(report: FailureReport) -> List(String) {
         "    ",
       ),
     ]
-    _, _ -> []
+    None -> []
   }
   list.flatten([
     list_join_block(list.append(transform_block, relation_block)),

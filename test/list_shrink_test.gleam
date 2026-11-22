@@ -3,6 +3,7 @@
 //// stack, and `non_empty_list_of` works at every size.
 
 import gleam/list
+import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/generator
@@ -22,7 +23,7 @@ fn shrunk_input(thunk: fn() -> Nil) -> String {
 }
 
 fn seeded(value: Int) -> metamon.Config {
-  metamon.default_config() |> metamon.with_seed(metamon.seed(value))
+  metamon.Config(..metamon.default_config(), seed: Some(value))
 }
 
 fn digits(len: range.Range) -> generator.Generator(List(Int)) {
@@ -32,7 +33,7 @@ fn digits(len: range.Range) -> generator.Generator(List(Int)) {
 
 pub fn list_shrinks_to_the_shortest_failing_length_test() {
   metamon.forall_with(
-    metamon.default_config() |> metamon.with_runs_or_panic(20),
+    metamon.Config(..metamon.default_config(), runs: 20),
     generator.int(range.constant(1, 100_000)),
     fn(seed_value) {
       let input =
@@ -60,7 +61,7 @@ pub fn list_shrinks_both_length_and_elements_test() {
 
 pub fn list_shrinking_keeps_the_minimum_length_test() {
   metamon.forall_with(
-    metamon.default_config() |> metamon.with_runs_or_panic(20),
+    metamon.Config(..metamon.default_config(), runs: 20),
     generator.int(range.constant(1, 100_000)),
     fn(seed_value) {
       let input =
@@ -80,7 +81,7 @@ pub fn list_shrinking_keeps_the_minimum_length_test() {
 }
 
 pub fn long_lists_generate_and_shrink_test() {
-  let cfg = seeded(3) |> metamon.with_runs_or_panic(3)
+  let cfg = metamon.Config(..seeded(3), runs: 3)
   metamon.forall_with(
     cfg,
     generator.list_of(

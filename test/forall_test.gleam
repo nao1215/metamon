@@ -1,3 +1,4 @@
+import gleam/option.{Some}
 import gleeunit/should
 import metamon
 import metamon/generator
@@ -16,10 +17,7 @@ pub fn forall_passes_for_simple_int_property_test() {
 }
 
 pub fn forall_passes_with_explicit_seed_test() {
-  let c =
-    metamon.default_config()
-    |> metamon.with_seed(metamon.seed(7))
-    |> metamon.with_runs_or_panic(30)
+  let c = metamon.Config(..metamon.default_config(), seed: Some(7), runs: 30)
   metamon.forall_with(c, generator.int(range.constant(0, 50)), fn(n) { n >= 0 })
   should.equal(1, 1)
 }

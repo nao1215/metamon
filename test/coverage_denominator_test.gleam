@@ -3,6 +3,7 @@
 
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/coverage
@@ -35,13 +36,13 @@ pub fn classify_and_collect_do_not_dilute_cover_test() {
 
 pub fn every_run_count_keeps_full_coverage_test() {
   metamon.forall_with(
-    metamon.default_config() |> metamon.with_runs_or_panic(20),
+    metamon.Config(..metamon.default_config(), runs: 20),
     generator.int(range.constant(1, 300)),
     fn(runs) {
       let #(panicked, _) =
         capture_panic(fn() {
           metamon.forall_with(
-            metamon.default_config() |> metamon.with_runs_or_panic(runs),
+            metamon.Config(..metamon.default_config(), runs: runs),
             generator.int(range.constant(0, 9)),
             fn(_) {
               coverage.cover(100.0, "x", True)
@@ -61,7 +62,7 @@ pub fn shortfall_reports_runs_as_the_denominator_test() {
   let #(panicked, text) =
     capture_panic(fn() {
       metamon.forall_with(
-        metamon.default_config() |> metamon.with_runs_or_panic(40),
+        metamon.Config(..metamon.default_config(), runs: 40),
         generator.int(range.constant(0, 9)) |> generator.no_edges,
         fn(_) {
           count_bump()
@@ -78,10 +79,12 @@ pub fn shortfall_reports_runs_as_the_denominator_test() {
 pub fn regression_replay_does_not_count_towards_coverage_test() {
   let _ = simplifile.delete(tmp_path)
   let cfg =
-    metamon.default_config()
-    |> metamon.with_seed(metamon.seed(9))
-    |> metamon.with_runs_or_panic(10)
-    |> metamon.with_regression_file_or_panic(tmp_path)
+    metamon.Config(
+      ..metamon.default_config(),
+      seed: Some(9),
+      runs: 10,
+      regression_file: Some(tmp_path),
+    )
   let gen = generator.int(range.constant(0, 9)) |> generator.no_edges
   // Count the runs (METAMON_RUNS_MULTIPLIER may scale them).
   count_reset()
@@ -113,7 +116,7 @@ pub fn a_label_counts_once_per_run_test() {
   let #(panicked, text) =
     capture_panic(fn() {
       metamon.forall_with(
-        metamon.default_config() |> metamon.with_seed(metamon.seed(4)),
+        metamon.Config(..metamon.default_config(), seed: Some(4)),
         generator.int(range.constant(0, 1)),
         fn(n) {
           coverage.cover(60.0, "zero", n == 0)
@@ -131,7 +134,7 @@ pub fn hits_never_exceed_runs_test() {
   let #(panicked, text) =
     capture_panic(fn() {
       metamon.forall_with(
-        metamon.default_config() |> metamon.with_runs_or_panic(30),
+        metamon.Config(..metamon.default_config(), runs: 30),
         generator.list_of(generator.return(0), range.constant(1, 5)),
         fn(xs) {
           count_bump()

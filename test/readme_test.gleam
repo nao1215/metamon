@@ -8,6 +8,7 @@
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/string
 import gleeunit/should
 import metamon
@@ -341,12 +342,7 @@ pub fn readme_annotate_test() {
 // ===========================================================================
 
 pub fn readme_configuration_test() {
-  let assert Ok(c) =
-    metamon.with_runs(
-      metamon.default_config()
-        |> metamon.with_seed(metamon.seed(2026)),
-      30,
-    )
+  let c = metamon.Config(..metamon.default_config(), seed: Some(2026), runs: 30)
   metamon.forall_with(c, generator.int(range.constant(-100, 100)), fn(n) {
     n + 0 == n
   })
@@ -408,13 +404,7 @@ pub fn readme_gcounter_associative_test() {
 // ===========================================================================
 
 fn test_config(runs: Int, seed_value: Int) -> metamon.Config {
-  let assert Ok(c) =
-    metamon.with_runs(
-      metamon.default_config()
-        |> metamon.with_seed(metamon.seed(seed_value)),
-      runs,
-    )
-  c
+  metamon.Config(..metamon.default_config(), seed: Some(seed_value), runs: runs)
 }
 
 // ===========================================================================

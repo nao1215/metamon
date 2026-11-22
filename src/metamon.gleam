@@ -12,113 +12,81 @@
 //// and `metamon/coverage`.
 
 import gleam/list
-import metamon/config
+import gleam/option.{type Option, None}
 import metamon/generator.{type Generator}
 import metamon/internal/runner.{type MorphSpec}
-import metamon/internal/seed as seed_module
 import metamon/relation.{type Relation}
 import metamon/transform.{type Transform}
 
-/// Re-export of the seed type so callers can write `metamon.Seed`.
-pub type Seed =
-  seed_module.Seed
-
-/// Re-export of `Config` so callers can write `metamon.Config`.
-pub type Config =
-  config.Config
-
-/// Construct a deterministic seed from an integer.
-pub fn seed(value: Int) -> Seed {
-  seed_module.seed(value)
+/// How a runner explores inputs and reports a failure. Build one from
+/// `default_config` and override the fields you need:
+///
+/// ```gleam
+/// let config = metamon.Config(..metamon.default_config(), runs: 300)
+/// ```
+///
+/// The runners check the fields when they start; see `forall_with` for
+/// the values they reject.
+pub type Config {
+  Config(
+    /// The number of inputs to try. `METAMON_RUNS_MULTIPLIER`, when set to
+    /// a positive integer, multiplies it.
+    runs: Int,
+    /// The seed of the random inputs. `None` draws a new seed for every
+    /// property; `Some(n)` replays the same inputs on every run.
+    seed: Option(Int),
+    /// The largest size given to the generators. Sizes grow from `0` on
+    /// the first run to `max_size` on the last.
+    max_size: Int,
+    /// The largest number of shrink steps taken on one failure.
+    shrink_limit: Int,
+    /// The largest number of edge values tried before the random inputs.
+    max_edges: Int,
+    /// A file that records every failing input and replays the recorded
+    /// inputs first on the next run. `None` turns recording off. Use one
+    /// file per plain `forall` property: every plain property records
+    /// under the same key, so a shared file replays one property's
+    /// failures against another.
+    regression_file: Option(String),
+    /// The format of the failure report.
+    output: Output,
+  )
 }
 
-/// Convenience: a fresh random seed.
-pub fn random_seed() -> Seed {
-  seed_module.random_seed()
+/// The format of a failure report.
+pub type Output {
+  /// A multi-line report for people (the default).
+  Text
+  /// A single-line JSON object for CI and other tools.
+  Json
 }
 
-/// Re-export of `Config` and `default_config`.
+/// Return the default configuration: 100 runs, a new random seed for
+/// every property, `max_size` 99, at most 1024 shrink steps, at most 16
+/// edge values, no regression file and text output.
 pub fn default_config() -> Config {
-  config.default_config()
+  Config(
+    runs: 100,
+    seed: None,
+    max_size: 99,
+    shrink_limit: 1024,
+    max_edges: 16,
+    regression_file: None,
+    output: Text,
+  )
 }
 
-/// Re-export of `with_seed`.
-pub fn with_seed(c: Config, s: Seed) -> Config {
-  config.with_seed(c, s)
-}
-
-/// Re-export of `with_runs`.
-pub fn with_runs(c: Config, n: Int) -> Result(Config, config.ConfigError) {
-  config.with_runs(c, n)
-}
-
-/// Re-export of `with_max_size`.
-pub fn with_max_size(c: Config, n: Int) -> Result(Config, config.ConfigError) {
-  config.with_max_size(c, n)
-}
-
-/// Re-export of `with_shrink_limit`.
-pub fn with_shrink_limit(
-  c: Config,
-  n: Int,
-) -> Result(Config, config.ConfigError) {
-  config.with_shrink_limit(c, n)
-}
-
-/// Re-export of `with_max_edges`.
-pub fn with_max_edges(c: Config, n: Int) -> Result(Config, config.ConfigError) {
-  config.with_max_edges(c, n)
-}
-
-/// Re-export of `with_regression_file`.
-pub fn with_regression_file(
-  c: Config,
-  path: String,
-) -> Result(Config, config.ConfigError) {
-  config.with_regression_file(c, path)
-}
-
-/// Re-export of `with_diff_enabled`.
-pub fn with_diff_enabled(c: Config, enabled: Bool) -> Config {
-  config.with_diff_enabled(c, enabled)
-}
-
-/// Re-export of `with_runs_or_panic`. Use in test code where the bound
-/// is statically known and the `let assert Ok(c) = ...` arm would be
-/// dead code.
-pub fn with_runs_or_panic(c: Config, n: Int) -> Config {
-  config.with_runs_or_panic(c, n)
-}
-
-/// Re-export of `with_max_size_or_panic`.
-pub fn with_max_size_or_panic(c: Config, n: Int) -> Config {
-  config.with_max_size_or_panic(c, n)
-}
-
-/// Re-export of `with_shrink_limit_or_panic`.
-pub fn with_shrink_limit_or_panic(c: Config, n: Int) -> Config {
-  config.with_shrink_limit_or_panic(c, n)
-}
-
-/// Re-export of `with_max_edges_or_panic`.
-pub fn with_max_edges_or_panic(c: Config, n: Int) -> Config {
-  config.with_max_edges_or_panic(c, n)
-}
-
-/// Re-export of `with_regression_file_or_panic`.
-pub fn with_regression_file_or_panic(c: Config, path: String) -> Config {
-  config.with_regression_file_or_panic(c, path)
-}
-
-/// Re-export of `OutputFormat` so callers can write
-/// `metamon.OutputFormat`.
-pub type OutputFormat =
-  config.OutputFormat
-
-/// Choose the failure-report output format. `Text` (default) is
-/// human-friendly; `Json` is single-line JSON for CI / LLM consumers.
-pub fn with_output_format(c: Config, fmt: OutputFormat) -> Config {
-  config.with_output_format(c, fmt)
+/// The runner settings for `config`. Panics when a field is invalid.
+fn settings(config: Config) -> runner.Settings {
+  runner.settings(
+    runs: config.runs,
+    seed: config.seed,
+    max_size: config.max_size,
+    shrink_limit: config.shrink_limit,
+    max_edges: config.max_edges,
+    regression_file: config.regression_file,
+    json: config.output == Json,
+  )
 }
 
 // ---------- Mr type and constructors ----------
@@ -173,7 +141,7 @@ pub fn forall_with(
   g: Generator(a),
   property: fn(a) -> Bool,
 ) -> Nil {
-  runner.run_forall(cfg, "forall", "(plain property)", g, property)
+  runner.run_forall(settings(cfg), "forall", "(plain property)", g, property)
 }
 
 /// Run a metamorphic relation over many random inputs.
@@ -188,7 +156,7 @@ pub fn forall_morph_with(
   m: Mr(a, b),
   f: fn(a) -> b,
 ) -> Nil {
-  runner.run_forall_morph(cfg, "forall_morph", g, m.spec, f)
+  runner.run_forall_morph(settings(cfg), "forall_morph", g, m.spec, f)
 }
 
 /// Run a metamorphic relation against a single input. Generator-free.
@@ -208,7 +176,7 @@ pub fn forall_morphs(
   f: fn(a) -> b,
 ) -> Nil {
   runner.run_forall_morphs(
-    default_config(),
+    settings(default_config()),
     "forall_morphs",
     g,
     list.map(ms, fn(m) { m.spec }),
@@ -339,7 +307,7 @@ fn run_round_trip(
   property: fn(a) -> Bool,
 ) -> Nil {
   let test_name = "round_trip[" <> name <> "]"
-  runner.run_forall(cfg, test_name, test_name, gen, property)
+  runner.run_forall(settings(cfg), test_name, test_name, gen, property)
 }
 
 /// `decode(encode(input))` succeeds and `equal(decoded, input)` holds.

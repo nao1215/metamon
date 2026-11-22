@@ -3,6 +3,7 @@
 //// `forall_morph` does.
 
 import gleam/int
+import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/generator
@@ -19,7 +20,7 @@ fn failure_text(thunk: fn() -> Nil) -> String {
 }
 
 fn seeded(value: Int) -> metamon.Config {
-  metamon.default_config() |> metamon.with_seed(metamon.seed(value))
+  metamon.Config(..metamon.default_config(), seed: Some(value))
 }
 
 fn ints() -> generator.Generator(Int) {
@@ -43,7 +44,7 @@ pub fn forall_shrinks_to_the_boundary_for_every_seed_test() {
   // Metamorphic over the seed: whichever failing input the run hits
   // first, the reported input is the boundary value.
   metamon.forall_with(
-    metamon.default_config() |> metamon.with_runs_or_panic(20),
+    metamon.Config(..metamon.default_config(), runs: 20),
     generator.int(range.constant(1, 100_000)),
     fn(seed_value) {
       let text =

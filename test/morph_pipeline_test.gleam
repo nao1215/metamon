@@ -2,6 +2,7 @@
 //// `forall`: regression replay and record, the coverage check, and
 //// shrinking.
 
+import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/coverage
@@ -36,7 +37,7 @@ fn below_ten() -> metamon.Mr(Int, Int) {
 }
 
 fn seeded(value: Int) -> metamon.Config {
-  metamon.default_config() |> metamon.with_seed(metamon.seed(value))
+  metamon.Config(..metamon.default_config(), seed: Some(value))
 }
 
 pub fn forall_morph_shrinks_test() {
@@ -49,7 +50,7 @@ pub fn forall_morph_shrinks_test() {
 
 pub fn forall_morph_records_and_replays_regressions_test() {
   let _ = simplifile.delete(tmp_path)
-  let cfg = seeded(42) |> metamon.with_regression_file_or_panic(tmp_path)
+  let cfg = metamon.Config(..seeded(42), regression_file: Some(tmp_path))
   let _ =
     failure_text(fn() {
       metamon.forall_morph_with(cfg, ints(), below_ten(), fn(x) { x })
@@ -60,7 +61,7 @@ pub fn forall_morph_records_and_replays_regressions_test() {
   let text =
     failure_text(fn() {
       metamon.forall_morph_with(
-        seeded(1) |> metamon.with_regression_file_or_panic(tmp_path),
+        metamon.Config(..seeded(1), regression_file: Some(tmp_path)),
         ints(),
         below_ten(),
         fn(x) { x },

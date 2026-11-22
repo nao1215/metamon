@@ -1,4 +1,5 @@
 import gleam/int
+import gleam/option.{Some}
 import metamon
 import metamon/generator
 import metamon/generator/range
@@ -13,10 +14,7 @@ pub fn forall_round_trip_identity_test() {
 }
 
 pub fn forall_round_trip_with_explicit_config_test() {
-  let cfg =
-    metamon.default_config()
-    |> metamon.with_seed(metamon.seed(42))
-    |> metamon.with_runs_or_panic(30)
+  let cfg = metamon.Config(..metamon.default_config(), seed: Some(42), runs: 30)
   metamon.forall_round_trip_with(
     cfg: cfg,
     gen: generator.int(range.constant(-100, 100)),

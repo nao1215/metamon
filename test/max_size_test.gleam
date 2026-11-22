@@ -1,7 +1,8 @@
-//// `with_max_size` reaches the generators: a linear range spans its
+//// `Config.max_size` reaches the generators: a linear range spans its
 //// full width at size = max_size, whatever max_size is.
 
 import gleam/list
+import gleam/option.{Some}
 import metamon
 import metamon/generator
 import metamon/generator/range
@@ -11,10 +12,12 @@ import metamon/generator/range
 fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
 
 fn config(max_size: Int, runs: Int) -> metamon.Config {
-  metamon.default_config()
-  |> metamon.with_seed(metamon.seed(11))
-  |> metamon.with_runs_or_panic(runs)
-  |> metamon.with_max_size_or_panic(max_size)
+  metamon.Config(
+    ..metamon.default_config(),
+    seed: Some(11),
+    runs: runs,
+    max_size: max_size,
+  )
 }
 
 pub fn small_max_size_still_reaches_the_full_range_test() {

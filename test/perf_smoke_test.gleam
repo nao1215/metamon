@@ -6,6 +6,7 @@
 //// a 30 s timeout in CI.
 
 import gleam/list
+import gleam/option.{Some}
 import gleeunit/should
 import metamon
 import metamon/generator
@@ -18,12 +19,7 @@ pub fn forall_morph_thousand_runs_finishes_quickly_test() {
       name: "length_under_reverse",
       under: transform.new("list.reverse", list.reverse),
     )
-  let assert Ok(c) =
-    metamon.with_runs(
-      metamon.default_config()
-        |> metamon.with_seed(metamon.seed(0)),
-      1000,
-    )
+  let c = metamon.Config(..metamon.default_config(), seed: Some(0), runs: 1000)
   let started = monotonic_microseconds()
   metamon.forall_morph_with(
     c,
@@ -45,12 +41,7 @@ pub fn deep_recursive_tree_generator_finishes_quickly_test() {
   // A recursive Tree generator with 1000 runs is the worst case for
   // shrink expansion. Same wall-clock budget.
   let started = monotonic_microseconds()
-  let assert Ok(c) =
-    metamon.with_runs(
-      metamon.default_config()
-        |> metamon.with_seed(metamon.seed(0)),
-      300,
-    )
+  let c = metamon.Config(..metamon.default_config(), seed: Some(0), runs: 300)
   metamon.forall_with(c, recursive_tree_gen(), fn(t) { count_leaves(t) >= 1 })
   let elapsed_us = monotonic_microseconds() - started
   should.be_true(elapsed_us < 5_000_000)

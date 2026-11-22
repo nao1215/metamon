@@ -49,7 +49,7 @@ pub fn seed(value: Int) -> Seed {
 }
 
 /// Construct a seed from the system clock. Useful for ad-hoc local
-/// runs; CI should pin a value via `metamon.with_seed(metamon.seed(_))`.
+/// runs; CI should pin a value with `Config(..default_config(), seed: Some(n))`.
 pub fn random_seed() -> Seed {
   Seed(state: normalise(now_microseconds()), original_input: None)
 }

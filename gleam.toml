@@ -107,10 +107,6 @@ unwrap_used = "error"
 # relation a negative epsilon would silently produce is never the
 # user's intent, so we fail visibly on the sign mistake.
 "src/metamon/relation.gleam" = ["avoid_panic"]
-# `_or_panic` config-builder variants intentionally panic with a
-# structured message so test code does not need `let assert Ok(c)`
-# for statically-known literals.
-"src/metamon/config.gleam" = ["avoid_panic"]
 # `coverage.cover` / `cover_at_least` panic on a malformed target
 # (target_pct outside [0.0, 100.0] or NaN, min_hits < 0) — the same
 # "fail visibly on misconfiguration" stance as relation.approximately

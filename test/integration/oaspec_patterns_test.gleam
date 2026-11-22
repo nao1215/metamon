@@ -7,6 +7,7 @@
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/coverage
@@ -33,12 +34,7 @@ pub fn snake_idempotent_with_examples_and_coverage_test() {
       name: "snake_stub_idempotent",
       of: to_snake_case_stub,
     )
-  let assert Ok(c) =
-    metamon.with_runs(
-      metamon.default_config()
-        |> metamon.with_seed(metamon.seed(2026)),
-      40,
-    )
+  let c = metamon.Config(..metamon.default_config(), seed: Some(2026), runs: 40)
   metamon.forall_morph_with(
     c,
     generator.string_ascii(range.constant(0, 8))
@@ -66,7 +62,7 @@ pub fn normalize_idempotent_test() {
       name: "normalize_stub_idempotent",
       of: normalize_stub,
     )
-  let assert Ok(c) = metamon.with_runs(metamon.default_config(), 30)
+  let c = metamon.Config(..metamon.default_config(), runs: 30)
   metamon.forall_morph_with(
     c,
     generator.string_ascii(range.constant(0, 16)),

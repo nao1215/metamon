@@ -1,11 +1,10 @@
 //// Failure-report JSON output. The runner emits a single-line JSON
 //// object instead of the human-readable text when configured with
-//// `metamon.with_output_format(metamon.Json)`.
+//// `metamon.Config(..metamon.default_config(), output: metamon.Json)`.
 
 import gleam/string
 import gleeunit/should
 import metamon
-import metamon/config
 import metamon/generator
 import metamon/generator/range
 import metamon/relation
@@ -16,9 +15,7 @@ import metamon/transform
 fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
 
 pub fn json_output_is_single_line_object_test() {
-  let cfg =
-    metamon.default_config()
-    |> metamon.with_output_format(config.Json)
+  let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   let outcome =
     capture_panic(fn() {
       metamon.forall_with(cfg, generator.int(range.constant(0, 10)), fn(_n) {
@@ -48,9 +45,7 @@ pub fn json_output_for_morph_failure_test() {
       transform: increment,
       relation: relation.equal(),
     )
-  let cfg =
-    metamon.default_config()
-    |> metamon.with_output_format(config.Json)
+  let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   let outcome =
     capture_panic(fn() {
       metamon.forall_morph_with(

@@ -4,6 +4,7 @@
 //// isolation and inspect the panic reason.
 
 import gleam/int
+import gleam/option.{Some}
 import gleam/string
 import gleeunit/should
 import metamon
@@ -134,7 +135,7 @@ pub fn config_seed_zero_renders_with_originally_annotation_test() {
   // Pin seed(0) so the runner's normalisation maps it to 0xDEADBEEF.
   // The failure header should annotate the canonical state with the
   // original "seed(0)" the user wrote in source.
-  let cfg = metamon.with_seed(metamon.default_config(), metamon.seed(0))
+  let cfg = metamon.Config(..metamon.default_config(), seed: Some(0))
   let outcome =
     capture(fn() {
       metamon.forall_with(cfg, generator.int(range.constant(0, 100)), fn(_n) {

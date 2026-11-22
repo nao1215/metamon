@@ -16,7 +16,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import metamon/annotate
-import metamon/config.{type Config}
 import metamon/coverage
 import metamon/generator.{type Generator}
 import metamon/internal/regression
@@ -74,10 +73,76 @@ pub fn morph_name(spec: MorphSpec(a, b)) -> String {
   spec_name(spec)
 }
 
+/// The configuration of one run, built and checked by `settings`.
+pub type Settings {
+  Settings(
+    runs: Int,
+    seed: Seed,
+    max_size: Int,
+    shrink_limit: Int,
+    max_edges: Int,
+    regression_file: Option(String),
+    json: Bool,
+  )
+}
+
+/// Check the configuration fields and build the settings of one run.
+/// `seed` is `None` for a seed drawn from the clock.
+///
+/// Panics with a message naming the field when `runs`, `max_size`,
+/// `shrink_limit` or `max_edges` is not positive, or `regression_file`
+/// is `Some("")`.
+pub fn settings(
+  runs runs: Int,
+  seed seed: Option(Int),
+  max_size max_size: Int,
+  shrink_limit shrink_limit: Int,
+  max_edges max_edges: Int,
+  regression_file regression_file: Option(String),
+  json json: Bool,
+) -> Settings {
+  require_positive("runs", runs)
+  require_positive("max_size", max_size)
+  require_positive("shrink_limit", shrink_limit)
+  require_positive("max_edges", max_edges)
+  case regression_file {
+    Some("") ->
+      panic as "metamon: Config.regression_file must not be Some(\"\") (use None to turn the regression file off)"
+    _ -> Nil
+  }
+  let seed = case seed {
+    Some(value) -> seed_module.seed(value)
+    None -> seed_module.random_seed()
+  }
+  Settings(
+    runs: runs,
+    seed: seed,
+    max_size: max_size,
+    shrink_limit: shrink_limit,
+    max_edges: max_edges,
+    regression_file: regression_file,
+    json: json,
+  )
+}
+
+fn require_positive(field: String, value: Int) -> Nil {
+  case value > 0 {
+    True -> Nil
+    False ->
+      panic as {
+        "metamon: Config."
+        <> field
+        <> " must be > 0 (got "
+        <> int.to_string(value)
+        <> ")"
+      }
+  }
+}
+
 /// Run a property test (no metamorphic transform). `regression_key`
 /// names the property's entries in the regression file.
 pub fn run_forall(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   regression_key: String,
   gen: Generator(a),
@@ -95,7 +160,7 @@ pub fn run_forall(
 
 /// Run a metamorphic relation against `f` for many inputs.
 pub fn run_forall_morph(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   gen: Generator(a),
   spec: MorphSpec(a, b),
@@ -106,7 +171,7 @@ pub fn run_forall_morph(
 }
 
 fn morph_check(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   spec: MorphSpec(a, b),
   f: fn(a) -> b,
@@ -132,15 +197,15 @@ pub fn run_assert_morph(
     True -> Nil
     False -> {
       let report = morph_failure_static(test_name, spec, input, evaluation)
-      panic_with(render_for(config.default_config(), report))
+      panic_with(report_module.render(report))
     }
   }
 }
 
-fn render_for(cfg: Config, report: FailureReport) -> String {
-  case config.output_format(cfg) {
-    config.Text -> report_module.render(report)
-    config.Json -> report_module.render_json(report)
+fn render_for(cfg: Settings, report: FailureReport) -> String {
+  case cfg.json {
+    False -> report_module.render(report)
+    True -> report_module.render_json(report)
   }
 }
 
@@ -148,7 +213,7 @@ fn render_for(cfg: Config, report: FailureReport) -> String {
 /// Each spec is run independently; failures are collected and the
 /// runner panics at the end if any spec failed.
 pub fn run_forall_morphs(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   gen: Generator(a),
   specs: List(MorphSpec(a, b)),
@@ -193,11 +258,11 @@ type Outcome {
 }
 
 fn iterate_inputs(
-  cfg: Config,
+  cfg: Settings,
   gen: Generator(a),
   body: fn(a, InputSource, Int) -> Step,
 ) -> Outcome {
-  let edges = generator.edges_of(gen) |> list.take(config.max_edges(cfg))
+  let edges = generator.edges_of(gen) |> list.take(cfg.max_edges)
   let edge_count = list.length(edges)
   let run_total = total_runs(cfg)
   case run_edges(edges, 0, body) {
@@ -207,8 +272,8 @@ fn iterate_inputs(
       case remaining <= 0 {
         True -> Done
         False -> {
-          let sizes = Sizes(total: run_total, max: config.max_size(cfg))
-          run_random(gen, sizes, edge_count, remaining, config.seed(cfg), body)
+          let sizes = Sizes(total: run_total, max: cfg.max_size)
+          run_random(gen, sizes, edge_count, remaining, cfg.seed, body)
         }
       }
     }
@@ -310,7 +375,7 @@ type Failure(a) {
 /// Replay the regression entries, then drive the generated inputs, then
 /// check coverage. Every runner that takes a generator goes through here.
 fn run_check(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   gen: Generator(a),
   check: Check(a),
@@ -329,7 +394,7 @@ fn run_check(
 }
 
 fn check_step(
-  cfg: Config,
+  cfg: Settings,
   gen: Generator(a),
   check: Check(a),
   input: a,
@@ -367,7 +432,7 @@ fn finish(outcome: Outcome) -> Nil {
 /// rebuilt from one more run on the reported input so they describe that
 /// input, not the shrink attempts.
 fn shrunk_failure(
-  cfg: Config,
+  cfg: Settings,
   gen: Generator(a),
   check: Check(a),
   input: a,
@@ -397,7 +462,7 @@ fn shrunk_failure(
 }
 
 fn forall_failure(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   property: fn(a) -> Bool,
   failure: Failure(a),
@@ -409,15 +474,15 @@ fn forall_failure(
 /// The report for a failure of a plain property. The metamorphic report
 /// starts from it and fills in the relation and the outputs.
 fn plain_report(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   failure: Failure(a),
 ) -> FailureReport {
   FailureReport(
     mr_name: "(plain property)",
     test_name: test_name,
-    config_seed: seed_module.state(config.seed(cfg)),
-    config_seed_original: seed_module.original_input(config.seed(cfg)),
+    config_seed: seed_module.state(cfg.seed),
+    config_seed_original: seed_module.original_input(cfg.seed),
     runs_done: failure.run_index,
     runs_total: total_runs(cfg),
     shrinks_done: failure.shrinks,
@@ -429,7 +494,6 @@ fn plain_report(
     source_output: "",
     followup_output: "",
     input_source: failure.source,
-    diff_enabled: False,
     annotations: annotate.current_annotations(),
     footnotes: list.append(annotate.current_footnotes(), failure.notes),
     coverage_snapshot: Some(failure.coverage),
@@ -485,7 +549,7 @@ fn spec_name(spec: MorphSpec(a, b)) -> String {
 }
 
 fn morph_failure(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   spec: MorphSpec(a, b),
   f: fn(a) -> b,
@@ -501,7 +565,6 @@ fn morph_failure(
       followup_input: evaluation.followup_input,
       source_output: string.inspect(evaluation.src_output),
       followup_output: string.inspect(evaluation.fol_output),
-      diff_enabled: config.diff_enabled(cfg),
     )
   render_for(cfg, report)
 }
@@ -528,7 +591,6 @@ fn morph_failure_static(
     source_output: string.inspect(evaluation.src_output),
     followup_output: string.inspect(evaluation.fol_output),
     input_source: EdgeSource(0),
-    diff_enabled: True,
     annotations: annotate.current_annotations(),
     footnotes: annotate.current_footnotes(),
     coverage_snapshot: None,
@@ -541,7 +603,7 @@ fn morph_failure_static(
 /// still fails, until no child fails or the shrink limit is reached.
 /// `fails` is the only thing the loop knows about the property.
 fn shrink_input(
-  cfg: Config,
+  cfg: Settings,
   gen: Generator(a),
   fails: fn(a) -> Bool,
   input: a,
@@ -552,7 +614,7 @@ fn shrink_input(
     RandomSource(seed_value, size, max_size) -> {
       let initial_tree =
         generator.generate(gen, seed_module.seed(seed_value), size, max_size)
-      shrink_loop(initial_tree, fails, input, config.shrink_limit(cfg), 0)
+      shrink_loop(initial_tree, fails, input, cfg.shrink_limit, 0)
     }
   }
 }
@@ -619,8 +681,11 @@ fn panic_with(message: String) -> Nil {
 
 // ---------- regression file ----------
 
-fn load_regression_for(cfg: Config, mr_name: String) -> List(regression.Entry) {
-  case config.regression_file(cfg) {
+fn load_regression_for(
+  cfg: Settings,
+  mr_name: String,
+) -> List(regression.Entry) {
+  case cfg.regression_file {
     None -> []
     Some(path) ->
       case simplifile.read(path) {
@@ -635,12 +700,12 @@ fn load_regression_for(cfg: Config, mr_name: String) -> List(regression.Entry) {
 }
 
 fn record_regression_for(
-  cfg: Config,
+  cfg: Settings,
   mr_name: String,
   source: InputSource,
   input: a,
 ) -> List(String) {
-  case config.regression_file(cfg) {
+  case cfg.regression_file {
     None -> []
     Some(path) -> {
       let edge_index = case source {
@@ -648,11 +713,7 @@ fn record_regression_for(
         RandomSource(..) -> None
       }
       let #(seed_value, size, max_size) = case source {
-        EdgeSource(_) -> #(
-          seed_module.state(config.seed(cfg)),
-          0,
-          config.max_size(cfg),
-        )
+        EdgeSource(_) -> #(seed_module.state(cfg.seed), 0, cfg.max_size)
         RandomSource(s, sz, max) -> #(s, sz, max)
       }
       let run_index = case source {
@@ -771,13 +832,13 @@ fn replay_failure_message(
 @external(javascript, "../../metamon_ffi.mjs", "now_microseconds")
 fn now_microseconds() -> Int
 
-/// The number of runs to target: `config.runs` times the positive integer
+/// The number of runs to target: `Config.runs` times the positive integer
 /// in `METAMON_RUNS_MULTIPLIER`, when that variable is set. A nightly job
 /// raises it to explore far more inputs than a pull request can afford,
 /// without editing any test. Any other value is a mistake in the job, so it
 /// stops the run instead of being ignored.
-fn total_runs(cfg: Config) -> Int {
-  config.runs(cfg) * runs_multiplier()
+fn total_runs(cfg: Settings) -> Int {
+  cfg.runs * runs_multiplier()
 }
 
 fn runs_multiplier() -> Int {

@@ -1,5 +1,5 @@
 //// End-to-end behaviour of regression file integration: when a
-//// property is configured with `with_regression_file`, the runner
+//// property is configured with `Config.regression_file`, the runner
 //// must (a) read existing entries on start-up and replay them, (b)
 //// append the failing input to the file when a property fails.
 
@@ -27,11 +27,11 @@ pub fn write_records_failing_input_test() {
   // entry, then read the file back and verify the entry shape.
   let outcome =
     capture_panic(fn() {
-      let assert Ok(c) =
-        metamon.with_regression_file(
-          metamon.default_config()
-            |> metamon.with_seed(metamon.seed(7)),
-          tmp_path,
+      let c =
+        metamon.Config(
+          ..metamon.default_config(),
+          seed: Some(7),
+          regression_file: Some(tmp_path),
         )
       metamon.forall_with(
         c,
@@ -84,11 +84,11 @@ pub fn read_replays_existing_entry_test() {
 
   let observed =
     capture_panic(fn() {
-      let assert Ok(c) =
-        metamon.with_regression_file(
-          metamon.default_config()
-            |> metamon.with_seed(metamon.seed(7)),
-          tmp_path,
+      let c =
+        metamon.Config(
+          ..metamon.default_config(),
+          seed: Some(7),
+          regression_file: Some(tmp_path),
         )
       metamon.forall_with(
         c,
@@ -109,8 +109,8 @@ pub fn missing_file_is_silent_test() {
   cleanup()
   // Pointing at a non-existent file must not error; the runner
   // simply has nothing to replay and runs normally.
-  let assert Ok(c) =
-    metamon.with_regression_file(metamon.default_config(), tmp_path)
+  let c =
+    metamon.Config(..metamon.default_config(), regression_file: Some(tmp_path))
   metamon.forall_with(c, generator.int(range.constant(0, 9)), fn(n) {
     n >= 0 && n <= 9
   })
@@ -129,9 +129,11 @@ fn round_trip_with_file(
   broken: fn(Int) -> Bool,
 ) -> Nil {
   metamon.forall_round_trip_with(
-    cfg: metamon.default_config()
-      |> metamon.with_seed(metamon.seed(seed))
-      |> metamon.with_regression_file_or_panic(shared_path),
+    cfg: metamon.Config(
+      ..metamon.default_config(),
+      seed: Some(seed),
+      regression_file: Some(shared_path),
+    ),
     gen: generator.int(range.constant(0, 1000)) |> generator.no_edges,
     name: name,
     encode: fn(n) { n },
@@ -171,8 +173,7 @@ pub fn unwritable_regression_file_is_reported_test() {
   let #(panicked, text) =
     capture_panic(fn() {
       metamon.forall_with(
-        metamon.default_config()
-          |> metamon.with_regression_file_or_panic(path),
+        metamon.Config(..metamon.default_config(), regression_file: Some(path)),
         generator.int(range.constant(0, 10)),
         fn(_) { False },
       )
@@ -224,8 +225,10 @@ pub fn future_schema_version_file_is_not_replayed_test() {
     let #(panicked, text) =
       capture_panic(fn() {
         metamon.forall_with(
-          metamon.default_config()
-            |> metamon.with_regression_file_or_panic(tmp_path),
+          metamon.Config(
+            ..metamon.default_config(),
+            regression_file: Some(tmp_path),
+          ),
           generator.int(range.constant(0, 9)),
           fn(_) { False },
         )
@@ -247,10 +250,12 @@ pub fn replay_uses_the_recorded_max_size_test() {
   let #(panicked, _) =
     capture_panic(fn() {
       metamon.forall_with(
-        metamon.default_config()
-          |> metamon.with_seed(metamon.seed(5))
-          |> metamon.with_max_size_or_panic(30)
-          |> metamon.with_regression_file_or_panic(tmp_path),
+        metamon.Config(
+          ..metamon.default_config(),
+          seed: Some(5),
+          max_size: 30,
+          regression_file: Some(tmp_path),
+        ),
         gen,
         fn(x) { x < 1000 },
       )
@@ -263,9 +268,11 @@ pub fn replay_uses_the_recorded_max_size_test() {
   let #(panicked, text) =
     capture_panic(fn() {
       metamon.forall_with(
-        metamon.default_config()
-          |> metamon.with_seed(metamon.seed(6))
-          |> metamon.with_regression_file_or_panic(tmp_path),
+        metamon.Config(
+          ..metamon.default_config(),
+          seed: Some(6),
+          regression_file: Some(tmp_path),
+        ),
         gen,
         fn(x) { string.inspect(x) != recorded },
       )
