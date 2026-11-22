@@ -118,3 +118,48 @@ pub fn missing_file_is_silent_test() {
 @external(erlang, "metamon_ffi", "capture_panic")
 @external(javascript, "./metamon_ffi.mjs", "capture_panic")
 fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+
+const shared_path: String = "/tmp/metamon_regression_shared_test.toml"
+
+fn round_trip_with_file(
+  name: String,
+  seed: Int,
+  broken: fn(Int) -> Bool,
+) -> Nil {
+  metamon.forall_round_trip_with(
+    cfg: metamon.default_config()
+      |> metamon.with_seed(metamon.seed(seed))
+      |> metamon.with_regression_file_or_panic(shared_path),
+    gen: generator.int(range.constant(0, 1000)) |> generator.no_edges,
+    name: name,
+    encode: fn(n) { n },
+    decode: fn(n) {
+      case broken(n) {
+        True -> Ok(n + 1)
+        False -> Ok(n)
+      }
+    },
+  )
+}
+
+pub fn round_trips_sharing_a_file_replay_only_their_own_entries_test() {
+  let _ = simplifile.delete(shared_path)
+  // `b` breaks only on 163, which its own seed never generates.
+  let b = fn() { round_trip_with_file("b", 7, fn(n) { n == 163 }) }
+  b()
+  // `a` fails first on 163 and records it.
+  let a = fn() { round_trip_with_file("a", 42, fn(n) { n >= 10 }) }
+  let #(panicked, _) = capture_panic(a)
+  should.be_true(panicked)
+  let assert Ok(content) = simplifile.read(shared_path)
+  should.be_true(string.contains(content, "mr          = \"round_trip[a]\""))
+  should.be_true(string.contains(content, "note        = \"163\""))
+  // The entry recorded for `a` is not replayed against `b`.
+  b()
+  // `a` still replays its own entry.
+  let #(panicked, text) = capture_panic(a)
+  should.be_true(panicked)
+  should.be_true(string.contains(text, "regression replay for `round_trip[a]`"))
+  let _ = simplifile.delete(shared_path)
+  Nil
+}

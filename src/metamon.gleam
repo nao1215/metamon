@@ -393,7 +393,7 @@ pub fn forall_round_trip_with(
   runner.run_forall(
     cfg,
     "round_trip[" <> name <> "]",
-    "(plain property)",
+    "round_trip[" <> name <> "]",
     gen,
     fn(input) {
       case decode(encode(input)) {
@@ -471,7 +471,7 @@ pub fn forall_round_trip_partial_with(
   runner.run_forall(
     cfg,
     "round_trip[" <> name <> "]",
-    "(plain property)",
+    "round_trip[" <> name <> "]",
     gen,
     fn(input) {
       case encode(input) {
@@ -554,7 +554,7 @@ pub fn forall_round_trip_under_with(
   runner.run_forall(
     cfg,
     "round_trip[" <> name <> "]",
-    "(plain property)",
+    "round_trip[" <> name <> "]",
     gen,
     fn(input) {
       case decode(encode(input)) {
