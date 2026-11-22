@@ -192,7 +192,7 @@ pub fn float_special_runs_through_metamon_test() {
   metamon.forall(generator.float_special(), fn(_x) { Nil })
 }
 
-// ---------- tuple6 ----------
+// ---------- map4 .. map6 / tuple4 .. tuple6 ----------
 
 pub fn tuple6_packs_six_components_test() {
   let g =
@@ -212,6 +212,80 @@ pub fn tuple6_packs_six_components_test() {
     5,
     6,
   ))
+}
+
+pub fn tuple4_and_tuple5_pack_their_components_test() {
+  let one = generator.return(1)
+  should.equal(
+    generator.generate(
+      generator.tuple4(one, one, one, one),
+      seed.seed(0),
+      10,
+      99,
+    ).value,
+    #(1, 1, 1, 1),
+  )
+  should.equal(
+    generator.generate(
+      generator.tuple5(one, one, one, one, one),
+      seed.seed(0),
+      10,
+      99,
+    ).value,
+    #(1, 1, 1, 1, 1),
+  )
+}
+
+pub fn map4_to_map6_combine_in_argument_order_test() {
+  let digit = fn(n) { generator.return(n) }
+  let digits = fn(values: List(Int)) {
+    list.fold(values, 0, fn(acc, n) { acc * 10 + n })
+  }
+  let four =
+    generator.map4(digit(1), digit(2), digit(3), digit(4), with: fn(a, b, c, d) {
+      digits([a, b, c, d])
+    })
+  let five =
+    generator.map5(
+      digit(1),
+      digit(2),
+      digit(3),
+      digit(4),
+      digit(5),
+      with: fn(a, b, c, d, e) { digits([a, b, c, d, e]) },
+    )
+  let six =
+    generator.map6(
+      digit(1),
+      digit(2),
+      digit(3),
+      digit(4),
+      digit(5),
+      digit(6),
+      with: fn(a, b, c, d, e, f) { digits([a, b, c, d, e, f]) },
+    )
+  should.equal(generator.generate(four, seed.seed(0), 10, 99).value, 1234)
+  should.equal(generator.generate(five, seed.seed(0), 10, 99).value, 12_345)
+  should.equal(generator.generate(six, seed.seed(0), 10, 99).value, 123_456)
+}
+
+pub fn map4_shrinks_every_component_test() {
+  // A failing input of four independent ints shrinks each one to 0.
+  let ints = generator.int(generator.range(from: 0, to: 100))
+  let #(panicked, text) =
+    test_helpers.capture_panic(fn() {
+      metamon.forall(
+        generator.map4(ints, ints, ints, ints, with: fn(a, b, c, d) {
+          [a, b, c, d]
+        })
+          |> generator.no_edges,
+        fn(values) {
+          assert list.length(values) != 4
+        },
+      )
+    })
+  should.be_true(panicked)
+  should.be_true(string.contains(text, "[0, 0, 0, 0]"))
 }
 
 pub fn list_of_within_length_bounds_test() {
