@@ -238,7 +238,10 @@ fn body_lines(report: FailureReport) -> List(String) {
     True, Some(_) -> [
       "  diff (source_output vs follow-up_output):\n"
       <> indent(
-        diff.render(diff.diff(report.source_output, report.followup_output)),
+        diff.render(diff.diff_inspected(
+          report.source_output,
+          report.followup_output,
+        )),
         "    ",
       ),
     ]

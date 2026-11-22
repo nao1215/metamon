@@ -48,13 +48,22 @@ pub type Segment {
 pub fn diff(left: a, right: a) -> Diff {
   case left == right {
     True -> Same(rendered: string.inspect(left))
+    False -> diff_inspected(string.inspect(left), string.inspect(right))
+  }
+}
+
+/// `diff` for two values already rendered with `string.inspect`. The
+/// failure report keeps only the rendered outputs, so it diffs them with
+/// this rather than inspecting the strings a second time.
+@internal
+pub fn diff_inspected(left: String, right: String) -> Diff {
+  case left == right {
+    True -> Same(rendered: left)
     False -> shape_aware_diff(left, right)
   }
 }
 
-fn shape_aware_diff(left: a, right: a) -> Diff {
-  let l_str = string.inspect(left)
-  let r_str = string.inspect(right)
+fn shape_aware_diff(l_str: String, r_str: String) -> Diff {
   case
     is_list_inspect(l_str),
     is_list_inspect(r_str),
@@ -148,31 +157,58 @@ fn split_top_level(inspected: String) -> List(String) {
         _, _ -> inspected
       }
   }
-  walk_and_split(string.to_graphemes(inner), 0, "", [])
+  walk_and_split(string.to_graphemes(inner), Outside, 0, [], [])
 }
 
+/// Where `walk_and_split` is relative to string literals: commas and
+/// brackets inside `"..."` do not split, and `\` escapes the next
+/// character.
+type Scan {
+  Outside
+  InString
+  Escaped
+}
+
+/// `acc` holds the current item's graphemes in reverse.
 fn walk_and_split(
   graphemes: List(String),
+  scan: Scan,
   depth: Int,
-  acc: String,
+  acc: List(String),
   results: List(String),
 ) -> List(String) {
   case graphemes {
     [] -> finish_split(acc, results)
     [first, ..rest] ->
-      case first, depth {
-        "[", _ -> walk_and_split(rest, depth + 1, acc <> first, results)
-        "]", d if d > 0 -> walk_and_split(rest, d - 1, acc <> first, results)
-        "(", _ -> walk_and_split(rest, depth + 1, acc <> first, results)
-        ")", d if d > 0 -> walk_and_split(rest, d - 1, acc <> first, results)
-        ",", 0 -> walk_and_split(rest, 0, "", [string.trim(acc), ..results])
-        _, _ -> walk_and_split(rest, depth, acc <> first, results)
+      case scan, first, depth {
+        Escaped, _, _ ->
+          walk_and_split(rest, InString, depth, [first, ..acc], results)
+        InString, "\\", _ ->
+          walk_and_split(rest, Escaped, depth, [first, ..acc], results)
+        InString, "\"", _ ->
+          walk_and_split(rest, Outside, depth, [first, ..acc], results)
+        InString, _, _ ->
+          walk_and_split(rest, InString, depth, [first, ..acc], results)
+        Outside, "\"", _ ->
+          walk_and_split(rest, InString, depth, [first, ..acc], results)
+        Outside, "[", _ | Outside, "(", _ ->
+          walk_and_split(rest, Outside, depth + 1, [first, ..acc], results)
+        Outside, "]", d | Outside, ")", d if d > 0 ->
+          walk_and_split(rest, Outside, d - 1, [first, ..acc], results)
+        Outside, ",", 0 ->
+          walk_and_split(rest, Outside, 0, [], [item_text(acc), ..results])
+        Outside, _, _ ->
+          walk_and_split(rest, Outside, depth, [first, ..acc], results)
       }
   }
 }
 
-fn finish_split(acc: String, results: List(String)) -> List(String) {
-  case string.trim(acc) {
+fn item_text(reversed: List(String)) -> String {
+  reversed |> list.reverse |> string.concat |> string.trim
+}
+
+fn finish_split(acc: List(String), results: List(String)) -> List(String) {
+  case item_text(acc) {
     "" -> list.reverse(results)
     trimmed -> list.reverse([trimmed, ..results])
   }

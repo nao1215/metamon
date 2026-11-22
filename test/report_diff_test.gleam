@@ -1,0 +1,101 @@
+//// The failure report's diff block compares the outputs element by
+//// element, and string literals are split correctly.
+
+import gleam/int
+import gleam/list
+import gleam/string
+import metamon
+import metamon/diff.{Differ, IndexedDiff, ListDiff, Same, TupleDiff}
+import metamon/generator
+import metamon/generator/range
+import metamon/relation
+import metamon/transform
+
+@external(erlang, "metamon_ffi", "capture_panic")
+@external(javascript, "./metamon_ffi.mjs", "capture_panic")
+fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+
+fn failure_text(thunk: fn() -> Nil) -> String {
+  let #(panicked, message) = capture_panic(thunk)
+  assert panicked
+  message
+}
+
+fn plus_one_mr() -> metamon.Mr(Int, a) {
+  metamon.mr(
+    name: "invariant_under_plus_one",
+    transform: transform.new("+1", fn(n) { n + 1 }),
+    relation: relation.equal(),
+  )
+}
+
+pub fn report_diffs_list_outputs_per_index_test() {
+  let text =
+    failure_text(fn() {
+      metamon.forall_morph(generator.return(3), plus_one_mr(), fn(n) {
+        [1, 2, n]
+      })
+    })
+  assert string.contains(text, "    [#2]\n      - 3\n      + 4")
+  assert string.contains(text, "    [#0]\n      = 1")
+}
+
+pub fn report_diffs_tuple_outputs_per_index_test() {
+  let text =
+    failure_text(fn() {
+      metamon.forall_morph(generator.return(3), plus_one_mr(), fn(n) {
+        #("x", n)
+      })
+    })
+  assert string.contains(text, "    #.1\n      - 3\n      + 4")
+}
+
+pub fn report_diff_escapes_strings_once_test() {
+  let text =
+    failure_text(fn() {
+      metamon.forall_morph(generator.return(3), plus_one_mr(), fn(n) {
+        string.repeat("\"", n)
+      })
+    })
+  assert string.contains(
+    text,
+    "    - \"\\\"\\\"\\\"\"\n    + \"\\\"\\\"\\\"\\\"\"",
+  )
+}
+
+pub fn string_elements_with_separators_stay_whole_test() {
+  assert diff.diff(["a,b", "]"], ["a,c", "]"])
+    == ListDiff([
+      IndexedDiff(0, Differ("\"a,b\"", "\"a,c\"")),
+      IndexedDiff(1, Same("\"]\"")),
+    ])
+  assert diff.diff(#("(", "\"x,"), #("(", "\"y,"))
+    == TupleDiff([
+      IndexedDiff(0, Same("\"(\"")),
+      IndexedDiff(1, Differ("\"\\\"x,\"", "\"\\\"y,\"")),
+    ])
+}
+
+pub fn list_diff_has_one_item_per_element_test() {
+  metamon.forall(
+    generator.tuple2(
+      generator.list_of(
+        generator.string_ascii(range.constant(0, 4)),
+        range.constant(0, 4),
+      ),
+      generator.list_of(
+        generator.string_ascii(range.constant(0, 4)),
+        range.constant(0, 4),
+      ),
+    ),
+    fn(pair) {
+      let #(left, right) = pair
+      case left == right, diff.diff(left, right) {
+        True, Same(_) -> True
+        False, ListDiff(items) ->
+          list.length(items) == int.max(list.length(left), list.length(right))
+        _, _ -> False
+      }
+    },
+  )
+}

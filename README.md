@@ -68,8 +68,8 @@ When a relation breaks, the test panics with a named report. This is the report 
     "\n 0Az~\u{007F}"
 
   diff (source_output vs follow-up_output):
-    - "\"\\t\\n 0Az~\\u{007F}\""
-    + "\"\\n 0Az~\\u{007F}\""
+    - "\t\n 0Az~\u{007F}"
+    + "\n 0Az~\u{007F}"
 
   reproduce (paste into a test):
     // The MR failed for this input. To pin it as a regression,
