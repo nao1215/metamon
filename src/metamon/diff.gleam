@@ -162,7 +162,7 @@ fn split_top_level(inspected: String) -> List(String) {
 
 /// Where `walk_and_split` is relative to string literals: commas and
 /// brackets inside `"..."` do not split, and `\` escapes the next
-/// character.
+/// character. Outside strings, `[`, `(` and each `<` of `<<` open a level.
 type Scan {
   Outside
   InString
@@ -191,9 +191,9 @@ fn walk_and_split(
           walk_and_split(rest, InString, depth, [first, ..acc], results)
         Outside, "\"", _ ->
           walk_and_split(rest, InString, depth, [first, ..acc], results)
-        Outside, "[", _ | Outside, "(", _ ->
+        Outside, "[", _ | Outside, "(", _ | Outside, "<", _ ->
           walk_and_split(rest, Outside, depth + 1, [first, ..acc], results)
-        Outside, "]", d | Outside, ")", d if d > 0 ->
+        Outside, "]", d | Outside, ")", d | Outside, ">", d if d > 0 ->
           walk_and_split(rest, Outside, d - 1, [first, ..acc], results)
         Outside, ",", 0 ->
           walk_and_split(rest, Outside, 0, [], [item_text(acc), ..results])

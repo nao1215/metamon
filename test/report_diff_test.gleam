@@ -99,3 +99,12 @@ pub fn list_diff_has_one_item_per_element_test() {
     },
   )
 }
+
+pub fn bit_array_elements_stay_whole_test() {
+  // Bytes that are not UTF-8, so both targets render `<<...>>`.
+  assert diff.diff([<<255, 2>>, <<200>>], [<<255, 2>>, <<201>>])
+    == ListDiff([
+      IndexedDiff(0, Same("<<255, 2>>")),
+      IndexedDiff(1, Differ("<<200>>", "<<201>>")),
+    ])
+}
