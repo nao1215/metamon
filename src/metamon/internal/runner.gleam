@@ -131,8 +131,7 @@ pub fn run_assert_morph(
   case evaluation.holds {
     True -> Nil
     False -> {
-      let report =
-        morph_failure_static(test_name, spec, input, evaluation, 0, 0)
+      let report = morph_failure_static(test_name, spec, input, evaluation)
       panic_with(render_for(config.default_config(), report))
     }
   }
@@ -610,15 +609,13 @@ fn morph_failure_static(
   spec: MorphSpec(a, b),
   input: a,
   evaluation: Evaluation(b),
-  run_index: Int,
-  config_seed_value: Int,
 ) -> FailureReport {
   FailureReport(
     mr_name: spec_name(spec),
     test_name: test_name,
-    config_seed: config_seed_value,
+    config_seed: 0,
     config_seed_original: None,
-    runs_done: run_index,
+    runs_done: 0,
     runs_total: 1,
     shrinks_done: 0,
     shrink_capped: False,

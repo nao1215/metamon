@@ -547,9 +547,7 @@ pub fn int(range_value: Range) -> Generator(Int) {
     run: fn(s: Seed, size: Int, max_size: Int) {
       let #(lo, hi) = range.bounds(range_value, size, max_size)
       let #(value, _) = seed_module.next_int_in(s, lo, hi)
-      let shrinks = shrink_lib.int_toward(origin, value)
       tree.unfold(value, fn(v) { shrink_lib.int_toward(origin, v) })
-      |> attach_known_root(value, shrinks)
     },
     edges: edge_lib.ints_in(extreme_lo(range_value), extreme_hi(range_value)),
   )
@@ -642,19 +640,6 @@ fn string_to_utf8_bit_array(s: String) -> BitArray {
 
 fn bytes_to_bit_array(bytes: List(Int)) -> BitArray {
   list.fold(bytes, <<>>, fn(acc, b) { <<acc:bits, b:size(8)>> })
-}
-
-fn attach_known_root(
-  unfolded: Tree(Int),
-  expected_root: Int,
-  _shrinks: List(Int),
-) -> Tree(Int) {
-  // unfold already produces the right shape; this hook exists so future
-  // generators can override the root without recomputing the tree.
-  case unfolded.value == expected_root {
-    True -> unfolded
-    False -> tree.singleton(expected_root)
-  }
 }
 
 /// Generates finite Float values uniformly in the closed interval

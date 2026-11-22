@@ -1,3 +1,4 @@
+import gleam/int
 import gleam/option.{None, Some}
 import gleam/string
 import gleeunit/should
@@ -141,11 +142,6 @@ pub fn parse_lenient_returns_empty_on_unknown_version_test() {
 pub fn version_header_exposes_current_value_test() {
   should.equal(
     regression.version_header(),
-    "schema_version = "
-      <> { regression.current_schema_version |> int_to_string },
+    "schema_version = " <> int.to_string(regression.current_schema_version),
   )
 }
-
-@external(erlang, "erlang", "integer_to_binary")
-@external(javascript, "./metamon_ffi.mjs", "integer_to_string")
-fn int_to_string(n: Int) -> String

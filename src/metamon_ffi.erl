@@ -6,7 +6,6 @@
     state_put/2,
     state_get/1,
     state_erase/1,
-    state_keys/0,
     identity/1,
     capture_panic/1,
     ieee_nan/0,
@@ -40,10 +39,6 @@ state_get(Key) ->
 state_erase(Key) ->
     erlang:erase({metamon_state, Key}),
     nil.
-
-state_keys() ->
-    Keys = erlang:get_keys(),
-    [K || {metamon_state, K} <- Keys].
 
 %% identity/1 is used by the Gleam side to "trust" the shape of values
 %% that the metamon runner itself put into process state. It is the
