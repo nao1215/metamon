@@ -118,19 +118,43 @@ pub fn run_forall(
   gen: Generator(a),
   property: fn(a) -> Nil,
 ) -> Nil {
+  run_plain(cfg, test_name, regression_key, gen, property, False)
+}
+
+fn run_plain(
+  cfg: Settings,
+  test_name: String,
+  regression_key: String,
+  gen: Generator(a),
+  property: fn(a) -> Nil,
+  round_trip: Bool,
+) -> Nil {
   let check =
     Check(
       regression_key: regression_key,
       coverage_name: None,
-      holds: fn(input) { run_property(property, input) == None },
-      report: fn(failure) { forall_failure(cfg, test_name, property, failure) },
+      verdict: fn(input) { run_property(property, input) },
+      report: fn(failure) {
+        forall_failure(cfg, test_name, property, round_trip, failure)
+      },
     )
   run_check(cfg, test_name, gen, check) |> finish
 }
 
-/// The panic message of `property` on `input`, or `None` when it passes.
-fn run_property(property: fn(a) -> Nil, input: a) -> Option(String) {
-  capture.capture_panic(fn() { property(input) })
+/// How a check ended on one input. Two failures are the same failure when
+/// their verdicts are equal: shrinking keeps only the candidates that
+/// fail the same way as the original input.
+type Verdict {
+  Passed
+  /// `panic_message` is `None` when a metamorphic relation does not hold.
+  Failed(panic_message: Option(String))
+}
+
+fn run_property(property: fn(a) -> Nil, input: a) -> Verdict {
+  case capture.attempt(fn() { property(input) }) {
+    capture.Returned(Nil) -> Passed
+    capture.Panicked(message) -> Failed(Some(message))
+  }
 }
 
 /// Run a round-trip property: `decode(encode(input))` must be
@@ -144,23 +168,38 @@ pub fn run_round_trip(
   decode: fn(b) -> Result(a, e),
 ) -> Nil {
   let test_name = "round_trip[" <> name <> "]"
-  run_forall(cfg, test_name, test_name, gen, fn(input) {
-    case decode(encode(input)) {
-      Ok(decoded) if decoded == input -> Nil
-      Ok(decoded) ->
+  run_plain(
+    cfg,
+    test_name,
+    test_name,
+    gen,
+    round_trip_property(encode, decode),
+    True,
+  )
+}
+
+fn round_trip_property(
+  encode: fn(a) -> b,
+  decode: fn(b) -> Result(a, e),
+) -> fn(a) -> Nil {
+  // The messages do not show the decoded value, so shrinking can keep a
+  // candidate that fails the same way; the value is an annotation.
+  fn(input) {
+    let decoded = decode(encode(input))
+    case decoded {
+      Ok(value) if value == input -> Nil
+      Ok(_) -> {
+        annotate.annotate("decode(encode(input))", decoded)
         panic_with(
-          "decode(encode(input)) returned Ok("
-          <> string.inspect(decoded)
-          <> "), which is not the input",
+          "decode(encode(input)) returned a value other than the input",
         )
-      Error(error) ->
-        panic_with(
-          "decode(encode(input)) returned Error("
-          <> string.inspect(error)
-          <> ")",
-        )
+      }
+      Error(_) -> {
+        annotate.annotate("decode(encode(input))", decoded)
+        panic_with("decode(encode(input)) returned an Error")
+      }
     }
-  })
+  }
 }
 
 fn morph_check(
@@ -172,7 +211,13 @@ fn morph_check(
   Check(
     regression_key: spec.name,
     coverage_name: Some(spec.name),
-    holds: fn(input) { evaluate_spec(spec, f, input).holds },
+    verdict: fn(input) {
+      case attempt_spec(spec, f, input) {
+        capture.Returned(evaluation) if evaluation.holds -> Passed
+        capture.Returned(_) -> Failed(None)
+        capture.Panicked(message) -> Failed(Some(message))
+      }
+    },
     report: fn(failure) { morph_failure(cfg, test_name, spec, f, failure) },
   )
 }
@@ -185,13 +230,17 @@ pub fn run_assert_morph(
   input: a,
 ) -> Nil {
   reset_state()
-  let evaluation = evaluate_spec(spec, f, input)
-  case evaluation.holds {
-    True -> Nil
-    False -> {
-      let report = morph_failure_static(test_name, spec, input, evaluation)
-      panic_with(report_module.render(report))
-    }
+  case attempt_spec(spec, f, input) {
+    capture.Returned(evaluation) if evaluation.holds -> Nil
+    outcome ->
+      panic_with(
+        report_module.render(morph_failure_static(
+          test_name,
+          spec,
+          input,
+          outcome,
+        )),
+      )
   }
 }
 
@@ -256,9 +305,12 @@ fn iterate_inputs(
   gen: Generator(a),
   body: fn(a, InputSource, Int) -> Step,
 ) -> Outcome {
-  let edges = generator.edges_of(gen) |> list.take(cfg.max_edges)
-  let edge_count = list.length(edges)
   let run_total = total_runs(cfg)
+  // The edges count towards the runs, so fewer runs than edges try only
+  // the first edges.
+  let edges =
+    generator.edges_of(gen) |> list.take(int.min(cfg.max_edges, run_total))
+  let edge_count = list.length(edges)
   case run_edges(edges, 0, body) {
     Halted(text) -> Halted(text)
     Done -> {
@@ -346,7 +398,7 @@ type Check(a) {
   Check(
     regression_key: String,
     coverage_name: Option(String),
-    holds: fn(a) -> Bool,
+    verdict: fn(a) -> Verdict,
     report: fn(Failure(a)) -> String,
   )
 }
@@ -398,12 +450,18 @@ fn check_step(
   // Annotations describe one run; coverage accumulates across runs.
   annotate.reset()
   coverage.count_run()
-  case check.holds(input) {
-    True -> Continue
-    False -> {
+  case check.verdict(input) {
+    Passed -> Continue
+    failed -> {
       let notes =
         record_regression_for(cfg, check.regression_key, source, input)
-      Stop(shrunk_failure(cfg, gen, check, input, source, run_index, notes))
+      Stop(shrunk_failure(
+        cfg,
+        gen,
+        check,
+        Found(input, failed, source, run_index),
+        notes,
+      ))
     }
   }
 }
@@ -425,13 +483,16 @@ fn finish(outcome: Outcome) -> Nil {
 /// Shrink a failing input and render the report. The annotations are
 /// rebuilt from one more run on the reported input so they describe that
 /// input, not the shrink attempts.
+/// The first failing input of a run and how it failed.
+type Found(a) {
+  Found(input: a, verdict: Verdict, source: InputSource, run_index: Int)
+}
+
 fn shrunk_failure(
   cfg: Settings,
   gen: Generator(a),
   check: Check(a),
-  input: a,
-  source: InputSource,
-  run_index: Int,
+  found: Found(a),
   notes: List(String),
 ) -> String {
   let snapshot = coverage.snapshot()
@@ -439,15 +500,15 @@ fn shrunk_failure(
     shrink_input(
       cfg,
       gen,
-      fn(candidate) { !check.holds(candidate) },
-      input,
-      source,
+      fn(candidate) { check.verdict(candidate) == found.verdict },
+      found.input,
+      found.source,
     )
   annotate.reset()
   check.report(Failure(
     input: shrunk,
-    source: source,
-    run_index: run_index,
+    source: found.source,
+    run_index: found.run_index,
     shrinks: shrinks,
     capped: capped,
     coverage: snapshot,
@@ -459,16 +520,21 @@ fn forall_failure(
   cfg: Settings,
   test_name: String,
   property: fn(a) -> Nil,
+  round_trip: Bool,
   failure: Failure(a),
 ) -> String {
   // Run the property once more first: the report reads the annotations
   // of this run.
-  let panic_message = run_property(property, failure.input)
+  let panic_message = case run_property(property, failure.input) {
+    Failed(message) -> message
+    Passed -> None
+  }
   render_for(
     cfg,
     FailureReport(
       ..plain_report(cfg, test_name, failure),
       panic_message: panic_message,
+      round_trip: round_trip,
     ),
   )
 }
@@ -500,11 +566,22 @@ fn plain_report(
     footnotes: failure.notes,
     coverage_snapshot: Some(failure.coverage),
     panic_message: None,
+    round_trip: False,
   )
 }
 
 type Evaluation(b) {
   Evaluation(followup_input: String, src_output: b, fol_output: b, holds: Bool)
+}
+
+/// Evaluate `spec` on `input`, or return the panic message when `f`, a
+/// transform or the relation panics.
+fn attempt_spec(
+  spec: MorphSpec(a, b),
+  f: fn(a) -> b,
+  input: a,
+) -> capture.Attempt(Evaluation(b)) {
+  capture.attempt(fn() { evaluate_spec(spec, f, input) })
 }
 
 fn evaluate_spec(
@@ -530,25 +607,40 @@ fn morph_failure(
   f: fn(a) -> b,
   failure: Failure(a),
 ) -> String {
-  let evaluation = evaluate_spec(spec, f, failure.input)
   let report =
     FailureReport(
       ..plain_report(cfg, test_name, failure),
       mr_name: spec.name,
       morph_mode: Some(spec.mode),
       relation_name: spec.relation_name,
-      followup_input: evaluation.followup_input,
-      source_output: string.inspect(evaluation.src_output),
-      followup_output: string.inspect(evaluation.fol_output),
     )
-  render_for(cfg, report)
+  render_for(cfg, with_evaluation(report, attempt_spec(spec, f, failure.input)))
+}
+
+/// Fill in the outputs of a morph report, or the panic message when the
+/// evaluation panicked.
+fn with_evaluation(
+  report: FailureReport,
+  outcome: capture.Attempt(Evaluation(b)),
+) -> FailureReport {
+  case outcome {
+    capture.Returned(evaluation) ->
+      FailureReport(
+        ..report,
+        followup_input: evaluation.followup_input,
+        source_output: string.inspect(evaluation.src_output),
+        followup_output: string.inspect(evaluation.fol_output),
+      )
+    capture.Panicked(message) ->
+      FailureReport(..report, panic_message: Some(message))
+  }
 }
 
 fn morph_failure_static(
   test_name: String,
   spec: MorphSpec(a, b),
   input: a,
-  evaluation: Evaluation(b),
+  outcome: capture.Attempt(Evaluation(b)),
 ) -> FailureReport {
   FailureReport(
     mr_name: spec.name,
@@ -562,15 +654,17 @@ fn morph_failure_static(
     morph_mode: Some(spec.mode),
     relation_name: spec.relation_name,
     source_input: string.inspect(input),
-    followup_input: evaluation.followup_input,
-    source_output: string.inspect(evaluation.src_output),
-    followup_output: string.inspect(evaluation.fol_output),
+    followup_input: "",
+    source_output: "",
+    followup_output: "",
     input_source: EdgeSource(0),
     annotations: annotate.current_annotations(),
     footnotes: [],
     coverage_snapshot: None,
     panic_message: None,
+    round_trip: False,
   )
+  |> with_evaluation(outcome)
 }
 
 // ---------- shrinking ----------
@@ -605,13 +699,22 @@ fn shrink_loop(
   case done >= budget {
     True -> #(best, done, True)
     False ->
+      // A generator can panic while it builds a shrink candidate; the
+      // run then keeps the smallest failing input found so far.
       case
-        tree.shrinks_find(current_tree.shrinks, fn(child: Tree(a)) {
-          fails(child.value)
+        capture.attempt(fn() {
+          tree.shrinks_find(current_tree.shrinks, fn(child: Tree(a)) {
+            fails(child.value)
+          })
         })
       {
-        Error(_) -> #(best, done, False)
-        Ok(child) -> shrink_loop(child, fails, child.value, budget, done + 1)
+        capture.Returned(Ok(child)) ->
+          shrink_loop(child, fails, child.value, budget, done + 1)
+        capture.Returned(Error(Nil)) | capture.Panicked(_) -> #(
+          best,
+          done,
+          False,
+        )
       }
   }
 }
@@ -742,10 +845,15 @@ fn replay_regression(
     [] -> Done
     [entry, ..rest] -> {
       let value = reproduce_entry_value(gen, entry)
-      case check.holds(value) {
-        True -> replay_regression(gen, check, rest)
-        False ->
-          Halted(replay_failure_message(check.regression_key, entry, value))
+      case check.verdict(value) {
+        Passed -> replay_regression(gen, check, rest)
+        Failed(panic_message) ->
+          Halted(replay_failure_message(
+            check.regression_key,
+            entry,
+            value,
+            panic_message,
+          ))
       }
     }
   }
@@ -781,6 +889,7 @@ fn replay_failure_message(
   mr_name: String,
   entry: regression.Entry,
   value: a,
+  panic_message: Option(String),
 ) -> String {
   string.concat([
     "× regression replay for `",
@@ -797,6 +906,10 @@ fn replay_failure_message(
     int.to_string(entry.max_size),
     "\n  reproduced input:\n    ",
     string.inspect(value),
+    case panic_message {
+      Some(message) -> "\n  panic message:\n    " <> message
+      None -> ""
+    },
     case entry.note {
       Some(n) -> "\n  note:\n    " <> n
       None -> ""

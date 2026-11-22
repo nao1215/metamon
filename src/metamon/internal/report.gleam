@@ -35,7 +35,7 @@ pub type FailureReport {
     /// `Some(n)` when the user set `Config.seed` to `Some(n)` and the
     /// runner normalised it into a different canonical state (e.g.
     /// `seed(0)` → `0xDEADBEEF`). The header annotates with
-    /// "originally seed(n)" so a user pinning `seed(0)` in source
+    /// the configured seed so a user pinning `Some(0)` in source
     /// can map it back to the reported `config seed`. `None` when
     /// the seed was clock-derived (`random_seed`) or already
     /// matched its canonical state.
@@ -58,6 +58,9 @@ pub type FailureReport {
     /// last run on the reported input. `None` for metamorphic relations,
     /// and when that last run did not panic.
     panic_message: Option(String),
+    /// Whether the failure is a round trip, whose reproduce line checks
+    /// `decode(encode(input))` instead of calling a property.
+    round_trip: Bool,
   )
 }
 
@@ -77,9 +80,9 @@ fn format_source(source: InputSource) -> String {
 }
 
 /// Render the `config seed:` header value. The canonical state is
-/// always shown; when normalisation kicked in (the user passed
-/// `seed(n)` whose normalised form differs from `n`), the original
-/// integer is appended in parentheses so the user can map the report
+/// always shown; when normalisation kicked in (the user set `Config.seed`
+/// to `Some(n)` whose normalised form differs from `n`), the configured
+/// seed is appended in parentheses so the user can map the report
 /// back to source.
 fn format_config_seed(state: Int, original: Option(Int)) -> String {
   case original {
@@ -89,9 +92,9 @@ fn format_config_seed(state: Int, original: Option(Int)) -> String {
         True -> int.to_string(state)
         False ->
           int.to_string(state)
-          <> " (originally seed("
+          <> " (from Config(..default_config(), seed: Some("
           <> int.to_string(n)
-          <> "))"
+          <> ")))"
       }
   }
 }
@@ -237,20 +240,20 @@ fn body_lines(report: FailureReport) -> List(String) {
     None -> []
     Some(_) -> ["  relation:    `" <> report.relation_name <> "`"]
   }
-  let inputs = case report.morph_mode {
-    None -> [
+  let inputs = case report.morph_mode, report.panic_message {
+    None, _ | Some(_), Some(_) -> [
       "  source input  (shrunk):\n    " <> report.source_input,
       ..panic_lines(report.panic_message)
     ]
-    Some(_) -> [
+    Some(_), None -> [
       "  source input  (shrunk):\n    " <> report.source_input,
       "  follow-up input  (= transform(source)):\n    " <> report.followup_input,
       "  source output:\n    " <> report.source_output,
       "  follow-up output:\n    " <> report.followup_output,
     ]
   }
-  let diff_block = case report.morph_mode {
-    Some(_) -> [
+  let diff_block = case report.morph_mode, report.panic_message {
+    Some(_), None -> [
       "  diff (source_output vs follow-up_output):\n"
       <> indent(
         diff.render(diff.diff_inspected(
@@ -260,7 +263,7 @@ fn body_lines(report: FailureReport) -> List(String) {
         "    ",
       ),
     ]
-    None -> []
+    _, _ -> []
   }
   list.flatten([
     list_join_block(list.append(transform_block, relation_block)),
@@ -343,22 +346,29 @@ fn classified(snap: coverage.Snapshot) -> List(#(String, Int)) {
 fn reproduce_lines(report: FailureReport) -> List(String) {
   // The shrunk input is already shown in `source input (shrunk)`
   // earlier in the report. The reproduce block re-states the input
-  // alongside an `assert_morph` (or a direct call) call site so users
-  // can paste it into a regression test verbatim.
-  case report.morph_mode {
-    None -> [
+  // alongside a call that checks it, so users can paste it into a
+  // regression test verbatim.
+  case report.morph_mode, report.round_trip {
+    None, True -> [
+      "  reproduce (paste into a test):",
+      "    // The round trip failed for this input. To pin it as a",
+      "    // regression, store it explicitly and check it directly.",
+      "    let input = " <> report.source_input,
+      "    assert decode(encode(input)) == Ok(input)",
+    ]
+    None, False -> [
       "  reproduce (paste into a test):",
       "    // The property failed for this input. To pin it as a",
       "    // regression, store it explicitly and call the property.",
       "    let input = " <> report.source_input,
       "    property(input)",
     ]
-    Some(_) -> [
+    Some(_), _ -> [
       "  reproduce (paste into a test):",
-      "    // The MR failed for this input. To pin it as a regression,",
-      "    // call assert_morph with the shrunk input and the same MR.",
+      "    // The morph failed for this input. To pin it as a regression,",
+      "    // call assert_morph with the shrunk input and the same morph.",
       "    let input = " <> report.source_input,
-      "    metamon.assert_morph(input, mr, f)",
+      "    metamon.assert_morph(input, morph, function)",
     ]
   }
 }

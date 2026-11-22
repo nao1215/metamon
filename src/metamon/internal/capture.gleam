@@ -2,17 +2,28 @@
 //// `let assert`, `panic`, Erlang error or JavaScript exception becomes a
 //// value the runner can shrink and report.
 
-import gleam/option.{type Option, None, Some}
+import gleam/dynamic.{type Dynamic}
 
-/// Run `thunk` and return the message of its panic, or `None` when it
-/// returns. An error raised outside Gleam gives its formatted value.
-pub fn capture_panic(thunk: fn() -> Nil) -> Option(String) {
+/// The result of running a function that may panic.
+pub type Attempt(a) {
+  Returned(value: a)
+  /// The panic message, or the formatted value of an error raised
+  /// outside Gleam.
+  Panicked(message: String)
+}
+
+/// Run `thunk` and return its value, or the message of its panic.
+pub fn attempt(thunk: fn() -> a) -> Attempt(a) {
   case run(thunk) {
-    #(True, message) -> Some(message)
-    #(False, _) -> None
+    #(True, message) -> Panicked(coerce(message))
+    #(False, value) -> Returned(coerce(value))
   }
 }
 
 @external(erlang, "metamon_ffi", "capture_panic")
 @external(javascript, "../../metamon_ffi.mjs", "capture_panic")
-fn run(thunk: fn() -> Nil) -> #(Bool, String)
+fn run(thunk: fn() -> a) -> #(Bool, Dynamic)
+
+@external(erlang, "metamon_ffi", "identity")
+@external(javascript, "../../metamon_ffi.mjs", "identity")
+fn coerce(value: Dynamic) -> b

@@ -285,3 +285,29 @@ pub fn replay_uses_the_recorded_max_size_test() {
   should.be_true(string.contains(text, "regression replay"))
   should.be_true(string.contains(text, "reproduced input:\n    " <> recorded))
 }
+
+pub fn replay_failure_shows_the_panic_message_test() {
+  cleanup()
+  let config =
+    metamon.Config(
+      ..metamon.default_config(),
+      seed: Some(3),
+      regression_file: Some(tmp_path),
+    )
+  let gen = generator.int(generator.range(0, 1000)) |> generator.no_edges
+  let fails = fn(x) {
+    case x >= 10 {
+      // nolint: avoid_panic
+      True -> panic as "replayed failure"
+      False -> Nil
+    }
+  }
+  let _ =
+    test_helpers.capture_panic(fn() { metamon.forall_with(config, gen, fails) })
+  let #(panicked, text) =
+    test_helpers.capture_panic(fn() { metamon.forall_with(config, gen, fails) })
+  cleanup()
+  should.be_true(panicked)
+  should.be_true(string.contains(text, "regression replay"))
+  should.be_true(string.contains(text, "panic message:\n    replayed failure"))
+}

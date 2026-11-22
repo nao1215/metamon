@@ -65,7 +65,7 @@ pub fn state(s: Seed) -> Int {
 /// `None` for seeds derived from the system clock, from `next_int` /
 /// `next_int_in` advancement, or from `split`. `Some(n)` for seeds
 /// constructed via `seed(n)`. Failure reports compare this against
-/// `state/1` to decide whether to annotate "originally seed(n)".
+/// `state/1` to decide whether to show the configured seed.
 pub fn original_input(s: Seed) -> Option(Int) {
   s.original_input
 }

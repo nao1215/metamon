@@ -42,8 +42,10 @@ import metamon/internal/runner
 /// the values they reject.
 pub type Config {
   Config(
-    /// The number of inputs to try. `METAMON_RUNS_MULTIPLIER`, when set to
-    /// a positive integer, multiplies it.
+    /// The number of inputs to try, edge values included: the edge values
+    /// come first, and fewer runs than edge values try only the first
+    /// ones. `METAMON_RUNS_MULTIPLIER`, when set to a positive integer,
+    /// multiplies it.
     runs: Int,
     /// The seed of the random inputs. `None` draws a new seed for every
     /// property; `Some(n)` replays the same inputs on every run.

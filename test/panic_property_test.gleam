@@ -75,9 +75,37 @@ pub fn panic_is_shrunk_test() {
   assert string.contains(text, "panic message:\n    too large")
 }
 
+pub fn shrinking_keeps_the_original_failure_test() {
+  // Two different failures: "large" from 100 up, "odd" for odd values
+  // from 11 to 99. Shrinking may only move to inputs that fail the same
+  // way, so the report never mixes one failure's input with the other.
+  list.each([1, 2, 3, 4, 5, 6, 7, 8], fn(seed_value) {
+    let #(panicked, text) =
+      test_helpers.capture_panic(fn() {
+        metamon.forall_with(seeded(seed_value), ints(), two_failures)
+      })
+    assert panicked
+    let large = string.contains(text, "panic message:\n    large\n")
+    let odd = string.contains(text, "panic message:\n    odd\n")
+    assert large || odd
+    assert !large || shrunk_to(text, "100")
+    assert !odd || shrunk_to(text, "11")
+  })
+}
+
+fn two_failures(n: Int) -> Nil {
+  case n >= 100, n >= 10 && n % 2 == 1 {
+    // nolint: avoid_panic
+    True, _ -> panic as "large"
+    // nolint: avoid_panic
+    False, True -> panic as "odd"
+    False, False -> Nil
+  }
+}
+
 pub fn the_message_belongs_to_the_reported_input_test() {
-  // Each input panics with its own value, so a message from a shrink
-  // attempt or from the first failing input would show another number.
+  // Each input panics with its own value, so shrinking keeps the first
+  // failing input and the report shows that input's message.
   let text =
     failure_text(fn(n) {
       case n >= 10 {
@@ -86,8 +114,92 @@ pub fn the_message_belongs_to_the_reported_input_test() {
         False -> Nil
       }
     })
+  let assert Ok(#(_, rest)) =
+    string.split_once(text, "source input  (shrunk):\n    ")
+  let assert Ok(#(input, _)) = string.split_once(rest, "\n")
+  assert string.contains(text, "panic message:\n    got " <> input <> "\n")
+}
+
+fn panics_from_ten(n: Int) -> Int {
+  case n >= 10 {
+    // nolint: avoid_panic
+    True -> panic as "f gave up"
+    False -> n
+  }
+}
+
+pub fn a_panicking_function_fails_the_morph_and_is_shrunk_test() {
+  let identity = metamon.Transform(name: "identity", apply: fn(n) { n })
+  let #(panicked, text) =
+    test_helpers.capture_panic(fn() {
+      metamon.forall_morph_with(
+        seeded(42),
+        ints(),
+        [
+          metamon.invariant_under(name: "first", under: identity),
+          metamon.invariant_under(name: "second", under: identity),
+        ],
+        panics_from_ten,
+      )
+    })
+  assert panicked
+  // Both morphs are checked and reported.
+  assert string.contains(text, "`first` failed")
+  assert string.contains(text, "`second` failed")
   assert shrunk_to(text, "10")
-  assert string.contains(text, "panic message:\n    got 10\n")
+  assert string.contains(text, "panic message:\n    f gave up")
+}
+
+pub fn a_panicking_transform_fails_the_morph_test() {
+  let explode =
+    metamon.Transform(name: "explode", apply: fn(n) {
+      case n >= 10 {
+        // nolint: avoid_panic
+        True -> panic as "transform gave up"
+        False -> n
+      }
+    })
+  let #(panicked, text) =
+    test_helpers.capture_panic(fn() {
+      metamon.forall_morph_with(
+        seeded(42),
+        ints(),
+        [metamon.invariant_under(name: "explode", under: explode)],
+        fn(n) { n },
+      )
+    })
+  assert panicked
+  assert shrunk_to(text, "10")
+  assert string.contains(text, "panic message:\n    transform gave up")
+}
+
+pub fn assert_morph_reports_a_panicking_function_test() {
+  let identity = metamon.Transform(name: "identity", apply: fn(n) { n })
+  let #(panicked, text) =
+    test_helpers.capture_panic(fn() {
+      metamon.assert_morph(
+        12,
+        metamon.invariant_under(name: "id", under: identity),
+        panics_from_ten,
+      )
+    })
+  assert panicked
+  assert string.contains(text, "× metamorphic relation `id` failed")
+  assert string.contains(text, "panic message:\n    f gave up")
+}
+
+pub fn round_trip_reproduce_line_checks_the_round_trip_test() {
+  let #(_, text) =
+    test_helpers.capture_panic(fn() {
+      metamon.forall_round_trip_with(
+        config: seeded(42),
+        generator: ints(),
+        name: "broken",
+        encode: fn(n) { n },
+        decode: fn(_) { Error(Nil) },
+      )
+    })
+  assert string.contains(text, "assert decode(encode(input)) == Ok(input)")
 }
 
 pub fn foreign_error_fails_the_property_test() {
@@ -140,7 +252,8 @@ pub fn round_trip_reports_the_decoded_value_test() {
     })
   assert panicked
   assert shrunk_to(text, "10")
-  assert string.contains(text, "returned Ok(11), which is not the input")
+  assert string.contains(text, "returned a value other than the input")
+  assert string.contains(text, "- decode(encode(input)): Ok(11)")
 }
 
 pub fn round_trip_catches_a_panicking_decoder_test() {

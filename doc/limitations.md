@@ -22,6 +22,10 @@ A failing `Node(left, right)` does not reduce to `left` or `right`; only the lea
 
 Values listed with `with_examples` and the built-in edge cases are tried as they are. When one of them fails, the report shows it with `shrinks: 0`. Use `no_edges` to see a shrunk random failure instead.
 
+## Shrinking keeps the panic message
+
+A smaller input is kept only when it panics with the same message as the original failure, so the report never mixes one failure's input with another failure's message. A message that contains the input, such as `panic as { "got " <> int.to_string(n) }`, differs for every input and stops shrinking at the first failing input. Put the value in `annotate` and keep the message fixed.
+
 ## `filter` panics after 100 consecutive rejections
 
 A predicate that accepts less than about 1% of the generated values makes `filter` panic. Narrow the generator instead, for example `int(range(from: 0, to: 9))` rather than filtering `int(range(from: -100, to: 100))`.

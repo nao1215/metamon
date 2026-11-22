@@ -4,6 +4,7 @@
 //// isolation and inspect the panic reason.
 
 import gleam/int
+import gleam/list
 import gleam/option.{Some}
 import gleam/string
 import gleeunit/should
@@ -127,10 +128,10 @@ pub fn forall_morph_panics_on_empty_morph_list_test() {
   }
 }
 
-pub fn config_seed_zero_renders_with_originally_annotation_test() {
+pub fn config_seed_zero_renders_with_the_configured_seed_test() {
   // Pin seed(0) so the runner's normalisation maps it to 0xDEADBEEF.
   // The failure header should annotate the canonical state with the
-  // original "seed(0)" the user wrote in source.
+  // seed the user wrote in the Config.
   let cfg = metamon.Config(..metamon.default_config(), seed: Some(0))
   let outcome =
     capture(fn() {
@@ -141,8 +142,67 @@ pub fn config_seed_zero_renders_with_originally_annotation_test() {
   case outcome {
     Reason(text) -> {
       should.be_true(string.contains(text, "config seed:"))
-      should.be_true(string.contains(text, "originally seed(0)"))
+      should.be_true(string.contains(
+        text,
+        "Config(..default_config(), seed: Some(0))",
+      ))
     }
     NoPanic -> should.fail()
   }
 }
+
+pub fn morph_reproduce_line_uses_assert_morph_test() {
+  let reverse = metamon.Transform(name: "reverse", apply: list.reverse)
+  let outcome =
+    capture(fn() {
+      metamon.forall_morph(
+        generator.list_of(
+          generator.int(generator.range(0, 9)),
+          generator.range(2, 5),
+        ),
+        [metamon.invariant_under(name: "head", under: reverse)],
+        list.first,
+      )
+    })
+  case outcome {
+    Reason(text) -> {
+      should.be_true(string.contains(
+        text,
+        "metamon.assert_morph(input, morph, function)",
+      ))
+      should.be_false(string.contains(text, " MR "))
+    }
+    NoPanic -> should.fail()
+  }
+}
+
+pub fn runs_smaller_than_the_edge_count_limits_the_inputs_test() {
+  // One run per multiplier step; the 16 edge values must not add more.
+  count_reset()
+  metamon.forall_with(
+    metamon.Config(..metamon.default_config(), runs: 1),
+    generator.int(generator.range(0, 9)) |> generator.no_edges,
+    fn(_) { count_bump() },
+  )
+  let plain = count_get()
+  count_reset()
+  metamon.forall_with(
+    metamon.Config(..metamon.default_config(), runs: 1),
+    generator.int(generator.range(0, 1000))
+      |> generator.with_examples(test_helpers.integers_from(0, 16)),
+    fn(_) { count_bump() },
+  )
+  should.equal(count_get(), plain)
+}
+
+@external(erlang, "metamon_env_test_ffi", "count_reset")
+@external(javascript, "./metamon_env_test_ffi.mjs", "count_reset")
+fn count_reset() -> Nil
+
+@external(erlang, "metamon_env_test_ffi", "count_bump")
+@external(javascript, "./metamon_env_test_ffi.mjs", "count_bump")
+fn count_bump() -> Nil
+
+@external(erlang, "metamon_env_test_ffi", "count_get")
+@external(javascript, "./metamon_env_test_ffi.mjs", "count_get")
+fn count_get() -> Int

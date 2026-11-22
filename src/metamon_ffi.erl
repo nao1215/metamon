@@ -97,12 +97,12 @@ getenv(Name) ->
         Value -> {ok, unicode:characters_to_binary(Value)}
     end.
 
-%% Run a thunk and return `{false, <<>>}`, or `{true, Message}` when it
-%% raises. A Gleam panic, `assert` or `let assert` carries its message in
+%% Run a thunk and return `{false, Value}` with its result, or
+%% `{true, Message}` when it raises. A Gleam panic, `assert` or `let assert` carries its message in
 %% the error map; any other error, throw or exit is formatted with `~p`.
 capture_panic(Thunk) ->
     try Thunk() of
-        _ -> {false, <<>>}
+        Value -> {false, Value}
     catch
         error:#{gleam_error := _, message := Message} when is_binary(Message) ->
             {true, Message};

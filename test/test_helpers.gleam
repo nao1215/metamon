@@ -1,16 +1,10 @@
-import gleam/option.{None, Some}
 import metamon/internal/capture
 
 /// Run `thunk` and report whether it panicked, with the panic message.
 pub fn capture_panic(thunk: fn() -> a) -> #(Bool, String) {
-  case
-    capture.capture_panic(fn() {
-      let _ = thunk()
-      Nil
-    })
-  {
-    None -> #(False, "")
-    Some(message) -> #(True, message)
+  case capture.attempt(thunk) {
+    capture.Returned(_) -> #(False, "")
+    capture.Panicked(message) -> #(True, message)
   }
 }
 
