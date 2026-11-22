@@ -15,6 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Breaking: ranges and character sets are part of `metamon/generator`: `range(from:, to:)`, `linear_range(from:, to:)`, the `Characters` type, `character(of:)`, `string(of:, length:)` and `string_from(characters:, length:)`. Collection generators take labelled lengths, and `sample(generator, count:, seed:)` draws values.
 - Breaking: `classify(label:, when:)`, `cover(at_least:, label:, when:)` and `annotate(label:, value:)` are in `metamon`.
 - The JSON failure report has a `panic_message` key.
+- A panic inside the function, a transform or a relation of `forall_morph` and `assert_morph` is a failure of that morph: it is shrunk, reported with its message, and the other morphs are still checked.
+- Shrinking keeps only inputs that fail the same way as the original failure, with the same panic message or the same broken relation. A message that contains the input stops shrinking at the first failing input; put the value in `annotate` instead.
+- Edge cases count toward `Config.runs`, so `runs: 1` tries one input.
 - Regression files use schema version 2, which records `max_size`. Version 1 files are still read, with `max_size` 99. Entries recorded by earlier versions for round trips (under `(plain property)`) or for string and list edge cases may no longer replay; delete and re-record them.
 
 ```gleam
@@ -49,6 +52,7 @@ metamon.forall_with(
 
 ### Fixed
 
+- `cover(at_least: p)` is met when exactly `p` percent of the runs hit the label. Floating-point rounding used to report a shortfall.
 - `forall`, `forall_with` and the `forall_round_trip` runners now shrink a failing input. They used to report the first failing input with `shrinks: 0`.
 - A generated list keeps shrinking after an element is dropped, and never shrinks below the range's minimum length.
 - The configured `max_size` now reaches the generators. Ranges used to grow as if `max_size` were 99.
