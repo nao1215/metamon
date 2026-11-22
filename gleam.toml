@@ -120,3 +120,13 @@ unwrap_used = "error"
 # `gleam.mjs` to interop with Gleam-shaped Results. There is no
 # stable replacement for this on the JS target.
 "src/metamon_ffi.mjs" = ["ffi_usage"]
+
+[[documentation.pages]]
+title = "Limitations"
+path = "limitations.html"
+source = "./doc/limitations.md"
+
+[[documentation.pages]]
+title = "Targets"
+path = "targets.html"
+source = "./doc/targets.md"
