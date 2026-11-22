@@ -15,10 +15,10 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
-import metamon/annotate
-import metamon/coverage
 import metamon/generator.{type Generator}
+import metamon/internal/annotate
 import metamon/internal/capture
+import metamon/internal/coverage
 import metamon/internal/regression
 import metamon/internal/report.{
   type FailureReport, type InputSource, type MorphMode, EdgeSource,
@@ -497,7 +497,7 @@ fn plain_report(
     followup_output: "",
     input_source: failure.source,
     annotations: annotate.current_annotations(),
-    footnotes: list.append(annotate.current_footnotes(), failure.notes),
+    footnotes: failure.notes,
     coverage_snapshot: Some(failure.coverage),
     panic_message: None,
   )
@@ -567,7 +567,7 @@ fn morph_failure_static(
     followup_output: string.inspect(evaluation.fol_output),
     input_source: EdgeSource(0),
     annotations: annotate.current_annotations(),
-    footnotes: annotate.current_footnotes(),
+    footnotes: [],
     coverage_snapshot: None,
     panic_message: None,
   )
@@ -644,7 +644,7 @@ fn coverage_outcome(test_name: String, morph_name: Option(String)) -> Outcome {
         <> " ("
         <> float.to_string(coverage.actual_pct(req.hits, snap.total))
         <> "%, target≥"
-        <> float.to_string(coverage.target_pct_of(req, snap.total))
+        <> float.to_string(req.target_pct)
         <> "%)",
       )
     }

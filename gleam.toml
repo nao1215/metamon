@@ -107,11 +107,10 @@ unwrap_used = "error"
 # relation a negative epsilon would silently produce is never the
 # user's intent, so we fail visibly on the sign mistake.
 "src/metamon.gleam" = ["avoid_panic"]
-# `coverage.cover` / `cover_at_least` panic on a malformed target
-# (target_pct outside [0.0, 100.0] or NaN, min_hits < 0) — the same
-# "fail visibly on misconfiguration" stance as metamon.approximately
-# (negative epsilon) and Range constructors (inverted bounds).
-"src/metamon/coverage.gleam" = ["avoid_panic"]
+# `metamon.cover` panics on a malformed target (outside [0.0, 100.0]
+# or NaN), the same "fail visibly on misconfiguration" stance as
+# metamon.approximately (negative epsilon).
+"src/metamon/internal/coverage.gleam" = ["avoid_panic"]
 # Process-dictionary FFI shims (BEAM + JS) intentionally form the
 # metamon-FFI seam.
 "src/metamon/internal/process_state.gleam" = ["ffi_usage"]

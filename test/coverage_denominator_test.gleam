@@ -1,14 +1,15 @@
 //// The coverage percentage is hits over runs, however many coverage
 //// calls one run makes.
 
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/string
 import metamon
-import metamon/coverage
 import metamon/generator
 import metamon/generator/range
+import metamon/internal/coverage
 import simplifile
 import test_helpers
 
@@ -16,17 +17,34 @@ const tmp_path: String = "/tmp/metamon_coverage_denominator_test.toml"
 
 pub fn two_covers_per_run_count_each_run_once_test() {
   metamon.forall(generator.int(range.constant(0, 100)), fn(_) {
-    coverage.cover(60.0, "a", True)
-    coverage.cover(60.0, "b", True)
+    metamon.cover(at_least: 60.0, label: "a", when: True)
+    metamon.cover(at_least: 60.0, label: "b", when: True)
   })
 }
 
-pub fn classify_and_collect_do_not_dilute_cover_test() {
+pub fn classify_does_not_dilute_cover_test() {
   metamon.forall(generator.int(range.constant(0, 100)), fn(n) {
-    coverage.cover(100.0, "always", True)
-    coverage.classify("even", n % 2 == 0)
-    coverage.collect(n % 3, fn(r) { string.inspect(r) })
+    metamon.cover(at_least: 100.0, label: "always", when: True)
+    metamon.classify(label: "even", when: n % 2 == 0)
+    metamon.classify(label: "small", when: n < 10)
   })
+}
+
+pub fn classify_counts_appear_in_the_failure_report_test() {
+  let #(panicked, text) =
+    test_helpers.capture_panic(fn() {
+      metamon.forall_with(
+        metamon.Config(..metamon.default_config(), seed: Some(1)),
+        generator.int(range.constant(0, 100)) |> generator.no_edges,
+        fn(n) {
+          metamon.classify(label: "any", when: True)
+          assert n < 50
+        },
+      )
+    })
+  assert panicked
+  // The runs up to and including the first failing one hit the label.
+  assert string.contains(text, "  coverage:\n    any: ")
 }
 
 pub fn every_run_count_keeps_full_coverage_test() {
@@ -40,9 +58,9 @@ pub fn every_run_count_keeps_full_coverage_test() {
             metamon.Config(..metamon.default_config(), runs: runs),
             generator.int(range.constant(0, 9)),
             fn(_) {
-              coverage.cover(100.0, "x", True)
-              coverage.cover(100.0, "y", True)
-              coverage.cover_at_least(runs, "z", True)
+              metamon.cover(at_least: 100.0, label: "x", when: True)
+              metamon.cover(at_least: 100.0, label: "y", when: True)
+              metamon.cover(at_least: 100.0, label: "z", when: True)
             },
           )
         })
@@ -60,8 +78,8 @@ pub fn shortfall_reports_runs_as_the_denominator_test() {
         generator.int(range.constant(0, 9)) |> generator.no_edges,
         fn(_) {
           count_bump()
-          coverage.classify("noise", True)
-          coverage.cover(50.0, "never", False)
+          metamon.classify(label: "noise", when: True)
+          metamon.cover(at_least: 50.0, label: "never", when: False)
         },
       )
     })
@@ -89,17 +107,14 @@ pub fn regression_replay_does_not_count_towards_coverage_test() {
       metamon.forall_with(cfg, gen, fn(_) { test_helpers.fail() })
     })
   // The replayed entry runs the property once more, but only the runs
-  // count, so runs + 1 hits are out of reach.
-  let #(panicked, text) =
-    test_helpers.capture_panic(fn() {
-      metamon.forall_with(cfg, gen, fn(_) {
-        coverage.cover_at_least(runs + 1, "hit", True)
-      })
-    })
+  // count: the coverage state left by the run holds `runs` runs and hits.
+  metamon.forall_with(cfg, gen, fn(_) {
+    metamon.classify(label: "hit", when: True)
+  })
   let _ = simplifile.delete(tmp_path)
-  assert panicked
-  let runs = int.to_string(runs)
-  assert string.contains(text, "hit " <> runs <> "/" <> runs <> " ")
+  let snapshot = coverage.snapshot()
+  assert snapshot.total == runs
+  assert dict.get(snapshot.counts, "hit") == Ok(runs)
 }
 
 pub fn a_label_counts_once_per_run_test() {
@@ -111,8 +126,8 @@ pub fn a_label_counts_once_per_run_test() {
         metamon.Config(..metamon.default_config(), seed: Some(4)),
         generator.int(range.constant(0, 1)),
         fn(n) {
-          coverage.cover(60.0, "zero", n == 0)
-          coverage.cover(60.0, "zero", n == 0)
+          metamon.cover(at_least: 60.0, label: "zero", when: n == 0)
+          metamon.cover(at_least: 60.0, label: "zero", when: n == 0)
         },
       )
     })
@@ -122,23 +137,21 @@ pub fn a_label_counts_once_per_run_test() {
 
 pub fn hits_never_exceed_runs_test() {
   count_reset()
-  let #(panicked, text) =
-    test_helpers.capture_panic(fn() {
-      metamon.forall_with(
-        metamon.Config(..metamon.default_config(), runs: 30),
-        generator.list_of(generator.return(0), range.constant(1, 5)),
-        fn(xs) {
-          count_bump()
-          list.each(xs, fn(x) {
-            coverage.classify("zero", x == 0)
-            coverage.cover_at_least(1000, "many", x == 0)
-          })
-        },
-      )
-    })
-  assert panicked
-  let runs = int.to_string(count_get())
-  assert string.contains(text, "hit " <> runs <> "/" <> runs <> " ")
+  metamon.forall_with(
+    metamon.Config(..metamon.default_config(), runs: 30),
+    generator.list_of(generator.return(0), range.constant(1, 5)),
+    fn(xs) {
+      count_bump()
+      list.each(xs, fn(x) {
+        metamon.classify(label: "zero", when: x == 0)
+        metamon.cover(at_least: 100.0, label: "many", when: x == 0)
+      })
+    },
+  )
+  let snapshot = coverage.snapshot()
+  assert snapshot.total == count_get()
+  assert dict.get(snapshot.counts, "zero") == Ok(count_get())
+  assert dict.get(snapshot.counts, "many") == Ok(count_get())
 }
 
 @external(erlang, "metamon_env_test_ffi", "count_reset")

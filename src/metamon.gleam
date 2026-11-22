@@ -26,6 +26,8 @@ import gleam/float
 import gleam/list
 import gleam/option.{type Option, None}
 import metamon/generator.{type Generator}
+import metamon/internal/annotate as annotation
+import metamon/internal/coverage
 import metamon/internal/report
 import metamon/internal/runner
 
@@ -281,6 +283,50 @@ pub fn forall_round_trip_with(
   decode decode: fn(b) -> Result(a, e),
 ) -> Nil {
   runner.run_round_trip(settings(config), name, generator, encode, decode)
+}
+
+/// Count the current run as hitting `label` when `condition` is true. A
+/// label counts at most once per run. The counts appear in the coverage
+/// part of a failure report.
+///
+/// ```gleam
+/// metamon.forall(lists, fn(items) {
+///   metamon.classify(label: "empty", when: items == [])
+///   assert list.reverse(list.reverse(items)) == items
+/// })
+/// ```
+pub fn classify(label label: String, when condition: Bool) -> Nil {
+  coverage.classify(label, condition)
+}
+
+/// Like `classify`, and require at least `percent` percent of the runs
+/// to hit `label`. When fewer do, the property fails after its last run
+/// with a coverage shortfall, even if every run passed.
+///
+/// ## Panics
+///
+/// Panics when `percent` is outside `[0.0, 100.0]` or NaN.
+pub fn cover(
+  at_least percent: Float,
+  label label: String,
+  when condition: Bool,
+) -> Nil {
+  coverage.cover(percent, label, condition)
+}
+
+/// Record `value` under `label` for the current run. The failure report
+/// shows the values recorded in the run of the reported input, rendered
+/// with `string.inspect`; a passing run discards them.
+///
+/// ```gleam
+/// metamon.forall(ints, fn(n) {
+///   let doubled = n * 2
+///   metamon.annotate(label: "doubled", value: doubled)
+///   assert doubled >= n
+/// })
+/// ```
+pub fn annotate(label label: String, value value: a) -> Nil {
+  annotation.annotate(label, value)
 }
 
 /// Return the morph `f(f(x)) == f(x)`: applying `function` twice gives

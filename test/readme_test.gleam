@@ -12,8 +12,6 @@ import gleam/option.{Some}
 import gleam/string
 import gleeunit/should
 import metamon
-import metamon/annotate
-import metamon/coverage
 import metamon/generator
 import metamon/generator/range
 
@@ -317,8 +315,12 @@ pub fn readme_coverage_test() {
     test_config(50, 7),
     generator.string_ascii(range.constant(0, 8)),
     fn(s) {
-      coverage.cover(5.0, "non_empty", string.length(s) > 0)
-      coverage.classify("contains_space", string.contains(s, " "))
+      metamon.cover(
+        at_least: 5.0,
+        label: "non_empty",
+        when: string.length(s) > 0,
+      )
+      metamon.classify(label: "contains_space", when: string.contains(s, " "))
       // The actual property: trim never makes a string longer.
       assert string.length(string.trim(s)) <= string.length(s)
     },
@@ -332,9 +334,8 @@ pub fn readme_annotate_test() {
     test_config(20, 0),
     generator.int(range.constant(0, 100)),
     fn(n) {
-      annotate.annotate("currently checking n = " <> int.to_string(n))
-      annotate.annotate_value("doubled", n * 2)
-      annotate.footnote("hint: n is non-negative by construction")
+      metamon.annotate(label: "n", value: n)
+      metamon.annotate(label: "doubled", value: n * 2)
       assert n >= 0
     },
   )

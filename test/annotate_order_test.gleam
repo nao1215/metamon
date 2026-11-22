@@ -6,7 +6,6 @@ import gleam/list
 import gleam/option.{Some}
 import gleam/string
 import metamon
-import metamon/annotate
 import metamon/generator
 import metamon/generator/range
 import test_helpers
@@ -19,7 +18,10 @@ fn failure_text(thunk: fn() -> Nil) -> String {
 
 fn annotations_block(labels: List(String)) -> String {
   "  annotations:\n"
-  <> string.join(list.map(labels, fn(label) { "    - " <> label }), "\n")
+  <> string.join(
+    list.map(labels, fn(label) { "    - " <> label <> ": 0" }),
+    "\n",
+  )
 }
 
 pub fn annotations_keep_registration_order_test() {
@@ -27,7 +29,7 @@ pub fn annotations_keep_registration_order_test() {
   let text =
     failure_text(fn() {
       metamon.forall(generator.return(0), fn(_) {
-        list.each(labels, annotate.annotate)
+        list.each(labels, fn(label) { metamon.annotate(label: label, value: 0) })
         test_helpers.fail()
       })
     })
@@ -43,7 +45,9 @@ pub fn annotations_keep_order_for_any_count_test() {
       let text =
         failure_text(fn() {
           metamon.forall(generator.return(0), fn(_) {
-            list.each(labels, annotate.annotate)
+            list.each(labels, fn(label) {
+              metamon.annotate(label: label, value: 0)
+            })
             test_helpers.fail()
           })
         })
@@ -60,7 +64,7 @@ pub fn passing_runs_do_not_leak_annotations_test() {
         cfg,
         generator.int(range.linear(0, 1000)) |> generator.no_edges,
         fn(x) {
-          annotate.annotate_value("x", x)
+          metamon.annotate(label: "x", value: x)
           assert x < 500
         },
       )

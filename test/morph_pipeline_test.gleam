@@ -5,7 +5,6 @@
 import gleam/option.{Some}
 import gleam/string
 import metamon
-import metamon/coverage
 import metamon/generator
 import metamon/generator/range
 import simplifile
@@ -77,7 +76,7 @@ pub fn forall_morph_checks_coverage_test() {
   let text =
     failure_text(fn() {
       metamon.forall_morph(ints(), [never_hit], fn(x) {
-        coverage.cover(50.0, "never", False)
+        metamon.cover(at_least: 50.0, label: "never", when: False)
         x
       })
     })

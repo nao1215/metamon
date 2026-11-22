@@ -9,7 +9,7 @@ import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
-import metamon/coverage
+import metamon/internal/coverage
 import metamon/internal/diff
 
 /// Identifies the source of a failing input.
@@ -166,10 +166,10 @@ fn coverage_to_json(snap: coverage.Snapshot) -> json.Json {
     #("total", json.int(snap.total)),
     #(
       "requirements",
-      json.array(coverage.requirements_of(snap), fn(req: coverage.Requirement) {
+      json.array(snap.requirements, fn(req: coverage.Requirement) {
         json.object([
           #("label", json.string(req.label)),
-          #("target_pct", json.float(coverage.target_pct_of(req, snap.total))),
+          #("target_pct", json.float(req.target_pct)),
           #("hits", json.int(req.hits)),
           #("actual_pct", json.float(coverage.actual_pct(req.hits, snap.total))),
         ])
@@ -177,7 +177,7 @@ fn coverage_to_json(snap: coverage.Snapshot) -> json.Json {
     ),
     #(
       "collected",
-      json.array(dict.to_list(coverage.collected_of(snap)), fn(pair) {
+      json.array(classified(snap), fn(pair) {
         json.object([
           #("label", json.string(pair.0)),
           #("count", json.int(pair.1)),
@@ -312,7 +312,7 @@ fn extras_lines(report: FailureReport) -> List(String) {
 fn coverage_lines(snap: coverage.Snapshot) -> List(String) {
   let total = snap.total
   let req_lines =
-    list.map(coverage.requirements_of(snap), fn(req: coverage.Requirement) {
+    list.map(snap.requirements, fn(req: coverage.Requirement) {
       let pct = coverage.actual_pct(req.hits, total)
       "    "
       <> req.label
@@ -323,14 +323,21 @@ fn coverage_lines(snap: coverage.Snapshot) -> List(String) {
       <> " ("
       <> float.to_string(pct)
       <> "%) target≥"
-      <> float.to_string(coverage.target_pct_of(req, total))
+      <> float.to_string(req.target_pct)
       <> "%"
     })
-  let collected = coverage.collected_of(snap)
-  let collected_lines =
-    dict.to_list(collected)
+  let classified_lines =
+    classified(snap)
     |> list.map(fn(pair) { "    " <> pair.0 <> ": " <> int.to_string(pair.1) })
-  list.append(req_lines, collected_lines)
+  list.append(req_lines, classified_lines)
+}
+
+/// The hits of every label that has no `cover` requirement, by label.
+fn classified(snap: coverage.Snapshot) -> List(#(String, Int)) {
+  let required = list.map(snap.requirements, fn(req) { req.label })
+  dict.to_list(snap.counts)
+  |> list.filter(fn(pair) { !list.contains(required, pair.0) })
+  |> list.sort(fn(left, right) { string.compare(left.0, right.0) })
 }
 
 fn reproduce_lines(report: FailureReport) -> List(String) {

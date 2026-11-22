@@ -10,14 +10,13 @@ import gleam/list
 import gleam/option.{Some}
 import gleam/string
 import metamon
-import metamon/coverage
 import metamon/generator
 import metamon/generator/range
 
 // § 8.1 — `naming.to_snake_case` idempotency + keyword coverage.
 //
 // We use a stub `to_snake_case` to exercise the API. The point is
-// that the test shape (with_examples, idempotency_of, coverage.cover)
+// that the test shape (with_examples, idempotency_of, metamon.classify)
 // works end-to-end.
 fn to_snake_case_stub(s: String) -> String {
   // For the stub we use a simple pattern: lowercase + collapse spaces.
@@ -39,7 +38,7 @@ pub fn snake_idempotent_with_examples_and_coverage_test() {
       |> generator.with_examples(["", "Hello World", "OAuth2 Token"]),
     [mr],
     fn(s) {
-      coverage.classify("non_empty", string.length(s) > 0)
+      metamon.classify(label: "non_empty", when: string.length(s) > 0)
       to_snake_case_stub(s)
     },
   )
