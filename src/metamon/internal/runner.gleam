@@ -339,7 +339,8 @@ fn run_random(
     False -> {
       let #(here, rest_seed) = seed_module.split(s)
       let size = scaled_size(start_index, total_runs(cfg), config.max_size(cfg))
-      let value = generator.generate(gen, here, size).value
+      let value =
+        generator.generate_sized(gen, here, size, config.max_size(cfg)).value
       case
         body(value, RandomSource(seed_module.state(here), size), start_index)
       {
@@ -393,7 +394,7 @@ fn run_check(
 ) -> Outcome {
   reset_state()
   let entries = load_regression_for(cfg, check.regression_key)
-  use <- and_then(replay_regression(gen, check, entries))
+  use <- and_then(replay_regression(cfg, gen, check, entries))
   // The replayed entries are not runs: start counting coverage afresh.
   reset_state()
   use <- and_then(
@@ -639,7 +640,12 @@ fn shrink_input(
     EdgeSource(_) -> #(input, 0, False)
     RandomSource(seed_value, size) -> {
       let initial_tree =
-        generator.generate(gen, seed_module.seed(seed_value), size)
+        generator.generate_sized(
+          gen,
+          seed_module.seed(seed_value),
+          size,
+          config.max_size(cfg),
+        )
       shrink_loop(initial_tree, fails, input, config.shrink_limit(cfg), 0)
     }
   }
@@ -776,6 +782,7 @@ fn record_regression_for(
 }
 
 fn replay_regression(
+  cfg: Config,
   gen: Generator(a),
   check: Check(a),
   entries: List(regression.Entry),
@@ -783,9 +790,9 @@ fn replay_regression(
   case entries {
     [] -> Done
     [entry, ..rest] -> {
-      let value = reproduce_entry_value(gen, entry)
+      let value = reproduce_entry_value(cfg, gen, entry)
       case check.holds(value) {
-        True -> replay_regression(gen, check, rest)
+        True -> replay_regression(cfg, gen, check, rest)
         False ->
           Halted(replay_failure_message(check.regression_key, entry, value))
       }
@@ -793,7 +800,19 @@ fn replay_regression(
   }
 }
 
-fn reproduce_entry_value(gen: Generator(a), entry: regression.Entry) -> a {
+fn reproduce_entry_value(
+  cfg: Config,
+  gen: Generator(a),
+  entry: regression.Entry,
+) -> a {
+  let regenerate = fn() {
+    generator.generate_sized(
+      gen,
+      seed_module.seed(entry.config_seed),
+      entry.size,
+      config.max_size(cfg),
+    ).value
+  }
   case entry.edge_index {
     Some(i) -> {
       // Edge replay: pick the i-th edge of the generator.
@@ -802,16 +821,12 @@ fn reproduce_entry_value(gen: Generator(a), entry: regression.Entry) -> a {
         None ->
           // Edge index drifted; fall back to generating with the
           // recorded seed so the runner still produces a value.
-          generator.generate(
-            gen,
-            seed_module.seed(entry.config_seed),
-            entry.size,
-          ).value
+          regenerate()
       }
     }
     None ->
       // Random replay: same seed + size produces the same value.
-      generator.generate(gen, seed_module.seed(entry.config_seed), entry.size).value
+      regenerate()
   }
 }
 
