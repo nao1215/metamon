@@ -24,6 +24,9 @@ const requirements_key: String = "coverage_requirements"
 
 const collected_key: String = "coverage_collected"
 
+/// Labels already hit in the current run, so a label counts once per run.
+const run_hits_key: String = "coverage_run_hits"
+
 /// One coverage requirement. A requirement is met when the label's
 /// hit count is at least `target_pct`% of total runs (Pct kind) or
 /// at least `min_hits` absolute occurrences (Count kind).
@@ -67,12 +70,30 @@ pub type Snapshot {
   )
 }
 
-/// Tag the current input with `label` if `condition` is true. Only
-/// labelled hits are counted; the denominator is the number of runs.
+/// Tag the current input with `label` if `condition` is true. A label
+/// counts at most once per run; the denominator is the number of runs.
 pub fn classify(label: String, condition: Bool) -> Nil {
   case condition {
     False -> Nil
-    True -> bump_count(counts_key, label)
+    True -> hit(label)
+  }
+}
+
+fn hit(label: String) -> Nil {
+  let run_hits = read_run_hits()
+  case list.contains(run_hits, label) {
+    True -> Nil
+    False -> {
+      process_state.put(run_hits_key, [label, ..run_hits])
+      bump_count(counts_key, label)
+    }
+  }
+}
+
+fn read_run_hits() -> List(String) {
+  case process_state.get(run_hits_key) {
+    Error(_) -> []
+    Ok(raw) -> coerce_string_list(raw)
   }
 }
 
@@ -163,6 +184,7 @@ pub fn reset() -> Nil {
   process_state.erase(total_key)
   process_state.erase(requirements_key)
   process_state.erase(collected_key)
+  process_state.erase(run_hits_key)
   Nil
 }
 
@@ -211,6 +233,7 @@ pub fn actual_pct(hits: Int, total: Int) -> Float {
 /// generated input, so the percentages are over runs, not over calls.
 @internal
 pub fn count_run() -> Nil {
+  process_state.erase(run_hits_key)
   process_state.put(total_key, read_total() + 1)
 }
 
@@ -305,6 +328,10 @@ pub fn first_shortfall(snap: Snapshot) -> Option(Requirement) {
 @external(erlang, "metamon_ffi", "identity")
 @external(javascript, "../metamon_ffi.mjs", "identity")
 fn coerce_int(raw: Dynamic) -> Int
+
+@external(erlang, "metamon_ffi", "identity")
+@external(javascript, "../metamon_ffi.mjs", "identity")
+fn coerce_string_list(raw: Dynamic) -> List(String)
 
 @external(erlang, "metamon_ffi", "identity")
 @external(javascript, "../metamon_ffi.mjs", "identity")

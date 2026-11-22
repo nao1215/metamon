@@ -2,6 +2,7 @@
 //// calls one run makes.
 
 import gleam/int
+import gleam/list
 import gleam/string
 import metamon
 import metamon/coverage
@@ -103,6 +104,47 @@ pub fn regression_replay_does_not_count_towards_coverage_test() {
   let _ = simplifile.delete(tmp_path)
   assert panicked
   let runs = int.to_string(runs)
+  assert string.contains(text, "hit " <> runs <> "/" <> runs <> " ")
+}
+
+pub fn a_label_counts_once_per_run_test() {
+  // Calling cover twice in one run must not double the hits: about half
+  // the runs draw 0, which is short of 60%.
+  let #(panicked, text) =
+    capture_panic(fn() {
+      metamon.forall_with(
+        metamon.default_config() |> metamon.with_seed(metamon.seed(4)),
+        generator.int(range.constant(0, 1)),
+        fn(n) {
+          coverage.cover(60.0, "zero", n == 0)
+          coverage.cover(60.0, "zero", n == 0)
+          True
+        },
+      )
+    })
+  assert panicked
+  assert string.contains(text, "label `zero`")
+}
+
+pub fn hits_never_exceed_runs_test() {
+  count_reset()
+  let #(panicked, text) =
+    capture_panic(fn() {
+      metamon.forall_with(
+        metamon.default_config() |> metamon.with_runs_or_panic(30),
+        generator.list_of(generator.return(0), range.constant(1, 5)),
+        fn(xs) {
+          count_bump()
+          list.each(xs, fn(x) {
+            coverage.classify("zero", x == 0)
+            coverage.cover_at_least(1000, "many", x == 0)
+          })
+          True
+        },
+      )
+    })
+  assert panicked
+  let runs = int.to_string(count_get())
   assert string.contains(text, "hit " <> runs <> "/" <> runs <> " ")
 }
 
