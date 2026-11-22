@@ -1,8 +1,9 @@
 -module(metamon_env_test_ffi).
 
--export([set_env/2, unset_env/1, count_reset/0, count_bump/0, count_get/0]).
+-export([set_env/2, unset_env/1, count_reset/0, count_bump/0, count_get/0, raise_foreign_error/0]).
 
-%% Environment and a call counter for runs_multiplier_test.gleam.
+%% Environment and a call counter for runs_multiplier_test.gleam, and a
+%% non-Gleam error for panic_property_test.gleam.
 
 set_env(Name, Value) ->
     true = os:putenv(unicode:characters_to_list(Name), unicode:characters_to_list(Value)),
@@ -25,3 +26,6 @@ count_get() ->
         undefined -> 0;
         N -> N
     end.
+
+raise_foreign_error() ->
+    erlang:error(badarg).

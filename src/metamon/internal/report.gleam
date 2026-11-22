@@ -9,8 +9,8 @@ import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
-import metamon/coverage
-import metamon/diff
+import metamon/internal/coverage
+import metamon/internal/diff
 
 /// Identifies the source of a failing input.
 pub type InputSource {
@@ -32,10 +32,10 @@ pub type FailureReport {
     mr_name: String,
     test_name: String,
     config_seed: Int,
-    /// `Some(n)` when the user passed `metamon.seed(n)` and the
+    /// `Some(n)` when the user set `Config.seed` to `Some(n)` and the
     /// runner normalised it into a different canonical state (e.g.
     /// `seed(0)` → `0xDEADBEEF`). The header annotates with
-    /// "originally seed(n)" so a user pinning `seed(0)` in source
+    /// the configured seed so a user pinning `Some(0)` in source
     /// can map it back to the reported `config seed`. `None` when
     /// the seed was clock-derived (`random_seed`) or already
     /// matched its canonical state.
@@ -51,15 +51,21 @@ pub type FailureReport {
     source_output: String,
     followup_output: String,
     input_source: InputSource,
-    diff_enabled: Bool,
     annotations: List(String),
     footnotes: List(String),
     coverage_snapshot: Option(coverage.Snapshot),
+    /// The message of the panic that failed a plain property, from a
+    /// last run on the reported input. `None` for metamorphic relations,
+    /// and when that last run did not panic.
+    panic_message: Option(String),
+    /// Whether the failure is a round trip, whose reproduce line checks
+    /// `decode(encode(input))` instead of calling a property.
+    round_trip: Bool,
   )
 }
 
 /// Render a source as `edge(i)` or `random(seed=, size=, max_size=)`.
-pub fn format_source(source: InputSource) -> String {
+fn format_source(source: InputSource) -> String {
   case source {
     EdgeSource(index) -> "edge(" <> int.to_string(index) <> ")"
     RandomSource(seed_value, size, max_size) ->
@@ -74,11 +80,11 @@ pub fn format_source(source: InputSource) -> String {
 }
 
 /// Render the `config seed:` header value. The canonical state is
-/// always shown; when normalisation kicked in (the user passed
-/// `seed(n)` whose normalised form differs from `n`), the original
-/// integer is appended in parentheses so the user can map the report
+/// always shown; when normalisation kicked in (the user set `Config.seed`
+/// to `Some(n)` whose normalised form differs from `n`), the configured
+/// seed is appended in parentheses so the user can map the report
 /// back to source.
-pub fn format_config_seed(state: Int, original: Option(Int)) -> String {
+fn format_config_seed(state: Int, original: Option(Int)) -> String {
   case original {
     None -> int.to_string(state)
     Some(n) ->
@@ -86,15 +92,15 @@ pub fn format_config_seed(state: Int, original: Option(Int)) -> String {
         True -> int.to_string(state)
         False ->
           int.to_string(state)
-          <> " (originally seed("
+          <> " (from Config(..default_config(), seed: Some("
           <> int.to_string(n)
-          <> "))"
+          <> ")))"
       }
   }
 }
 
 /// Render a failure report as a single-line JSON object. Stable
-/// schema suitable for CI dashboards and LLM-driven analysis. The
+/// schema suitable for CI dashboards and other tools. The
 /// fields mirror the human-readable layout 1:1 so neither output is
 /// the source of truth — the same `FailureReport` produces both.
 pub fn render_json(report: FailureReport) -> String {
@@ -153,6 +159,7 @@ pub fn render_json(report: FailureReport) -> String {
     #("annotations", json.array(report.annotations, json.string)),
     #("footnotes", json.array(report.footnotes, json.string)),
     #("coverage", coverage_field),
+    #("panic_message", json.nullable(report.panic_message, json.string)),
   ])
   |> json.to_string
 }
@@ -162,10 +169,10 @@ fn coverage_to_json(snap: coverage.Snapshot) -> json.Json {
     #("total", json.int(snap.total)),
     #(
       "requirements",
-      json.array(coverage.requirements_of(snap), fn(req: coverage.Requirement) {
+      json.array(snap.requirements, fn(req: coverage.Requirement) {
         json.object([
           #("label", json.string(req.label)),
-          #("target_pct", json.float(coverage.target_pct_of(req, snap.total))),
+          #("target_pct", json.float(req.target_pct)),
           #("hits", json.int(req.hits)),
           #("actual_pct", json.float(coverage.actual_pct(req.hits, snap.total))),
         ])
@@ -173,7 +180,7 @@ fn coverage_to_json(snap: coverage.Snapshot) -> json.Json {
     ),
     #(
       "collected",
-      json.array(dict.to_list(coverage.collected_of(snap)), fn(pair) {
+      json.array(classified(snap), fn(pair) {
         json.object([
           #("label", json.string(pair.0)),
           #("count", json.int(pair.1)),
@@ -233,17 +240,20 @@ fn body_lines(report: FailureReport) -> List(String) {
     None -> []
     Some(_) -> ["  relation:    `" <> report.relation_name <> "`"]
   }
-  let inputs = case report.morph_mode {
-    None -> ["  source input  (shrunk):\n    " <> report.source_input]
-    Some(_) -> [
+  let inputs = case report.morph_mode, report.panic_message {
+    None, _ | Some(_), Some(_) -> [
+      "  source input  (shrunk):\n    " <> report.source_input,
+      ..panic_lines(report.panic_message)
+    ]
+    Some(_), None -> [
       "  source input  (shrunk):\n    " <> report.source_input,
       "  follow-up input  (= transform(source)):\n    " <> report.followup_input,
       "  source output:\n    " <> report.source_output,
       "  follow-up output:\n    " <> report.followup_output,
     ]
   }
-  let diff_block = case report.diff_enabled, report.morph_mode {
-    True, Some(_) -> [
+  let diff_block = case report.morph_mode, report.panic_message {
+    Some(_), None -> [
       "  diff (source_output vs follow-up_output):\n"
       <> indent(
         diff.render(diff.diff_inspected(
@@ -260,6 +270,13 @@ fn body_lines(report: FailureReport) -> List(String) {
     inputs,
     diff_block,
   ])
+}
+
+fn panic_lines(message: Option(String)) -> List(String) {
+  case message {
+    None -> []
+    Some(text) -> ["  panic message:\n" <> indent(text, "    ")]
+  }
 }
 
 fn list_join_block(lines: List(String)) -> List(String) {
@@ -298,7 +315,7 @@ fn extras_lines(report: FailureReport) -> List(String) {
 fn coverage_lines(snap: coverage.Snapshot) -> List(String) {
   let total = snap.total
   let req_lines =
-    list.map(coverage.requirements_of(snap), fn(req: coverage.Requirement) {
+    list.map(snap.requirements, fn(req: coverage.Requirement) {
       let pct = coverage.actual_pct(req.hits, total)
       "    "
       <> req.label
@@ -309,35 +326,49 @@ fn coverage_lines(snap: coverage.Snapshot) -> List(String) {
       <> " ("
       <> float.to_string(pct)
       <> "%) target≥"
-      <> float.to_string(coverage.target_pct_of(req, total))
+      <> float.to_string(req.target_pct)
       <> "%"
     })
-  let collected = coverage.collected_of(snap)
-  let collected_lines =
-    dict.to_list(collected)
+  let classified_lines =
+    classified(snap)
     |> list.map(fn(pair) { "    " <> pair.0 <> ": " <> int.to_string(pair.1) })
-  list.append(req_lines, collected_lines)
+  list.append(req_lines, classified_lines)
+}
+
+/// The hits of every label that has no `cover` requirement, by label.
+fn classified(snap: coverage.Snapshot) -> List(#(String, Int)) {
+  let required = list.map(snap.requirements, fn(req) { req.label })
+  dict.to_list(snap.counts)
+  |> list.filter(fn(pair) { !list.contains(required, pair.0) })
+  |> list.sort(fn(left, right) { string.compare(left.0, right.0) })
 }
 
 fn reproduce_lines(report: FailureReport) -> List(String) {
   // The shrunk input is already shown in `source input (shrunk)`
   // earlier in the report. The reproduce block re-states the input
-  // alongside an `assert_morph` (or a direct call) call site so users
-  // can paste it into a regression test verbatim.
-  case report.morph_mode {
-    None -> [
+  // alongside a call that checks it, so users can paste it into a
+  // regression test verbatim.
+  case report.morph_mode, report.round_trip {
+    None, True -> [
+      "  reproduce (paste into a test):",
+      "    // The round trip failed for this input. To pin it as a",
+      "    // regression, store it explicitly and check it directly.",
+      "    let input = " <> report.source_input,
+      "    assert decode(encode(input)) == Ok(input)",
+    ]
+    None, False -> [
       "  reproduce (paste into a test):",
       "    // The property failed for this input. To pin it as a",
-      "    // regression, store it explicitly and assert directly.",
+      "    // regression, store it explicitly and call the property.",
       "    let input = " <> report.source_input,
-      "    should.be_true(property(input))",
+      "    property(input)",
     ]
-    Some(_) -> [
+    Some(_), _ -> [
       "  reproduce (paste into a test):",
-      "    // The MR failed for this input. To pin it as a regression,",
-      "    // call assert_morph with the shrunk input and the same MR.",
+      "    // The morph failed for this input. To pin it as a regression,",
+      "    // call assert_morph with the shrunk input and the same morph.",
       "    let input = " <> report.source_input,
-      "    metamon.assert_morph(input, mr, f)",
+      "    metamon.assert_morph(input, morph, function)",
     ]
   }
 }

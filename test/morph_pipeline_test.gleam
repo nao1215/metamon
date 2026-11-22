@@ -1,82 +1,62 @@
-//// `forall_morphs` and `forall_morph_n` go through the same pipeline as
-//// `forall_morph`: regression replay and record, the coverage check,
-//// and shrinking.
+//// `forall_morph` goes through the same pipeline as
+//// `forall`: regression replay and record, the coverage check, and
+//// shrinking.
 
+import gleam/option.{Some}
 import gleam/string
 import metamon
-import metamon/coverage
 import metamon/generator
-import metamon/generator/range
-import metamon/relation
-import metamon/transform
 import simplifile
+import test_helpers
 
 const tmp_path: String = "/tmp/metamon_morph_pipeline_test.toml"
 
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
-
 fn failure_text(thunk: fn() -> Nil) -> String {
-  let #(panicked, message) = capture_panic(thunk)
+  let #(panicked, message) = test_helpers.capture_panic(thunk)
   assert panicked
   message
 }
 
 fn ints() -> generator.Generator(Int) {
-  generator.int(range.constant(0, 1000)) |> generator.no_edges
+  generator.int(generator.range(0, 1000)) |> generator.no_edges
 }
 
-fn below_ten() -> relation.RelationN(Int) {
-  relation.n_new("below_ten", fn(outputs) {
-    case outputs {
-      [first, ..] -> first < 10
-      [] -> True
-    }
-  })
+fn below_ten() -> metamon.Morph(Int, Int) {
+  metamon.Morph(
+    name: "below_ten",
+    transform: metamon.Transform("identity", fn(value) { value }),
+    relation: metamon.Relation("source below ten", fn(source, _) { source < 10 }),
+  )
 }
 
 fn seeded(value: Int) -> metamon.Config {
-  metamon.default_config() |> metamon.with_seed(metamon.seed(value))
+  metamon.Config(..metamon.default_config(), seed: Some(value))
 }
 
-pub fn forall_morph_n_shrinks_test() {
+pub fn forall_morph_shrinks_test() {
   let text =
     failure_text(fn() {
-      metamon.forall_morph_n_with(
-        seeded(42),
-        ints(),
-        [transform.identity()],
-        below_ten(),
-        fn(x) { x },
-      )
+      metamon.forall_morph_with(seeded(42), ints(), [below_ten()], fn(x) { x })
     })
-  assert string.contains(text, "source input:\n    10\n")
+  assert string.contains(text, "source input  (shrunk):\n    10\n")
 }
 
-pub fn forall_morph_n_records_and_replays_regressions_test() {
+pub fn forall_morph_records_and_replays_regressions_test() {
   let _ = simplifile.delete(tmp_path)
-  let cfg = seeded(42) |> metamon.with_regression_file_or_panic(tmp_path)
+  let cfg = metamon.Config(..seeded(42), regression_file: Some(tmp_path))
   let _ =
     failure_text(fn() {
-      metamon.forall_morph_n_with(
-        cfg,
-        ints(),
-        [transform.identity()],
-        below_ten(),
-        fn(x) { x },
-      )
+      metamon.forall_morph_with(cfg, ints(), [below_ten()], fn(x) { x })
     })
   let assert Ok(content) = simplifile.read(tmp_path)
   assert string.contains(content, "mr          = \"below_ten\"")
   // A later run with another seed replays the recorded input first.
   let text =
     failure_text(fn() {
-      metamon.forall_morph_n_with(
-        seeded(1) |> metamon.with_regression_file_or_panic(tmp_path),
+      metamon.forall_morph_with(
+        metamon.Config(..seeded(1), regression_file: Some(tmp_path)),
         ints(),
-        [transform.identity()],
-        below_ten(),
+        [below_ten()],
         fn(x) { x },
       )
     })
@@ -85,17 +65,17 @@ pub fn forall_morph_n_records_and_replays_regressions_test() {
   Nil
 }
 
-pub fn forall_morphs_checks_coverage_test() {
+pub fn forall_morph_checks_coverage_test() {
   let never_hit =
-    metamon.mr(
+    metamon.Morph(
       name: "identity_under_identity",
-      transform: transform.identity(),
-      relation: relation.equal(),
+      transform: metamon.Transform("identity", fn(value) { value }),
+      relation: metamon.equal(),
     )
   let text =
     failure_text(fn() {
-      metamon.forall_morphs(ints(), [never_hit], fn(x) {
-        coverage.cover(50.0, "never", False)
+      metamon.forall_morph(ints(), [never_hit], fn(x) {
+        metamon.cover(at_least: 50.0, label: "never", when: False)
         x
       })
     })

@@ -1,3 +1,19 @@
+import metamon/internal/capture
+
+/// Run `thunk` and report whether it panicked, with the panic message.
+pub fn capture_panic(thunk: fn() -> a) -> #(Bool, String) {
+  case capture.attempt(thunk) {
+    capture.Returned(_) -> #(False, "")
+    capture.Panicked(message) -> #(True, message)
+  }
+}
+
+/// Fail a property: panic with a fixed message.
+pub fn fail() -> Nil {
+  // nolint: avoid_panic
+  panic as "the property fails"
+}
+
 /// Generate `[start, start + 1, ..., start + count - 1]`.
 ///
 /// Replacement for `gleam/list.range/2` whose availability depends on

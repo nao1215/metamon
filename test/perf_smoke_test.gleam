@@ -6,32 +6,26 @@
 //// a 30 s timeout in CI.
 
 import gleam/list
+import gleam/option.{Some}
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
-import metamon/transform/list as list_t
 
 pub fn forall_morph_thousand_runs_finishes_quickly_test() {
   let mr =
     metamon.invariant_under(
       name: "length_under_reverse",
-      under: list_t.reverse(),
+      under: metamon.Transform("list.reverse", list.reverse),
     )
-  let assert Ok(c) =
-    metamon.with_runs(
-      metamon.default_config()
-        |> metamon.with_seed(metamon.seed(0)),
-      1000,
-    )
+  let c = metamon.Config(..metamon.default_config(), seed: Some(0), runs: 1000)
   let started = monotonic_microseconds()
   metamon.forall_morph_with(
     c,
     generator.list_of(
-      generator.int(range.constant(0, 100)),
-      range.constant(0, 16),
+      generator.int(generator.range(0, 100)),
+      generator.range(0, 16),
     ),
-    mr,
+    [mr],
     list.length,
   )
   let elapsed_us = monotonic_microseconds() - started
@@ -45,13 +39,10 @@ pub fn deep_recursive_tree_generator_finishes_quickly_test() {
   // A recursive Tree generator with 1000 runs is the worst case for
   // shrink expansion. Same wall-clock budget.
   let started = monotonic_microseconds()
-  let assert Ok(c) =
-    metamon.with_runs(
-      metamon.default_config()
-        |> metamon.with_seed(metamon.seed(0)),
-      300,
-    )
-  metamon.forall_with(c, recursive_tree_gen(), fn(t) { count_leaves(t) >= 1 })
+  let c = metamon.Config(..metamon.default_config(), seed: Some(0), runs: 300)
+  metamon.forall_with(c, recursive_tree_gen(), fn(t) {
+    assert count_leaves(t) >= 1
+  })
   let elapsed_us = monotonic_microseconds() - started
   should.be_true(elapsed_us < 5_000_000)
 }
@@ -63,7 +54,7 @@ type RecTree {
 
 fn recursive_tree_gen() -> generator.Generator(RecTree) {
   generator.recursive(
-    generator.map(generator.int(range.constant(0, 9)), Leaf),
+    generator.map(generator.int(generator.range(0, 9)), Leaf),
     fn(smaller) { generator.map2(smaller, smaller, Node) },
   )
 }

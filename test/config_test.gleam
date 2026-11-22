@@ -1,61 +1,132 @@
+//// `Config` is a plain record. The runners check it when they start and
+//// panic with a message naming the invalid field.
+
 import gleam/option.{None, Some}
+import gleam/string
 import gleeunit/should
 import metamon
-import metamon/config
+import metamon/generator
+import test_helpers
 
-pub fn defaults_are_sane_test() {
-  let c = config.default_config()
-  should.equal(config.runs(c), 100)
-  should.equal(config.max_size(c), 99)
-  should.equal(config.shrink_limit(c), 1024)
-  should.equal(config.max_edges(c), 16)
-  should.equal(config.regression_file(c), None)
-  should.equal(config.diff_enabled(c), True)
+fn run(config: metamon.Config) -> #(Bool, String) {
+  test_helpers.capture_panic(fn() {
+    metamon.forall_with(config, generator.int(generator.range(0, 9)), fn(_) {
+      Nil
+    })
+  })
 }
 
-pub fn with_runs_rejects_non_positive_test() {
-  let c = config.default_config()
-  case config.with_runs(c, 0) {
-    Error(config.NonPositive("runs", 0)) -> Nil
-    _ -> should.fail()
-  }
-  case config.with_runs(c, -1) {
-    Error(config.NonPositive("runs", -1)) -> Nil
-    _ -> should.fail()
-  }
+fn assert_rejected(config: metamon.Config, field: String) -> Nil {
+  let #(panicked, message) = run(config)
+  should.be_true(panicked)
+  should.be_true(string.contains(message, "Config." <> field))
 }
 
-pub fn with_runs_accepts_positive_test() {
-  let c = config.default_config()
-  let assert Ok(c2) = config.with_runs(c, 500)
-  should.equal(config.runs(c2), 500)
+fn assert_accepted(config: metamon.Config) -> Nil {
+  let #(panicked, _) = run(config)
+  should.be_false(panicked)
 }
 
-pub fn with_seed_is_total_test() {
-  let c = config.default_config()
-  let new = config.with_seed(c, metamon.seed(0))
-  // should not error (no Result type)
-  let _ = new
-  Nil
+fn default() -> metamon.Config {
+  metamon.default_config()
 }
 
-pub fn with_regression_file_rejects_empty_test() {
-  let c = config.default_config()
-  case config.with_regression_file(c, "") {
-    Error(config.InvalidPath(_, _)) -> Nil
-    _ -> should.fail()
-  }
+pub fn defaults_test() {
+  should.equal(
+    metamon.default_config(),
+    metamon.Config(
+      runs: 100,
+      seed: None,
+      max_size: 99,
+      shrink_limit: 1024,
+      max_edges: 16,
+      regression_file: None,
+      output: metamon.Text,
+    ),
+  )
 }
 
-pub fn with_regression_file_accepts_nonempty_test() {
-  let c = config.default_config()
-  let assert Ok(c2) =
-    config.with_regression_file(c, "test/regressions/sample.toml")
-  should.equal(config.regression_file(c2), Some("test/regressions/sample.toml"))
+pub fn runs_zero_or_negative_is_rejected_test() {
+  assert_rejected(metamon.Config(..default(), runs: 0), "runs")
+  assert_rejected(metamon.Config(..default(), runs: -1), "runs")
 }
 
-pub fn with_diff_enabled_toggles_test() {
-  let c = config.default_config()
-  let off = config.with_diff_enabled(c, False)
-  should.equal(config.diff_enabled(off), False)
+pub fn max_size_zero_or_negative_is_rejected_test() {
+  assert_rejected(metamon.Config(..default(), max_size: 0), "max_size")
+  assert_rejected(metamon.Config(..default(), max_size: -1), "max_size")
+}
+
+pub fn shrink_limit_zero_or_negative_is_rejected_test() {
+  assert_rejected(metamon.Config(..default(), shrink_limit: 0), "shrink_limit")
+  assert_rejected(metamon.Config(..default(), shrink_limit: -1), "shrink_limit")
+}
+
+pub fn max_edges_zero_or_negative_is_rejected_test() {
+  assert_rejected(metamon.Config(..default(), max_edges: 0), "max_edges")
+  assert_rejected(metamon.Config(..default(), max_edges: -1), "max_edges")
+}
+
+pub fn empty_regression_file_is_rejected_test() {
+  assert_rejected(
+    metamon.Config(..default(), regression_file: Some("")),
+    "regression_file",
+  )
+}
+
+pub fn the_message_shows_the_rejected_value_test() {
+  let #(_, message) = run(metamon.Config(..default(), runs: -3))
+  should.be_true(string.contains(message, "got -3"))
+}
+
+pub fn one_is_the_smallest_valid_value_test() {
+  assert_accepted(
+    metamon.Config(
+      ..default(),
+      runs: 1,
+      max_size: 1,
+      shrink_limit: 1,
+      max_edges: 1,
+    ),
+  )
+}
+
+pub fn very_large_values_are_accepted_test() {
+  // Only values <= 0 are rejected; the runner does not cap the others.
+  assert_accepted(
+    metamon.Config(
+      ..default(),
+      runs: 1,
+      max_size: 1_000_000_000,
+      shrink_limit: 1_000_000_000,
+      max_edges: 1_000_000_000,
+    ),
+  )
+}
+
+pub fn every_runner_checks_the_config_test() {
+  let bad = metamon.Config(..default(), runs: 0)
+  let ints = generator.int(generator.range(0, 9))
+  let #(morph_panicked, morph_message) =
+    test_helpers.capture_panic(fn() {
+      metamon.forall_morph_with(
+        bad,
+        ints,
+        [metamon.idempotency_of(name: "id", of: fn(x) { x })],
+        fn(x) { x },
+      )
+    })
+  should.be_true(morph_panicked)
+  should.be_true(string.contains(morph_message, "Config.runs"))
+  let #(round_trip_panicked, round_trip_message) =
+    test_helpers.capture_panic(fn() {
+      metamon.forall_round_trip_with(
+        config: bad,
+        generator: ints,
+        name: "identity",
+        encode: fn(x) { x },
+        decode: Ok,
+      )
+    })
+  should.be_true(round_trip_panicked)
+  should.be_true(string.contains(round_trip_message, "Config.runs"))
 }

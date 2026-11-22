@@ -1,6 +1,6 @@
 //// Robustness tests for the `regression.parse` path. (#84)
 ////
-//// `with_regression_file` is metamon's only public surface that
+//// `Config.regression_file` is metamon's only public surface that
 //// ingests user-controlled file content from outside the test process.
 //// A panic here cascades — every metamon invocation runs regression
 //// replay first, so a malformed file silently breaks every test in
@@ -28,7 +28,6 @@ import gleam/string
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
 import metamon/internal/regression
 
 // ---------- helpers ----------
@@ -187,13 +186,15 @@ pub fn regression_parse_no_panic_under_printable_ascii_fuzz_test() {
   // hundred iterations is enough to surface any input-shape that
   // panics through the lenient parse path.
   metamon.forall_with(
-    metamon.default_config()
-      |> metamon.with_runs_or_panic(200),
-    generator.string_printable_ascii(range.constant(0, 256)),
+    metamon.Config(..metamon.default_config(), runs: 200),
+    generator.string(
+      of: generator.PrintableAscii,
+      length: generator.range(0, 256),
+    ),
     fn(payload) {
       // Discard the result — only "did this return?" matters.
       let _ = regression.parse(payload)
-      True
+      Nil
     },
   )
 }
@@ -203,24 +204,25 @@ pub fn regression_parse_no_panic_under_unicode_fuzz_test() {
   // BOM / non-ASCII byte-class cases that printable-ASCII alone
   // would miss.
   metamon.forall_with(
-    metamon.default_config()
-      |> metamon.with_runs_or_panic(200),
-    generator.string_unicode(range.constant(0, 64)),
+    metamon.Config(..metamon.default_config(), runs: 200),
+    generator.string(of: generator.Unicode, length: generator.range(0, 64)),
     fn(payload) {
       let _ = regression.parse(payload)
-      True
+      Nil
     },
   )
 }
 
 pub fn regression_parse_no_panic_under_long_ascii_fuzz_test() {
   metamon.forall_with(
-    metamon.default_config()
-      |> metamon.with_runs_or_panic(200),
-    generator.string_printable_ascii(range.constant(0, 256)),
+    metamon.Config(..metamon.default_config(), runs: 200),
+    generator.string(
+      of: generator.PrintableAscii,
+      length: generator.range(0, 256),
+    ),
     fn(payload) {
       let _ = regression.parse(payload)
-      True
+      Nil
     },
   )
 }

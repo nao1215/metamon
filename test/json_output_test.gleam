@@ -1,28 +1,19 @@
 //// Failure-report JSON output. The runner emits a single-line JSON
 //// object instead of the human-readable text when configured with
-//// `metamon.with_output_format(metamon.Json)`.
+//// `metamon.Config(..metamon.default_config(), output: metamon.Json)`.
 
 import gleam/string
 import gleeunit/should
 import metamon
-import metamon/config
 import metamon/generator
-import metamon/generator/range
-import metamon/relation
-import metamon/transform
-
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+import test_helpers
 
 pub fn json_output_is_single_line_object_test() {
-  let cfg =
-    metamon.default_config()
-    |> metamon.with_output_format(config.Json)
+  let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   let outcome =
-    capture_panic(fn() {
-      metamon.forall_with(cfg, generator.int(range.constant(0, 10)), fn(_n) {
-        False
+    test_helpers.capture_panic(fn() {
+      metamon.forall_with(cfg, generator.int(generator.range(0, 10)), fn(_n) {
+        test_helpers.fail()
       })
     })
   should.equal(outcome.0, True)
@@ -41,22 +32,20 @@ pub fn json_output_is_single_line_object_test() {
 }
 
 pub fn json_output_for_morph_failure_test() {
-  let increment = transform.new("+1", fn(n: Int) { n + 1 })
+  let increment = metamon.Transform("+1", fn(n: Int) { n + 1 })
   let bad_mr =
-    metamon.mr(
+    metamon.Morph(
       name: "false_invariant",
       transform: increment,
-      relation: relation.equal(),
+      relation: metamon.equal(),
     )
-  let cfg =
-    metamon.default_config()
-    |> metamon.with_output_format(config.Json)
+  let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   let outcome =
-    capture_panic(fn() {
+    test_helpers.capture_panic(fn() {
       metamon.forall_morph_with(
         cfg,
-        generator.int(range.constant(1, 10)),
-        bad_mr,
+        generator.int(generator.range(1, 10)),
+        [bad_mr],
         fn(n) { n },
       )
     })
@@ -70,8 +59,10 @@ pub fn json_output_for_morph_failure_test() {
 
 pub fn text_output_is_default_test() {
   let outcome =
-    capture_panic(fn() {
-      metamon.forall(generator.int(range.constant(0, 10)), fn(_n) { False })
+    test_helpers.capture_panic(fn() {
+      metamon.forall(generator.int(generator.range(0, 10)), fn(_n) {
+        test_helpers.fail()
+      })
     })
   should.equal(outcome.0, True)
   // Text starts with the "× ..." header, not "{".

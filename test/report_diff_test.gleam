@@ -5,34 +5,28 @@ import gleam/int
 import gleam/list
 import gleam/string
 import metamon
-import metamon/diff.{Differ, IndexedDiff, ListDiff, Same, TupleDiff}
 import metamon/generator
-import metamon/generator/range
-import metamon/relation
-import metamon/transform
-
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+import metamon/internal/diff.{Differ, IndexedDiff, ListDiff, Same, TupleDiff}
+import test_helpers
 
 fn failure_text(thunk: fn() -> Nil) -> String {
-  let #(panicked, message) = capture_panic(thunk)
+  let #(panicked, message) = test_helpers.capture_panic(thunk)
   assert panicked
   message
 }
 
-fn plus_one_mr() -> metamon.Mr(Int, a) {
-  metamon.mr(
+fn plus_one_mr() -> metamon.Morph(Int, a) {
+  metamon.Morph(
     name: "invariant_under_plus_one",
-    transform: transform.new("+1", fn(n) { n + 1 }),
-    relation: relation.equal(),
+    transform: metamon.Transform("+1", fn(n) { n + 1 }),
+    relation: metamon.equal(),
   )
 }
 
 pub fn report_diffs_list_outputs_per_index_test() {
   let text =
     failure_text(fn() {
-      metamon.forall_morph(generator.return(3), plus_one_mr(), fn(n) {
+      metamon.forall_morph(generator.return(3), [plus_one_mr()], fn(n) {
         [1, 2, n]
       })
     })
@@ -43,7 +37,7 @@ pub fn report_diffs_list_outputs_per_index_test() {
 pub fn report_diffs_tuple_outputs_per_index_test() {
   let text =
     failure_text(fn() {
-      metamon.forall_morph(generator.return(3), plus_one_mr(), fn(n) {
+      metamon.forall_morph(generator.return(3), [plus_one_mr()], fn(n) {
         #("x", n)
       })
     })
@@ -53,7 +47,7 @@ pub fn report_diffs_tuple_outputs_per_index_test() {
 pub fn report_diff_escapes_strings_once_test() {
   let text =
     failure_text(fn() {
-      metamon.forall_morph(generator.return(3), plus_one_mr(), fn(n) {
+      metamon.forall_morph(generator.return(3), [plus_one_mr()], fn(n) {
         string.repeat("\"", n)
       })
     })
@@ -64,12 +58,12 @@ pub fn report_diff_escapes_strings_once_test() {
 }
 
 pub fn string_elements_with_separators_stay_whole_test() {
-  assert diff.diff(["a,b", "]"], ["a,c", "]"])
+  assert inspected(["a,b", "]"], ["a,c", "]"])
     == ListDiff([
       IndexedDiff(0, Differ("\"a,b\"", "\"a,c\"")),
       IndexedDiff(1, Same("\"]\"")),
     ])
-  assert diff.diff(#("(", "\"x,"), #("(", "\"y,"))
+  assert inspected(#("(", "\"x,"), #("(", "\"y,"))
     == TupleDiff([
       IndexedDiff(0, Same("\"(\"")),
       IndexedDiff(1, Differ("\"\\\"x,\"", "\"\\\"y,\"")),
@@ -80,17 +74,17 @@ pub fn list_diff_has_one_item_per_element_test() {
   metamon.forall(
     generator.tuple2(
       generator.list_of(
-        generator.string_ascii(range.constant(0, 4)),
-        range.constant(0, 4),
+        generator.string(of: generator.Ascii, length: generator.range(0, 4)),
+        generator.range(0, 4),
       ),
       generator.list_of(
-        generator.string_ascii(range.constant(0, 4)),
-        range.constant(0, 4),
+        generator.string(of: generator.Ascii, length: generator.range(0, 4)),
+        generator.range(0, 4),
       ),
     ),
     fn(pair) {
       let #(left, right) = pair
-      case left == right, diff.diff(left, right) {
+      assert case left == right, inspected(left, right) {
         True, Same(_) -> True
         False, ListDiff(items) ->
           list.length(items) == int.max(list.length(left), list.length(right))
@@ -102,9 +96,13 @@ pub fn list_diff_has_one_item_per_element_test() {
 
 pub fn bit_array_elements_stay_whole_test() {
   // Bytes that are not UTF-8, so both targets render `<<...>>`.
-  assert diff.diff([<<255, 2>>, <<200>>], [<<255, 2>>, <<201>>])
+  assert inspected([<<255, 2>>, <<200>>], [<<255, 2>>, <<201>>])
     == ListDiff([
       IndexedDiff(0, Same("<<255, 2>>")),
       IndexedDiff(1, Differ("<<200>>", "<<201>>")),
     ])
+}
+
+fn inspected(left: a, right: a) -> diff.Diff {
+  diff.diff_inspected(string.inspect(left), string.inspect(right))
 }

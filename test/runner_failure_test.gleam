@@ -4,26 +4,21 @@
 //// isolation and inspect the panic reason.
 
 import gleam/int
+import gleam/list
+import gleam/option.{Some}
 import gleam/string
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
-import metamon/relation
-import metamon/transform
-import metamon/transform/list as list_t
+import test_helpers
 
 pub type CapturedPanic {
   Reason(message: String)
   NoPanic
 }
 
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic_raw(thunk: fn() -> Nil) -> #(Bool, String)
-
 fn capture(thunk: fn() -> Nil) -> CapturedPanic {
-  let #(panicked, message) = capture_panic_raw(thunk)
+  let #(panicked, message) = test_helpers.capture_panic(thunk)
   case panicked {
     True -> Reason(message: message)
     False -> NoPanic
@@ -34,9 +29,9 @@ pub fn forall_panics_on_violation_test() {
   let outcome =
     capture(fn() {
       metamon.forall(
-        generator.int(range.constant(0, 100)),
+        generator.int(generator.range(0, 100)),
         // false for everything ≥ 0, which is everything → instant fail
-        fn(_n) { False },
+        fn(_n) { test_helpers.fail() },
       )
     })
   case outcome {
@@ -52,18 +47,20 @@ pub fn forall_panics_on_violation_test() {
 pub fn forall_morph_panics_with_named_relation_test() {
   // Build an MR that always fails by claiming the input is invariant
   // under "increment" (which it obviously is not).
-  let increment = transform.new("+1", fn(n) { n + 1 })
+  let increment = metamon.Transform("+1", fn(n) { n + 1 })
   let bad_mr =
-    metamon.mr(
+    metamon.Morph(
       name: "false_invariant_under_increment",
       transform: increment,
-      relation: relation.equal(),
+      relation: metamon.equal(),
     )
   let outcome =
     capture(fn() {
-      metamon.forall_morph(generator.int(range.constant(1, 10)), bad_mr, fn(n) {
-        n
-      })
+      metamon.forall_morph(
+        generator.int(generator.range(1, 10)),
+        [bad_mr],
+        fn(n) { n },
+      )
     })
   case outcome {
     Reason(text) -> {
@@ -79,12 +76,12 @@ pub fn forall_morph_panics_with_named_relation_test() {
 }
 
 pub fn assert_morph_panics_on_violation_test() {
-  let increment = transform.new("+1", fn(n) { n + 1 })
+  let increment = metamon.Transform("+1", fn(n) { n + 1 })
   let bad_mr =
-    metamon.mr(
+    metamon.Morph(
       name: "fails_for_assert_morph",
       transform: increment,
-      relation: relation.equal(),
+      relation: metamon.equal(),
     )
   let outcome = capture(fn() { metamon.assert_morph(5, bad_mr, fn(n) { n }) })
   case outcome {
@@ -99,7 +96,7 @@ pub fn forall_round_trip_panics_on_decode_error_test() {
   let outcome =
     capture(fn() {
       metamon.forall_round_trip(
-        gen: generator.int(range.constant(0, 100)),
+        generator: generator.int(generator.range(0, 100)),
         name: "broken",
         encode: int.to_string,
         decode: fn(_value) { Error(Nil) },
@@ -114,105 +111,98 @@ pub fn forall_round_trip_panics_on_decode_error_test() {
   }
 }
 
-pub fn forall_observable_renders_predicate_value_in_failure_test() {
+pub fn forall_morph_panics_on_empty_morph_list_test() {
   let outcome =
     capture(fn() {
-      metamon.forall_observable(
-        generator.int(range.constant(10, 20)),
-        fn(input) {
-          let doubled = input * 2
-          #(doubled, doubled < 0)
-        },
-      )
-    })
-  case outcome {
-    Reason(text) -> {
-      should.be_true(string.contains(text, "× property failed"))
-      should.be_true(string.contains(text, "predicate value:"))
-    }
-    NoPanic -> should.fail()
-  }
-}
-
-pub fn forall_morphs_panics_on_empty_mr_list_test() {
-  let outcome =
-    capture(fn() {
-      metamon.forall_morphs(generator.int(range.constant(0, 100)), [], fn(n) {
+      metamon.forall_morph(generator.int(generator.range(0, 100)), [], fn(n) {
         n
       })
     })
   case outcome {
     Reason(text) -> {
-      should.be_true(string.contains(text, "metamon.forall_morphs"))
-      should.be_true(string.contains(text, "empty MR list"))
+      should.be_true(string.contains(text, "metamon.forall_morph"))
+      should.be_true(string.contains(text, "empty morph list"))
       should.be_true(string.contains(text, "vacuous test"))
     }
     NoPanic -> should.fail()
   }
 }
 
-pub fn config_seed_zero_renders_with_originally_annotation_test() {
+pub fn config_seed_zero_renders_with_the_configured_seed_test() {
   // Pin seed(0) so the runner's normalisation maps it to 0xDEADBEEF.
   // The failure header should annotate the canonical state with the
-  // original "seed(0)" the user wrote in source.
-  let cfg = metamon.with_seed(metamon.default_config(), metamon.seed(0))
+  // seed the user wrote in the Config.
+  let cfg = metamon.Config(..metamon.default_config(), seed: Some(0))
   let outcome =
     capture(fn() {
-      metamon.forall_with(cfg, generator.int(range.constant(0, 100)), fn(_n) {
-        False
+      metamon.forall_with(cfg, generator.int(generator.range(0, 100)), fn(_n) {
+        test_helpers.fail()
       })
     })
   case outcome {
     Reason(text) -> {
       should.be_true(string.contains(text, "config seed:"))
-      should.be_true(string.contains(text, "originally seed(0)"))
+      should.be_true(string.contains(
+        text,
+        "Config(..default_config(), seed: Some(0))",
+      ))
     }
     NoPanic -> should.fail()
   }
 }
 
-pub fn forall_morph_n_panics_when_outputs_differ_test() {
-  // The head of a list changes when the list is reversed, so asking for
-  // all outputs to be equal must fail rather than pass.
+pub fn morph_reproduce_line_uses_assert_morph_test() {
+  let reverse = metamon.Transform(name: "reverse", apply: list.reverse)
   let outcome =
     capture(fn() {
-      metamon.forall_morph_n(
+      metamon.forall_morph(
         generator.list_of(
-          generator.int(range.constant(0, 9)),
-          range.constant(2, 5),
+          generator.int(generator.range(0, 9)),
+          generator.range(2, 5),
         ),
-        [list_t.reverse()],
-        relation.all_equal(),
-        fn(items) {
-          case items {
-            [first, ..] -> first
-            [] -> 0
-          }
-        },
-      )
-    })
-  case outcome {
-    Reason(text) -> should.be_true(string.contains(text, "all_equal"))
-    NoPanic -> should.fail()
-  }
-}
-
-pub fn forall_morph_n_panics_on_empty_transforms_test() {
-  let outcome =
-    capture(fn() {
-      metamon.forall_morph_n(
-        generator.int(range.constant(0, 100)),
-        [],
-        relation.all_equal(),
-        fn(n) { n },
+        [metamon.invariant_under(name: "head", under: reverse)],
+        list.first,
       )
     })
   case outcome {
     Reason(text) -> {
-      should.be_true(string.contains(text, "metamon.forall_morph_n"))
-      should.be_true(string.contains(text, "empty transforms list"))
-      should.be_true(string.contains(text, "vacuous test"))
+      should.be_true(string.contains(
+        text,
+        "metamon.assert_morph(input, morph, function)",
+      ))
+      should.be_false(string.contains(text, " MR "))
     }
     NoPanic -> should.fail()
   }
 }
+
+pub fn runs_smaller_than_the_edge_count_limits_the_inputs_test() {
+  // One run per multiplier step; the 16 edge values must not add more.
+  count_reset()
+  metamon.forall_with(
+    metamon.Config(..metamon.default_config(), runs: 1),
+    generator.int(generator.range(0, 9)) |> generator.no_edges,
+    fn(_) { count_bump() },
+  )
+  let plain = count_get()
+  count_reset()
+  metamon.forall_with(
+    metamon.Config(..metamon.default_config(), runs: 1),
+    generator.int(generator.range(0, 1000))
+      |> generator.with_examples(test_helpers.integers_from(0, 16)),
+    fn(_) { count_bump() },
+  )
+  should.equal(count_get(), plain)
+}
+
+@external(erlang, "metamon_env_test_ffi", "count_reset")
+@external(javascript, "./metamon_env_test_ffi.mjs", "count_reset")
+fn count_reset() -> Nil
+
+@external(erlang, "metamon_env_test_ffi", "count_bump")
+@external(javascript, "./metamon_env_test_ffi.mjs", "count_bump")
+fn count_bump() -> Nil
+
+@external(erlang, "metamon_env_test_ffi", "count_get")
+@external(javascript, "./metamon_env_test_ffi.mjs", "count_get")
+fn count_get() -> Int

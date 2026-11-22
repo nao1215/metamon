@@ -12,7 +12,8 @@
     ieee_negative_infinity/0,
     ieee_smallest_positive_denormal/0,
     ieee_largest_finite/0,
-    getenv/1
+    getenv/1,
+    capture_panic/1
 ]).
 
 now_microseconds() ->
@@ -62,7 +63,7 @@ identity(X) -> X.
 %% target keeps the genuine non-finite values via `Number.{NaN,
 %% POSITIVE_INFINITY, NEGATIVE_INFINITY}`. Properties that depend on
 %% the genuine non-finite values must run on the JavaScript target;
-%% the README and `float_special` docstring call out this asymmetry.
+%% the `float_special` documentation calls out this asymmetry.
 
 ieee_nan() ->
     %% Largest finite double. On the BEAM, NaN cannot be constructed
@@ -94,4 +95,17 @@ getenv(Name) ->
     case os:getenv(unicode:characters_to_list(Name)) of
         false -> {error, nil};
         Value -> {ok, unicode:characters_to_binary(Value)}
+    end.
+
+%% Run a thunk and return `{false, Value}` with its result, or
+%% `{true, Message}` when it raises. A Gleam panic, `assert` or `let assert` carries its message in
+%% the error map; any other error, throw or exit is formatted with `~p`.
+capture_panic(Thunk) ->
+    try Thunk() of
+        Value -> {false, Value}
+    catch
+        error:#{gleam_error := _, message := Message} when is_binary(Message) ->
+            {true, Message};
+        _:Reason ->
+            {true, unicode:characters_to_binary(io_lib:format("~p", [Reason]))}
     end.

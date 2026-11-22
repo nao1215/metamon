@@ -1,17 +1,16 @@
 import gleam/dict
+import gleam/list
+import gleam/option.{None, Some}
 import gleam/string
 import gleeunit/should
-import metamon/coverage
-
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+import metamon/internal/coverage
+import test_helpers
 
 pub fn snapshot_starts_empty_test() {
   coverage.reset()
   let snap = coverage.snapshot()
   should.equal(snap.total, 0)
-  should.equal(coverage.requirements_of(snap), [])
+  should.equal(snap.requirements, [])
 }
 
 // The runner calls `count_run` once per run, and a label counts once per
@@ -27,7 +26,7 @@ pub fn classify_increments_count_test() {
   coverage.classify("zero", False)
   let snap = coverage.snapshot()
   should.equal(snap.total, 3)
-  should.equal(coverage.hits_for(snap, "zero"), 2)
+  should.equal(hits(snap, "zero"), 2)
 }
 
 pub fn cover_records_a_requirement_test() {
@@ -41,9 +40,9 @@ pub fn cover_records_a_requirement_test() {
   coverage.count_run()
   coverage.cover(50.0, "even", True)
   let snap = coverage.snapshot()
-  let assert [req] = coverage.requirements_of(snap)
+  let assert [req] = snap.requirements
   should.equal(req.label, "even")
-  should.equal(req.kind, coverage.Pct(50.0))
+  should.equal(req.target_pct, 50.0)
   should.equal(req.hits, 3)
 }
 
@@ -56,15 +55,8 @@ pub fn shortfalls_flags_unmet_requirements_test() {
   coverage.count_run()
   coverage.cover(80.0, "rare", False)
   let snap = coverage.snapshot()
-  let bad = coverage.shortfalls(snap)
-  should.equal(bad |> count_list(), 1)
-}
-
-fn count_list(items: List(a)) -> Int {
-  case items {
-    [] -> 0
-    [_, ..rest] -> 1 + count_list(rest)
-  }
+  let assert Some(req) = coverage.first_shortfall(snap)
+  should.equal(req.label, "rare")
 }
 
 pub fn shortfalls_empty_when_target_met_test() {
@@ -78,21 +70,7 @@ pub fn shortfalls_empty_when_target_met_test() {
   coverage.count_run()
   coverage.cover(20.0, "common", False)
   let snap = coverage.snapshot()
-  should.equal(coverage.shortfalls(snap), [])
-}
-
-pub fn collect_buckets_values_test() {
-  coverage.reset()
-  coverage.count_run()
-  coverage.collect("a", fn(s: String) { s })
-  coverage.count_run()
-  coverage.collect("a", fn(s: String) { s })
-  coverage.count_run()
-  coverage.collect("b", fn(s: String) { s })
-  let snap = coverage.snapshot()
-  let collected = coverage.collected_of(snap)
-  should.equal(dict.get(collected, "a"), Ok(2))
-  should.equal(dict.get(collected, "b"), Ok(1))
+  should.equal(coverage.first_shortfall(snap), None)
 }
 
 pub fn actual_pct_zero_when_total_zero_test() {
@@ -100,80 +78,25 @@ pub fn actual_pct_zero_when_total_zero_test() {
   should.equal(coverage.actual_pct(50, 100), 50.0)
 }
 
-// ---------- Count-kind requirement ----------
-
-pub fn cover_at_least_records_count_kind_test() {
-  coverage.reset()
-  coverage.count_run()
-  coverage.cover_at_least(2, "primes", True)
-  coverage.count_run()
-  coverage.cover_at_least(2, "primes", False)
-  coverage.count_run()
-  coverage.cover_at_least(2, "primes", True)
-  let snap = coverage.snapshot()
-  let assert [req] = coverage.requirements_of(snap)
-  should.equal(req.label, "primes")
-  should.equal(req.kind, coverage.Count(2))
-  should.equal(req.hits, 2)
-}
-
-pub fn cover_at_least_meets_target_test() {
-  coverage.reset()
-  coverage.count_run()
-  coverage.cover_at_least(2, "ok", True)
-  coverage.count_run()
-  coverage.cover_at_least(2, "ok", True)
-  coverage.count_run()
-  coverage.cover_at_least(2, "ok", True)
-  let snap = coverage.snapshot()
-  should.equal(coverage.shortfalls(snap), [])
-}
-
-pub fn cover_at_least_falls_short_test() {
-  coverage.reset()
-  coverage.count_run()
-  coverage.cover_at_least(5, "ok", True)
-  coverage.count_run()
-  coverage.cover_at_least(5, "ok", False)
-  coverage.count_run()
-  coverage.cover_at_least(5, "ok", False)
-  let snap = coverage.snapshot()
-  case coverage.shortfalls(snap) {
-    [req] -> should.equal(req.kind, coverage.Count(5))
-    _ -> should.fail()
-  }
-}
-
-pub fn classify_in_bucket_groups_labels_test() {
-  coverage.reset()
-  coverage.count_run()
-  coverage.classify_in_bucket("size", "small")
-  coverage.count_run()
-  coverage.classify_in_bucket("size", "small")
-  coverage.count_run()
-  coverage.classify_in_bucket("size", "large")
-  let snap = coverage.snapshot()
-  should.equal(coverage.hits_for(snap, "size=small"), 2)
-  should.equal(coverage.hits_for(snap, "size=large"), 1)
-}
-
-// ---------- target_pct / min_hits validation ----------
+// ---------- target_pct validation ----------
 
 pub fn cover_panics_on_negative_target_pct_test() {
   coverage.reset()
   let #(panicked, message) =
-    capture_panic(fn() { coverage.cover(-1.0, "neg", True) })
+    test_helpers.capture_panic(fn() { coverage.cover(-1.0, "neg", True) })
   should.be_true(panicked)
-  should.be_true(string.contains(message, "metamon.coverage.cover"))
+  should.be_true(string.contains(message, "metamon.cover"))
   should.be_true(string.contains(message, "[0.0, 100.0]"))
 }
 
 pub fn cover_panics_just_over_100_test() {
   coverage.reset()
   let #(panicked, message) =
-    capture_panic(fn() { coverage.cover(100.0000001, "over", True) })
+    test_helpers.capture_panic(fn() {
+      coverage.cover(100.0000001, "over", True)
+    })
   should.be_true(panicked)
-  should.be_true(string.contains(message, "metamon.coverage.cover"))
+  should.be_true(string.contains(message, "metamon.cover"))
   should.be_true(string.contains(message, "[0.0, 100.0]"))
 }
 
@@ -183,7 +106,7 @@ pub fn cover_accepts_zero_boundary_test() {
   coverage.count_run()
   coverage.cover(0.0, "edge_lo", True)
   let snap = coverage.snapshot()
-  should.equal(coverage.hits_for(snap, "edge_lo"), 1)
+  should.equal(hits(snap, "edge_lo"), 1)
 }
 
 pub fn cover_accepts_100_boundary_test() {
@@ -192,22 +115,23 @@ pub fn cover_accepts_100_boundary_test() {
   coverage.count_run()
   coverage.cover(100.0, "edge_hi", True)
   let snap = coverage.snapshot()
-  should.equal(coverage.hits_for(snap, "edge_hi"), 1)
+  should.equal(hits(snap, "edge_hi"), 1)
 }
 
-pub fn cover_at_least_panics_on_negative_min_hits_test() {
-  coverage.reset()
-  let #(panicked, message) =
-    capture_panic(fn() { coverage.cover_at_least(-1, "neg", True) })
-  should.be_true(panicked)
-  should.be_true(string.contains(message, "metamon.coverage.cover_at_least"))
-  should.be_true(string.contains(message, ">= 0"))
+fn hits(snap: coverage.Snapshot, label: String) -> Int {
+  case dict.get(snap.counts, label) {
+    Ok(n) -> n
+    Error(Nil) -> 0
+  }
 }
 
-pub fn cover_at_least_accepts_zero_test() {
+pub fn cover_met_exactly_is_not_a_shortfall_test() {
+  // 29 / 100 * 100.0 is 28.999999999999996 in floating point.
   coverage.reset()
-  coverage.count_run()
-  coverage.cover_at_least(0, "edge", True)
-  let snap = coverage.snapshot()
-  should.equal(coverage.hits_for(snap, "edge"), 1)
+  test_helpers.integers_from(0, 100)
+  |> list.each(fn(i) {
+    coverage.count_run()
+    coverage.cover(29.0, "exact", i < 29)
+  })
+  should.equal(coverage.first_shortfall(coverage.snapshot()), None)
 }

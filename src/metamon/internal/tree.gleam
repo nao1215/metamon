@@ -6,15 +6,13 @@
 //// an external lazy-list library, keeping metamon's runtime dependencies
 //// limited to `gleam_stdlib`.
 
-import gleam/list
-
 /// A lazy stream of shrink alternatives.
 ///
 /// Each element is computed on demand by forcing `step`; once a `Done`
 /// step is observed the stream is exhausted. `Shrinks(a)` is functorial
 /// (`map_shrinks`), filterable (`filter_shrinks`), and concatenable
 /// (`append_shrinks`).
-pub opaque type Shrinks(a) {
+pub type Shrinks(a) {
   Shrinks(step: fn() -> ShrinkStep(a))
 }
 
@@ -40,7 +38,7 @@ pub fn no_shrinks() -> Shrinks(a) {
 
 /// Build a `Shrinks(a)` from a list. Useful when the shrink alternatives
 /// are statically known (e.g. integer halving).
-pub fn shrinks_from_list(items: List(a)) -> Shrinks(a) {
+fn shrinks_from_list(items: List(a)) -> Shrinks(a) {
   case items {
     [] -> Shrinks(step: fn() { Done })
     [first, ..rest] ->
@@ -78,10 +76,7 @@ pub fn append_shrinks(left: Shrinks(a), right: Shrinks(a)) -> Shrinks(a) {
 }
 
 /// Lazily drop elements that fail `predicate`.
-pub fn filter_shrinks(
-  stream: Shrinks(a),
-  predicate: fn(a) -> Bool,
-) -> Shrinks(a) {
+fn filter_shrinks(stream: Shrinks(a), predicate: fn(a) -> Bool) -> Shrinks(a) {
   Shrinks(step: fn() { filter_step(stream, predicate) })
 }
 
@@ -93,28 +88,6 @@ fn filter_step(stream: Shrinks(a), predicate: fn(a) -> Bool) -> ShrinkStep(a) {
         True -> More(head: head, tail: filter_shrinks(tail, predicate))
         False -> filter_step(tail, predicate)
       }
-  }
-}
-
-/// Force the first `n` elements of a stream into a list.
-pub fn shrinks_take(stream: Shrinks(a), n: Int) -> List(a) {
-  case n <= 0 {
-    True -> []
-    False ->
-      case stream.step() {
-        Done -> []
-        More(head, tail) -> [head, ..shrinks_take(tail, n - 1)]
-      }
-  }
-}
-
-/// Force the entire stream into a list. Use only on streams known to be
-/// finite — generator shrink streams generally are, but be careful with
-/// infinite expansions.
-pub fn shrinks_to_list(stream: Shrinks(a)) -> List(a) {
-  case stream.step() {
-    Done -> []
-    More(head, tail) -> [head, ..shrinks_to_list(tail)]
   }
 }
 
@@ -196,18 +169,4 @@ pub fn zip(left: Tree(a), right: Tree(b)) -> Tree(#(a, b)) {
     value: #(left.value, right.value),
     shrinks: append_shrinks(left_shrinks, right_shrinks),
   )
-}
-
-/// Force the tree into a list of values up to `depth` levels deep, taking
-/// at most `breadth` shrinks per level. Used for inspection in tests.
-pub fn outline(tree: Tree(a), depth: Int, breadth: Int) -> List(a) {
-  case depth <= 0 {
-    True -> [tree.value]
-    False -> {
-      let direct = shrinks_take(tree.shrinks, breadth)
-      let nested =
-        list.flat_map(direct, fn(child) { outline(child, depth - 1, breadth) })
-      [tree.value, ..nested]
-    }
-  }
 }

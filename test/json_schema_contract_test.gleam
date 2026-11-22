@@ -1,48 +1,35 @@
 //// Schema-contract tests for the JSON failure-report format. (#82)
 ////
-//// `README.md` §JSON output declares the schema is stable and lists 17
-//// top-level keys: `mr_name`, `test_name`, `config_seed`, `runs_done`,
-//// `runs_total`, `shrinks_done`, `shrink_capped`, `source`,
-//// `morph_mode`, `relation`, `source_input`, `followup_input`,
-//// `source_output`, `followup_output`, `annotations`, `footnotes`,
-//// `coverage`. Downstream tooling (`jq` pipelines, GitHub Actions
+//// The JSON failure report has 18 top-level keys: `mr_name`,
+//// `test_name`, `config_seed`, `runs_done`, `runs_total`,
+//// `shrinks_done`, `shrink_capped`, `source`, `morph_mode`, `relation`,
+//// `source_input`, `followup_input`, `source_output`,
+//// `followup_output`, `annotations`, `footnotes`, `coverage` and
+//// `panic_message`. Downstream tooling (`jq` pipelines, GitHub Actions
 //// annotations, LLM analysis steps) depends on every one of those
 //// keys being present in every failure shape.
 ////
 //// `test/json_output_test.gleam` covers basic emission for `forall` and
-//// `forall_morph`, but only spot-checks five of the seventeen keys.
+//// `forall_morph`, but only spot-checks five of the eighteen keys.
 //// This module triggers each public failure shape that emits JSON
 //// (`forall`, `forall_morph`, `forall_round_trip`) and asserts that
-//// **every** README-listed key appears, plus the documented value-type
+//// every key appears, plus the documented value-type
 //// for the keys whose type is part of the contract (`config_seed`,
 //// `runs_done`, `runs_total`, `shrinks_done` → Int; `shrink_capped` →
 //// Bool; `annotations`, `footnotes` → Array; `coverage` → Object or
 //// null).
-////
-//// Stateful failures (`metamon/stateful.assert_passed`) panic with
-//// their own text-only header and do not flow through the JSON
-//// formatter, so they are intentionally out of scope for this contract
-//// — the README §JSON output section similarly says nothing about a
-//// stateful JSON shape.
 
 import gleam/list
 import gleam/string
 import gleeunit/should
 import metamon
-import metamon/config
 import metamon/generator
-import metamon/generator/range
-import metamon/relation
-import metamon/transform
+import test_helpers
 
 // ---------- panic capture ----------
 
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
-
 fn json_from_failure(thunk: fn() -> Nil) -> String {
-  let #(panicked, message) = capture_panic(thunk)
+  let #(panicked, message) = test_helpers.capture_panic(thunk)
   should.equal(panicked, True)
   let trimmed = string.trim(message)
   // Sanity: the failure path produced a JSON object, not the text
@@ -56,46 +43,40 @@ fn json_from_failure(thunk: fn() -> Nil) -> String {
 // ---------- failure triggers (one per public JSON-emitting shape) ----------
 
 fn json_for_forall_failure() -> String {
-  let cfg =
-    metamon.default_config()
-    |> metamon.with_output_format(config.Json)
+  let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   json_from_failure(fn() {
-    metamon.forall_with(cfg, generator.int(range.constant(0, 10)), fn(_n) {
-      False
+    metamon.forall_with(cfg, generator.int(generator.range(0, 10)), fn(_n) {
+      test_helpers.fail()
     })
   })
 }
 
 fn json_for_forall_morph_failure() -> String {
-  let increment = transform.new("+1", fn(n: Int) { n + 1 })
+  let increment = metamon.Transform("+1", fn(n: Int) { n + 1 })
   let bad_mr =
-    metamon.mr(
+    metamon.Morph(
       name: "false_invariant",
       transform: increment,
-      relation: relation.equal(),
+      relation: metamon.equal(),
     )
-  let cfg =
-    metamon.default_config()
-    |> metamon.with_output_format(config.Json)
+  let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   json_from_failure(fn() {
     metamon.forall_morph_with(
       cfg,
-      generator.int(range.constant(1, 10)),
-      bad_mr,
+      generator.int(generator.range(1, 10)),
+      [bad_mr],
       fn(n) { n },
     )
   })
 }
 
 fn json_for_forall_round_trip_failure() -> String {
-  let cfg =
-    metamon.default_config()
-    |> metamon.with_output_format(config.Json)
+  let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   json_from_failure(fn() {
     // A trivially broken codec: encoder and decoder do not invert.
     metamon.forall_round_trip_with(
-      cfg: cfg,
-      gen: generator.int(range.constant(1, 10)),
+      config: cfg,
+      generator: generator.int(generator.range(1, 10)),
       name: "broken_codec",
       encode: fn(n: Int) { n + 1 },
       decode: fn(n: Int) { Ok(n) },
@@ -109,7 +90,7 @@ const required_keys: List(String) = [
   "mr_name", "test_name", "config_seed", "runs_done", "runs_total",
   "shrinks_done", "shrink_capped", "source", "morph_mode", "relation",
   "source_input", "followup_input", "source_output", "followup_output",
-  "annotations", "footnotes", "coverage",
+  "annotations", "footnotes", "coverage", "panic_message",
 ]
 
 fn assert_key_present(json: String, key: String) -> Nil {

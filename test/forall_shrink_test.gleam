@@ -1,29 +1,26 @@
 //// The plain property runners (`forall`, `forall_with`,
-//// `forall_observable`, `forall_round_trip*`) shrink the failing input
-//// the same way `forall_morph` does.
+//// `forall_round_trip*`) shrink the failing input the same way
+//// `forall_morph` does.
 
 import gleam/int
+import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/generator
-import metamon/generator/range
-
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic(thunk: fn() -> Nil) -> #(Bool, String)
+import test_helpers
 
 fn failure_text(thunk: fn() -> Nil) -> String {
-  let #(panicked, message) = capture_panic(thunk)
+  let #(panicked, message) = test_helpers.capture_panic(thunk)
   assert panicked
   message
 }
 
 fn seeded(value: Int) -> metamon.Config {
-  metamon.default_config() |> metamon.with_seed(metamon.seed(value))
+  metamon.Config(..metamon.default_config(), seed: Some(value))
 }
 
 fn ints() -> generator.Generator(Int) {
-  generator.int(range.constant(0, 1000)) |> generator.no_edges
+  generator.int(generator.range(0, 1000)) |> generator.no_edges
 }
 
 fn shrunk_to(text: String, rendered: String) -> Bool {
@@ -33,7 +30,9 @@ fn shrunk_to(text: String, rendered: String) -> Bool {
 pub fn forall_with_shrinks_to_the_smallest_counterexample_test() {
   let text =
     failure_text(fn() {
-      metamon.forall_with(seeded(42), ints(), fn(x) { x < 10 })
+      metamon.forall_with(seeded(42), ints(), fn(x) {
+        assert x < 10
+      })
     })
   assert shrunk_to(text, "10")
   assert !string.contains(text, "shrinks:     0\n")
@@ -43,36 +42,26 @@ pub fn forall_shrinks_to_the_boundary_for_every_seed_test() {
   // Metamorphic over the seed: whichever failing input the run hits
   // first, the reported input is the boundary value.
   metamon.forall_with(
-    metamon.default_config() |> metamon.with_runs_or_panic(20),
-    generator.int(range.constant(1, 100_000)),
+    metamon.Config(..metamon.default_config(), runs: 20),
+    generator.int(generator.range(1, 100_000)),
     fn(seed_value) {
       let text =
         failure_text(fn() {
-          metamon.forall_with(seeded(seed_value), ints(), fn(x) { x < 10 })
+          metamon.forall_with(seeded(seed_value), ints(), fn(x) {
+            assert x < 10
+          })
         })
-      shrunk_to(text, "10")
+      assert shrunk_to(text, "10")
     },
   )
-}
-
-pub fn forall_observable_shrinks_test() {
-  let text =
-    failure_text(fn() {
-      metamon.forall_observable_with(seeded(7), ints(), fn(x) {
-        #(x * 2, x < 10)
-      })
-    })
-  assert shrunk_to(text, "10")
-  // The observation shown belongs to the reported (shrunk) input.
-  assert string.contains(text, "predicate value: 20")
 }
 
 pub fn forall_round_trip_shrinks_test() {
   let text =
     failure_text(fn() {
       metamon.forall_round_trip_with(
-        cfg: seeded(3),
-        gen: ints(),
+        config: seeded(3),
+        generator: ints(),
         name: "lossy",
         encode: int.to_string,
         decode: fn(s) {

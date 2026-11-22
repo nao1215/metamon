@@ -1,125 +1,94 @@
+//// The interval behind `generator.range` and `generator.linear_range`:
+//// bounds at each size, the shrink origin, swapped bounds and extreme
+//// bounds.
+
 import gleam/list
-import gleam/string
 import gleeunit/should
-import metamon/generator/range
+import metamon/generator
+import metamon/internal/interval.{Constant, Linear}
+import metamon/internal/seed
+import metamon/internal/tree.{Done, More}
 import test_helpers
 
-pub fn singleton_is_constant_test() {
-  let r = range.singleton(7)
-  should.equal(range.origin(r), 7)
-  should.equal(range.bounds(r, 0, 99), #(7, 7))
-  should.equal(range.bounds(r, 99, 99), #(7, 7))
+fn constant(from: Int, to: Int) -> interval.Interval {
+  interval.new(from, to, Constant)
+}
+
+fn linear(from: Int, to: Int) -> interval.Interval {
+  interval.new(from, to, Linear)
+}
+
+pub fn equal_bounds_are_constant_test() {
+  let r = constant(7, 7)
+  should.equal(r.origin, 7)
+  should.equal(interval.bounds(r, 0, 99), #(7, 7))
+  should.equal(interval.bounds(r, 99, 99), #(7, 7))
+  should.equal(interval.bounds(linear(5, 5), 50, 99), #(5, 5))
 }
 
 pub fn constant_ignores_size_test() {
-  let r = range.constant(0, 100)
-  should.equal(range.bounds(r, 0, 99), #(0, 100))
-  should.equal(range.bounds(r, 50, 99), #(0, 100))
-  should.equal(range.bounds(r, 99, 99), #(0, 100))
+  let r = constant(0, 100)
+  should.equal(interval.bounds(r, 0, 99), #(0, 100))
+  should.equal(interval.bounds(r, 50, 99), #(0, 100))
+  should.equal(interval.bounds(r, 99, 99), #(0, 100))
 }
 
-pub fn constant_picks_zero_origin_when_in_range_test() {
-  should.equal(range.origin(range.constant(-10, 10)), 0)
-  should.equal(range.origin(range.constant(5, 100)), 5)
+pub fn origin_is_zero_when_in_range_test() {
+  should.equal(constant(-10, 10).origin, 0)
+  should.equal(constant(5, 100).origin, 5)
+  should.equal(linear(-5, 5).origin, 0)
+  should.equal(linear(3, 9).origin, 3)
+  should.equal(linear(-9, -3).origin, -9)
 }
 
 pub fn linear_size_zero_collapses_to_origin_test() {
-  let r = range.linear(0, 100)
-  should.equal(range.bounds(r, 0, 99), #(0, 0))
+  should.equal(interval.bounds(linear(0, 100), 0, 99), #(0, 0))
 }
 
 pub fn linear_size_max_reaches_full_range_test() {
-  let r = range.linear(0, 100)
-  should.equal(range.bounds(r, 99, 99), #(0, 100))
-}
-
-pub fn linear_from_uses_explicit_origin_test() {
-  let r = range.linear_from(2000, 1900, 2100)
-  should.equal(range.origin(r), 2000)
-  should.equal(range.bounds(r, 0, 99), #(2000, 2000))
-  should.equal(range.bounds(r, 99, 99), #(1900, 2100))
-}
-
-pub fn linear_from_accepts_origin_at_boundaries_test() {
-  // Origin equal to lo and to hi are inclusive endpoints.
-  let r_lo = range.linear_from(0, 0, 10)
-  should.equal(range.origin(r_lo), 0)
-  let r_hi = range.linear_from(10, 0, 10)
-  should.equal(range.origin(r_hi), 10)
-}
-
-pub fn linear_from_panics_when_origin_below_lo_test() {
-  let outcome =
-    capture_panic(fn() {
-      let _ = range.linear_from(-5, 0, 10)
-      Nil
-    })
-  case outcome {
-    PanickedWith(message) -> {
-      should.be_true(string.contains(message, "origin must lie inside [lo, hi]"))
-    }
-    DidNotPanic -> should.fail()
-  }
-}
-
-pub fn linear_from_panics_when_origin_above_hi_test() {
-  let outcome =
-    capture_panic(fn() {
-      let _ = range.linear_from(100, 0, 10)
-      Nil
-    })
-  case outcome {
-    PanickedWith(message) -> {
-      should.be_true(string.contains(message, "origin must lie inside [lo, hi]"))
-    }
-    DidNotPanic -> should.fail()
-  }
-}
-
-pub type PanicOutcome {
-  PanickedWith(message: String)
-  DidNotPanic
-}
-
-@external(erlang, "metamon_test_ffi", "capture_panic")
-@external(javascript, "./metamon_test_ffi.mjs", "capture_panic")
-fn capture_panic_raw(thunk: fn() -> Nil) -> #(Bool, String)
-
-fn capture_panic(thunk: fn() -> Nil) -> PanicOutcome {
-  let #(panicked, message) = capture_panic_raw(thunk)
-  case panicked {
-    True -> PanickedWith(message: message)
-    False -> DidNotPanic
-  }
-}
-
-pub fn exponential_grows_quadratically_test() {
-  let r = range.exponential(0, 100)
-  let #(_, hi_low) = range.bounds(r, 10, 99)
-  let #(_, hi_high) = range.bounds(r, 90, 99)
-  // 90^2 / 99^2 ≈ 0.826, 10^2 / 99^2 ≈ 0.010 — large gap expected
-  should.be_true(hi_high - hi_low > 50)
+  should.equal(interval.bounds(linear(0, 100), 99, 99), #(0, 100))
 }
 
 pub fn bounds_clamp_size_into_valid_window_test() {
-  let r = range.linear(0, 50)
-  // size below zero clamps to 0, size above max clamps to max
-  should.equal(range.bounds(r, -10, 99), range.bounds(r, 0, 99))
-  should.equal(range.bounds(r, 1000, 99), range.bounds(r, 99, 99))
+  let r = linear(0, 50)
+  should.equal(interval.bounds(r, -10, 99), interval.bounds(r, 0, 99))
+  should.equal(interval.bounds(r, 1000, 99), interval.bounds(r, 99, 99))
 }
 
-pub fn random_check_values_within_bounds_test() {
-  let r = range.linear(0, 100)
+pub fn linear_bounds_stay_inside_the_range_test() {
+  let r = linear(0, 100)
   test_helpers.integers_from(0, 100)
   |> list.each(fn(size) {
-    let #(lo, hi) = range.bounds(r, size, 99)
+    let #(lo, hi) = interval.bounds(r, size, 99)
     should.be_true(lo <= hi)
     should.be_true(lo >= 0 && hi <= 100)
   })
 }
 
-pub fn linear_picks_zero_origin_only_when_in_range_test() {
-  should.equal(range.origin(range.linear(-5, 5)), 0)
-  should.equal(range.origin(range.linear(3, 9)), 3)
-  should.equal(range.origin(range.linear(-9, -3)), -9)
+pub fn inverted_bounds_are_swapped_test() {
+  should.equal(interval.bounds(constant(10, 0), 0, 99), #(0, 10))
+  should.equal(interval.bounds(linear(10, 0), 99, 99), #(0, 10))
+}
+
+pub fn extreme_bounds_do_not_overflow_test() {
+  let r = constant(-1_000_000_000, 1_000_000_000)
+  should.equal(interval.bounds(r, 0, 99), #(-1_000_000_000, 1_000_000_000))
+  should.equal(interval.bounds(r, 99, 99), #(-1_000_000_000, 1_000_000_000))
+  let l = linear(-1_000_000_000, 1_000_000_000)
+  should.equal(l.origin, 0)
+  should.equal(interval.bounds(l, 0, 99), #(0, 0))
+}
+
+pub fn int_values_shrink_toward_the_origin_test() {
+  // The first shrink of an integer is the origin of its range.
+  let g = generator.int(generator.range(from: 5, to: 100))
+  test_helpers.integers_from(0, 20)
+  |> list.each(fn(i) {
+    let t = generator.generate(g, seed.seed(i), 99, 99)
+    case t.value == 5, t.shrinks.step() {
+      True, _ -> Nil
+      False, More(first, _) -> should.equal(first.value, 5)
+      False, Done -> should.fail()
+    }
+  })
 }

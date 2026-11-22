@@ -15,106 +15,209 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
-import metamon/annotate
-import metamon/config.{type Config}
-import metamon/coverage
 import metamon/generator.{type Generator}
-import metamon/generator/seed.{type Seed} as seed_module
-import metamon/generator/tree.{type Tree}
+import metamon/internal/annotate
+import metamon/internal/capture
+import metamon/internal/coverage
 import metamon/internal/regression
 import metamon/internal/report.{
-  type FailureReport, type InputSource, type MorphMode, EdgeSource, Equivariant,
-  FailureReport, Plain, RandomSource,
+  type FailureReport, type InputSource, type MorphMode, EdgeSource,
+  FailureReport, RandomSource,
 } as report_module
-import metamon/relation.{type Relation}
-import metamon/transform.{type Transform}
+import metamon/internal/seed.{type Seed} as seed_module
+import metamon/internal/tree.{type Tree}
 import simplifile
 
-/// Internal description of a metamorphic relation. Built from
-/// `metamon.mr` and `metamon.mr_equivariant`. Opaque so the variant
-/// shape can change without breaking downstream test files.
-pub opaque type MorphSpec(a, b) {
-  PlainSpec(name: String, transform: Transform(a), relation: Relation(b))
-  EquivariantSpec(
+/// A metamorphic relation as the runner checks it: the relation holds
+/// between `expected(f(x))` and `f(follow_up(x))`. A plain relation has
+/// the identity as `expected`.
+pub type MorphSpec(a, b) {
+  MorphSpec(
     name: String,
-    input_transform: Transform(a),
-    output_transform: Transform(b),
-    relation: Relation(b),
+    mode: MorphMode,
+    follow_up: fn(a) -> a,
+    expected: fn(b) -> b,
+    relation_name: String,
+    holds: fn(b, b) -> Bool,
   )
 }
 
-/// Smart constructor for the Plain MR shape (`f(T(x))` and `f(x)`
-/// are related by `R`).
-pub fn plain(
-  name: String,
-  transform: Transform(a),
-  relation: Relation(b),
-) -> MorphSpec(a, b) {
-  PlainSpec(name: name, transform: transform, relation: relation)
-}
-
-/// Smart constructor for the Equivariant MR shape (`f(T(x))` and
-/// `U(f(x))` are related by `R`).
-pub fn equivariant(
-  name: String,
-  input_transform: Transform(a),
-  output_transform: Transform(b),
-  relation: Relation(b),
-) -> MorphSpec(a, b) {
-  EquivariantSpec(
-    name: name,
-    input_transform: input_transform,
-    output_transform: output_transform,
-    relation: relation,
+/// The configuration of one run, built and checked by `settings`.
+pub type Settings {
+  Settings(
+    runs: Int,
+    seed: Seed,
+    max_size: Int,
+    shrink_limit: Int,
+    max_edges: Int,
+    regression_file: Option(String),
+    json: Bool,
   )
 }
 
-/// Public accessor for the MR's user-visible name.
-pub fn morph_name(spec: MorphSpec(a, b)) -> String {
-  spec_name(spec)
+/// Check the configuration fields and build the settings of one run.
+/// `seed` is `None` for a seed drawn from the clock.
+///
+/// Panics with a message naming the field when `runs`, `max_size`,
+/// `shrink_limit` or `max_edges` is not positive, or `regression_file`
+/// is `Some("")`.
+pub fn settings(
+  runs runs: Int,
+  seed seed: Option(Int),
+  max_size max_size: Int,
+  shrink_limit shrink_limit: Int,
+  max_edges max_edges: Int,
+  regression_file regression_file: Option(String),
+  json json: Bool,
+) -> Settings {
+  require_positive("runs", runs)
+  require_positive("max_size", max_size)
+  require_positive("shrink_limit", shrink_limit)
+  require_positive("max_edges", max_edges)
+  case regression_file {
+    Some("") ->
+      panic as "metamon: Config.regression_file must not be Some(\"\") (use None to turn the regression file off)"
+    _ -> Nil
+  }
+  let seed = case seed {
+    Some(value) -> seed_module.seed(value)
+    None -> seed_module.random_seed()
+  }
+  Settings(
+    runs: runs,
+    seed: seed,
+    max_size: max_size,
+    shrink_limit: shrink_limit,
+    max_edges: max_edges,
+    regression_file: regression_file,
+    json: json,
+  )
 }
 
-/// Run a property test (no metamorphic transform). `regression_key`
-/// names the property's entries in the regression file.
+fn require_positive(field: String, value: Int) -> Nil {
+  case value > 0 {
+    True -> Nil
+    False ->
+      panic as {
+        "metamon: Config."
+        <> field
+        <> " must be > 0 (got "
+        <> int.to_string(value)
+        <> ")"
+      }
+  }
+}
+
+/// Run a property test (no metamorphic transform). The property fails
+/// when it panics. `regression_key` names the property's entries in the
+/// regression file.
 pub fn run_forall(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   regression_key: String,
   gen: Generator(a),
-  property: fn(a) -> Bool,
+  property: fn(a) -> Nil,
+) -> Nil {
+  run_plain(cfg, test_name, regression_key, gen, property, False)
+}
+
+fn run_plain(
+  cfg: Settings,
+  test_name: String,
+  regression_key: String,
+  gen: Generator(a),
+  property: fn(a) -> Nil,
+  round_trip: Bool,
 ) -> Nil {
   let check =
     Check(
       regression_key: regression_key,
       coverage_name: None,
-      holds: property,
-      report: fn(failure) { forall_failure(cfg, test_name, property, failure) },
+      verdict: fn(input) { run_property(property, input) },
+      report: fn(failure) {
+        forall_failure(cfg, test_name, property, round_trip, failure)
+      },
     )
   run_check(cfg, test_name, gen, check) |> finish
 }
 
-/// Run a metamorphic relation against `f` for many inputs.
-pub fn run_forall_morph(
-  cfg: Config,
-  test_name: String,
+/// How a check ended on one input. Two failures are the same failure when
+/// their verdicts are equal: shrinking keeps only the candidates that
+/// fail the same way as the original input.
+type Verdict {
+  Passed
+  /// `panic_message` is `None` when a metamorphic relation does not hold.
+  Failed(panic_message: Option(String))
+}
+
+fn run_property(property: fn(a) -> Nil, input: a) -> Verdict {
+  case capture.attempt(fn() { property(input) }) {
+    capture.Returned(Nil) -> Passed
+    capture.Panicked(message) -> Failed(Some(message))
+  }
+}
+
+/// Run a round-trip property: `decode(encode(input))` must be
+/// `Ok(input)`. The report and the regression key are both
+/// `round_trip[<name>]`.
+pub fn run_round_trip(
+  cfg: Settings,
+  name: String,
   gen: Generator(a),
-  spec: MorphSpec(a, b),
-  f: fn(a) -> b,
+  encode: fn(a) -> b,
+  decode: fn(b) -> Result(a, e),
 ) -> Nil {
-  run_check(cfg, test_name, gen, morph_check(cfg, test_name, spec, f))
-  |> finish
+  let test_name = "round_trip[" <> name <> "]"
+  run_plain(
+    cfg,
+    test_name,
+    test_name,
+    gen,
+    round_trip_property(encode, decode),
+    True,
+  )
+}
+
+fn round_trip_property(
+  encode: fn(a) -> b,
+  decode: fn(b) -> Result(a, e),
+) -> fn(a) -> Nil {
+  // The messages do not show the decoded value, so shrinking can keep a
+  // candidate that fails the same way; the value is an annotation.
+  fn(input) {
+    let decoded = decode(encode(input))
+    case decoded {
+      Ok(value) if value == input -> Nil
+      Ok(_) -> {
+        annotate.annotate("decode(encode(input))", decoded)
+        panic_with(
+          "decode(encode(input)) returned a value other than the input",
+        )
+      }
+      Error(_) -> {
+        annotate.annotate("decode(encode(input))", decoded)
+        panic_with("decode(encode(input)) returned an Error")
+      }
+    }
+  }
 }
 
 fn morph_check(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   spec: MorphSpec(a, b),
   f: fn(a) -> b,
 ) -> Check(a) {
   Check(
-    regression_key: spec_name(spec),
-    coverage_name: Some(spec_name(spec)),
-    holds: fn(input) { evaluate_spec(spec, f, input).holds },
+    regression_key: spec.name,
+    coverage_name: Some(spec.name),
+    verdict: fn(input) {
+      case attempt_spec(spec, f, input) {
+        capture.Returned(evaluation) if evaluation.holds -> Passed
+        capture.Returned(_) -> Failed(None)
+        capture.Panicked(message) -> Failed(Some(message))
+      }
+    },
     report: fn(failure) { morph_failure(cfg, test_name, spec, f, failure) },
   )
 }
@@ -127,123 +230,32 @@ pub fn run_assert_morph(
   input: a,
 ) -> Nil {
   reset_state()
-  let evaluation = evaluate_spec(spec, f, input)
-  case evaluation.holds {
-    True -> Nil
-    False -> {
-      let report = morph_failure_static(test_name, spec, input, evaluation)
-      panic_with(render_for(config.default_config(), report))
-    }
-  }
-}
-
-fn render_for(cfg: Config, report: FailureReport) -> String {
-  case config.output_format(cfg) {
-    config.Text -> report_module.render(report)
-    config.Json -> report_module.render_json(report)
-  }
-}
-
-/// Run an N-ary metamorphic relation: apply each transform to the
-/// source input to build follow-ups, then check `relation` over the
-/// list `[f(source), f(T0(source)), ..., f(Tn(source))]`.
-pub fn run_forall_morph_n(
-  cfg: Config,
-  test_name: String,
-  gen: Generator(a),
-  transforms: List(Transform(a)),
-  rel: relation.RelationN(b),
-  f: fn(a) -> b,
-) -> Nil {
-  case transforms {
-    [] ->
+  case attempt_spec(spec, f, input) {
+    capture.Returned(evaluation) if evaluation.holds -> Nil
+    outcome ->
       panic_with(
-        "metamon.forall_morph_n: empty transforms list (vacuous test). Pass at least one Transform or use forall(...) for a single-input property.",
+        report_module.render(morph_failure_static(
+          test_name,
+          spec,
+          input,
+          outcome,
+        )),
       )
-    _ -> Nil
   }
-  let check =
-    Check(
-      regression_key: rel.name,
-      coverage_name: Some(rel.name),
-      holds: fn(input) { rel.holds(compute_n_outputs(transforms, f, input)) },
-      report: fn(failure) {
-        morph_n_failure(cfg, test_name, transforms, rel, f, failure)
-      },
-    )
-  run_check(cfg, test_name, gen, check) |> finish
 }
 
-fn compute_n_outputs(
-  transforms: List(Transform(a)),
-  f: fn(a) -> b,
-  input: a,
-) -> List(b) {
-  let source_output = f(input)
-  let followups =
-    list.map(transforms, fn(t: Transform(a)) { f(t.apply(input)) })
-  [source_output, ..followups]
+fn render_for(cfg: Settings, report: FailureReport) -> String {
+  case cfg.json {
+    False -> report_module.render(report)
+    True -> report_module.render_json(report)
+  }
 }
 
-fn morph_n_failure(
-  cfg: Config,
-  test_name: String,
-  transforms: List(Transform(a)),
-  rel: relation.RelationN(b),
-  f: fn(a) -> b,
-  failure: Failure(a),
-) -> String {
-  let outputs = compute_n_outputs(transforms, f, failure.input)
-  let transform_names =
-    list.map(transforms, fn(t: Transform(a)) { t.name })
-    |> string.join(", ")
-  let outputs_rendered =
-    list.index_map(outputs, fn(out, i) {
-      "    [" <> int.to_string(i) <> "] " <> string.inspect(out)
-    })
-    |> string.join("\n")
-  string.concat([
-    "× n-ary metamorphic relation `",
-    rel.name,
-    "` failed\n  test:        ",
-    test_name,
-    "\n  config seed: ",
-    report_module.format_config_seed(
-      seed_module.state(config.seed(cfg)),
-      seed_module.original_input(config.seed(cfg)),
-    ),
-    "\n  runs:        ",
-    int.to_string(failure.run_index),
-    " / ",
-    int.to_string(total_runs(cfg)),
-    "\n  shrinks:     ",
-    int.to_string(failure.shrinks),
-    case failure.capped {
-      True -> "+ (limit reached)"
-      False -> ""
-    },
-    "\n  source:      ",
-    report_module.format_source(failure.source),
-    "\n  transforms:  ",
-    transform_names,
-    "\n  source input:\n    ",
-    string.inspect(failure.input),
-    "\n  outputs (source first, then each follow-up):\n",
-    outputs_rendered,
-    case failure.notes {
-      [] -> ""
-      notes ->
-        "\n  footnotes:\n"
-        <> string.join(list.map(notes, fn(note) { "    - " <> note }), "\n")
-    },
-  ])
-}
-
-/// Run multiple metamorphic specs against the same generator + `f`.
-/// Each spec is run independently; failures are collected and the
-/// runner panics at the end if any spec failed.
-pub fn run_forall_morphs(
-  cfg: Config,
+/// Run metamorphic specs against the same generator and `f`. Each spec
+/// is run on its own; the runner panics at the end with the report of
+/// every spec that failed.
+pub fn run_forall_morph(
+  cfg: Settings,
   test_name: String,
   gen: Generator(a),
   specs: List(MorphSpec(a, b)),
@@ -252,7 +264,7 @@ pub fn run_forall_morphs(
   case specs {
     [] ->
       panic_with(
-        "metamon.forall_morphs: empty MR list (vacuous test). Pass at least one MR or use forall(...) for a single-input property.",
+        "metamon.forall_morph: empty morph list (vacuous test). Pass at least one Morph or use forall(...) for a single-input property.",
       )
     _ -> Nil
   }
@@ -267,6 +279,7 @@ pub fn run_forall_morphs(
     })
   case collected {
     [] -> Nil
+    [only] -> panic_with(only)
     failures ->
       panic_with(
         "× one or more metamorphic relations failed\n\n"
@@ -288,13 +301,16 @@ type Outcome {
 }
 
 fn iterate_inputs(
-  cfg: Config,
+  cfg: Settings,
   gen: Generator(a),
   body: fn(a, InputSource, Int) -> Step,
 ) -> Outcome {
-  let edges = generator.edges_of(gen) |> list.take(config.max_edges(cfg))
-  let edge_count = list.length(edges)
   let run_total = total_runs(cfg)
+  // The edges count towards the runs, so fewer runs than edges try only
+  // the first edges.
+  let edges =
+    generator.edges_of(gen) |> list.take(int.min(cfg.max_edges, run_total))
+  let edge_count = list.length(edges)
   case run_edges(edges, 0, body) {
     Halted(text) -> Halted(text)
     Done -> {
@@ -302,8 +318,8 @@ fn iterate_inputs(
       case remaining <= 0 {
         True -> Done
         False -> {
-          let sizes = Sizes(total: run_total, max: config.max_size(cfg))
-          run_random(gen, sizes, edge_count, remaining, config.seed(cfg), body)
+          let sizes = Sizes(total: run_total, max: cfg.max_size)
+          run_random(gen, sizes, edge_count, remaining, cfg.seed, body)
         }
       }
     }
@@ -344,7 +360,7 @@ fn run_random(
     False -> {
       let #(here, rest_seed) = seed_module.split(s)
       let size = scaled_size(start_index, sizes.total, sizes.max)
-      let value = generator.generate_sized(gen, here, size, sizes.max).value
+      let value = generator.generate(gen, here, size, sizes.max).value
       case
         body(
           value,
@@ -382,7 +398,7 @@ type Check(a) {
   Check(
     regression_key: String,
     coverage_name: Option(String),
-    holds: fn(a) -> Bool,
+    verdict: fn(a) -> Verdict,
     report: fn(Failure(a)) -> String,
   )
 }
@@ -405,7 +421,7 @@ type Failure(a) {
 /// Replay the regression entries, then drive the generated inputs, then
 /// check coverage. Every runner that takes a generator goes through here.
 fn run_check(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   gen: Generator(a),
   check: Check(a),
@@ -424,7 +440,7 @@ fn run_check(
 }
 
 fn check_step(
-  cfg: Config,
+  cfg: Settings,
   gen: Generator(a),
   check: Check(a),
   input: a,
@@ -434,12 +450,18 @@ fn check_step(
   // Annotations describe one run; coverage accumulates across runs.
   annotate.reset()
   coverage.count_run()
-  case check.holds(input) {
-    True -> Continue
-    False -> {
+  case check.verdict(input) {
+    Passed -> Continue
+    failed -> {
       let notes =
         record_regression_for(cfg, check.regression_key, source, input)
-      Stop(shrunk_failure(cfg, gen, check, input, source, run_index, notes))
+      Stop(shrunk_failure(
+        cfg,
+        gen,
+        check,
+        Found(input, failed, source, run_index),
+        notes,
+      ))
     }
   }
 }
@@ -461,13 +483,16 @@ fn finish(outcome: Outcome) -> Nil {
 /// Shrink a failing input and render the report. The annotations are
 /// rebuilt from one more run on the reported input so they describe that
 /// input, not the shrink attempts.
+/// The first failing input of a run and how it failed.
+type Found(a) {
+  Found(input: a, verdict: Verdict, source: InputSource, run_index: Int)
+}
+
 fn shrunk_failure(
-  cfg: Config,
+  cfg: Settings,
   gen: Generator(a),
   check: Check(a),
-  input: a,
-  source: InputSource,
-  run_index: Int,
+  found: Found(a),
   notes: List(String),
 ) -> String {
   let snapshot = coverage.snapshot()
@@ -475,15 +500,15 @@ fn shrunk_failure(
     shrink_input(
       cfg,
       gen,
-      fn(candidate) { !check.holds(candidate) },
-      input,
-      source,
+      fn(candidate) { check.verdict(candidate) == found.verdict },
+      found.input,
+      found.source,
     )
   annotate.reset()
   check.report(Failure(
     input: shrunk,
-    source: source,
-    run_index: run_index,
+    source: found.source,
+    run_index: found.run_index,
     shrinks: shrinks,
     capped: capped,
     coverage: snapshot,
@@ -492,27 +517,40 @@ fn shrunk_failure(
 }
 
 fn forall_failure(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
-  property: fn(a) -> Bool,
+  property: fn(a) -> Nil,
+  round_trip: Bool,
   failure: Failure(a),
 ) -> String {
-  let _ = property(failure.input)
-  render_for(cfg, plain_report(cfg, test_name, failure))
+  // Run the property once more first: the report reads the annotations
+  // of this run.
+  let panic_message = case run_property(property, failure.input) {
+    Failed(message) -> message
+    Passed -> None
+  }
+  render_for(
+    cfg,
+    FailureReport(
+      ..plain_report(cfg, test_name, failure),
+      panic_message: panic_message,
+      round_trip: round_trip,
+    ),
+  )
 }
 
 /// The report for a failure of a plain property. The metamorphic report
 /// starts from it and fills in the relation and the outputs.
 fn plain_report(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   failure: Failure(a),
 ) -> FailureReport {
   FailureReport(
     mr_name: "(plain property)",
     test_name: test_name,
-    config_seed: seed_module.state(config.seed(cfg)),
-    config_seed_original: seed_module.original_input(config.seed(cfg)),
+    config_seed: seed_module.state(cfg.seed),
+    config_seed_original: seed_module.original_input(cfg.seed),
     runs_done: failure.run_index,
     runs_total: total_runs(cfg),
     shrinks_done: failure.shrinks,
@@ -524,10 +562,11 @@ fn plain_report(
     source_output: "",
     followup_output: "",
     input_source: failure.source,
-    diff_enabled: False,
     annotations: annotate.current_annotations(),
-    footnotes: list.append(annotate.current_footnotes(), failure.notes),
+    footnotes: failure.notes,
     coverage_snapshot: Some(failure.coverage),
+    panic_message: None,
+    round_trip: False,
   )
 }
 
@@ -535,80 +574,76 @@ type Evaluation(b) {
   Evaluation(followup_input: String, src_output: b, fol_output: b, holds: Bool)
 }
 
+/// Evaluate `spec` on `input`, or return the panic message when `f`, a
+/// transform or the relation panics.
+fn attempt_spec(
+  spec: MorphSpec(a, b),
+  f: fn(a) -> b,
+  input: a,
+) -> capture.Attempt(Evaluation(b)) {
+  capture.attempt(fn() { evaluate_spec(spec, f, input) })
+}
+
 fn evaluate_spec(
   spec: MorphSpec(a, b),
   f: fn(a) -> b,
   input: a,
 ) -> Evaluation(b) {
-  let #(followup_input, src_output, rel) = case spec {
-    PlainSpec(_name, t, r) -> #(t.apply(input), f(input), r)
-    EquivariantSpec(_name, ti, to, r) -> #(
-      ti.apply(input),
-      to.apply(f(input)),
-      r,
-    )
-  }
+  let followup_input = spec.follow_up(input)
+  let src_output = spec.expected(f(input))
   let fol_output = f(followup_input)
   Evaluation(
     followup_input: string.inspect(followup_input),
     src_output: src_output,
     fol_output: fol_output,
-    holds: rel.holds(src_output, fol_output),
+    holds: spec.holds(src_output, fol_output),
   )
 }
 
-fn morph_mode_of(spec: MorphSpec(a, b)) -> MorphMode {
-  case spec {
-    PlainSpec(_, t, _) -> Plain(transform_name: t.name)
-    EquivariantSpec(_, ti, to, _) ->
-      Equivariant(input_transform_name: ti.name, output_transform_name: to.name)
-  }
-}
-
-fn relation_name_of(spec: MorphSpec(a, b)) -> String {
-  case spec {
-    PlainSpec(_, _, r) -> r.name
-    EquivariantSpec(_, _, _, r) -> r.name
-  }
-}
-
-fn spec_name(spec: MorphSpec(a, b)) -> String {
-  case spec {
-    PlainSpec(name, _, _) -> name
-    EquivariantSpec(name, _, _, _) -> name
-  }
-}
-
 fn morph_failure(
-  cfg: Config,
+  cfg: Settings,
   test_name: String,
   spec: MorphSpec(a, b),
   f: fn(a) -> b,
   failure: Failure(a),
 ) -> String {
-  let evaluation = evaluate_spec(spec, f, failure.input)
   let report =
     FailureReport(
       ..plain_report(cfg, test_name, failure),
-      mr_name: spec_name(spec),
-      morph_mode: Some(morph_mode_of(spec)),
-      relation_name: relation_name_of(spec),
-      followup_input: evaluation.followup_input,
-      source_output: string.inspect(evaluation.src_output),
-      followup_output: string.inspect(evaluation.fol_output),
-      diff_enabled: config.diff_enabled(cfg),
+      mr_name: spec.name,
+      morph_mode: Some(spec.mode),
+      relation_name: spec.relation_name,
     )
-  render_for(cfg, report)
+  render_for(cfg, with_evaluation(report, attempt_spec(spec, f, failure.input)))
+}
+
+/// Fill in the outputs of a morph report, or the panic message when the
+/// evaluation panicked.
+fn with_evaluation(
+  report: FailureReport,
+  outcome: capture.Attempt(Evaluation(b)),
+) -> FailureReport {
+  case outcome {
+    capture.Returned(evaluation) ->
+      FailureReport(
+        ..report,
+        followup_input: evaluation.followup_input,
+        source_output: string.inspect(evaluation.src_output),
+        followup_output: string.inspect(evaluation.fol_output),
+      )
+    capture.Panicked(message) ->
+      FailureReport(..report, panic_message: Some(message))
+  }
 }
 
 fn morph_failure_static(
   test_name: String,
   spec: MorphSpec(a, b),
   input: a,
-  evaluation: Evaluation(b),
+  outcome: capture.Attempt(Evaluation(b)),
 ) -> FailureReport {
   FailureReport(
-    mr_name: spec_name(spec),
+    mr_name: spec.name,
     test_name: test_name,
     config_seed: 0,
     config_seed_original: None,
@@ -616,18 +651,20 @@ fn morph_failure_static(
     runs_total: 1,
     shrinks_done: 0,
     shrink_capped: False,
-    morph_mode: Some(morph_mode_of(spec)),
-    relation_name: relation_name_of(spec),
+    morph_mode: Some(spec.mode),
+    relation_name: spec.relation_name,
     source_input: string.inspect(input),
-    followup_input: evaluation.followup_input,
-    source_output: string.inspect(evaluation.src_output),
-    followup_output: string.inspect(evaluation.fol_output),
+    followup_input: "",
+    source_output: "",
+    followup_output: "",
     input_source: EdgeSource(0),
-    diff_enabled: True,
     annotations: annotate.current_annotations(),
-    footnotes: annotate.current_footnotes(),
+    footnotes: [],
     coverage_snapshot: None,
+    panic_message: None,
+    round_trip: False,
   )
+  |> with_evaluation(outcome)
 }
 
 // ---------- shrinking ----------
@@ -636,7 +673,7 @@ fn morph_failure_static(
 /// still fails, until no child fails or the shrink limit is reached.
 /// `fails` is the only thing the loop knows about the property.
 fn shrink_input(
-  cfg: Config,
+  cfg: Settings,
   gen: Generator(a),
   fails: fn(a) -> Bool,
   input: a,
@@ -646,13 +683,8 @@ fn shrink_input(
     EdgeSource(_) -> #(input, 0, False)
     RandomSource(seed_value, size, max_size) -> {
       let initial_tree =
-        generator.generate_sized(
-          gen,
-          seed_module.seed(seed_value),
-          size,
-          max_size,
-        )
-      shrink_loop(initial_tree, fails, input, config.shrink_limit(cfg), 0)
+        generator.generate(gen, seed_module.seed(seed_value), size, max_size)
+      shrink_loop(initial_tree, fails, input, cfg.shrink_limit, 0)
     }
   }
 }
@@ -667,13 +699,22 @@ fn shrink_loop(
   case done >= budget {
     True -> #(best, done, True)
     False ->
+      // A generator can panic while it builds a shrink candidate; the
+      // run then keeps the smallest failing input found so far.
       case
-        tree.shrinks_find(current_tree.shrinks, fn(child: Tree(a)) {
-          fails(child.value)
+        capture.attempt(fn() {
+          tree.shrinks_find(current_tree.shrinks, fn(child: Tree(a)) {
+            fails(child.value)
+          })
         })
       {
-        Error(_) -> #(best, done, False)
-        Ok(child) -> shrink_loop(child, fails, child.value, budget, done + 1)
+        capture.Returned(Ok(child)) ->
+          shrink_loop(child, fails, child.value, budget, done + 1)
+        capture.Returned(Error(Nil)) | capture.Panicked(_) -> #(
+          best,
+          done,
+          False,
+        )
       }
   }
 }
@@ -706,7 +747,7 @@ fn coverage_outcome(test_name: String, morph_name: Option(String)) -> Outcome {
         <> " ("
         <> float.to_string(coverage.actual_pct(req.hits, snap.total))
         <> "%, target≥"
-        <> float.to_string(coverage.target_pct_of(req, snap.total))
+        <> float.to_string(req.target_pct)
         <> "%)",
       )
     }
@@ -719,8 +760,11 @@ fn panic_with(message: String) -> Nil {
 
 // ---------- regression file ----------
 
-fn load_regression_for(cfg: Config, mr_name: String) -> List(regression.Entry) {
-  case config.regression_file(cfg) {
+fn load_regression_for(
+  cfg: Settings,
+  mr_name: String,
+) -> List(regression.Entry) {
+  case cfg.regression_file {
     None -> []
     Some(path) ->
       case simplifile.read(path) {
@@ -735,12 +779,12 @@ fn load_regression_for(cfg: Config, mr_name: String) -> List(regression.Entry) {
 }
 
 fn record_regression_for(
-  cfg: Config,
+  cfg: Settings,
   mr_name: String,
   source: InputSource,
   input: a,
 ) -> List(String) {
-  case config.regression_file(cfg) {
+  case cfg.regression_file {
     None -> []
     Some(path) -> {
       let edge_index = case source {
@@ -748,11 +792,7 @@ fn record_regression_for(
         RandomSource(..) -> None
       }
       let #(seed_value, size, max_size) = case source {
-        EdgeSource(_) -> #(
-          seed_module.state(config.seed(cfg)),
-          0,
-          config.max_size(cfg),
-        )
+        EdgeSource(_) -> #(seed_module.state(cfg.seed), 0, cfg.max_size)
         RandomSource(s, sz, max) -> #(s, sz, max)
       }
       let run_index = case source {
@@ -805,10 +845,15 @@ fn replay_regression(
     [] -> Done
     [entry, ..rest] -> {
       let value = reproduce_entry_value(gen, entry)
-      case check.holds(value) {
-        True -> replay_regression(gen, check, rest)
-        False ->
-          Halted(replay_failure_message(check.regression_key, entry, value))
+      case check.verdict(value) {
+        Passed -> replay_regression(gen, check, rest)
+        Failed(panic_message) ->
+          Halted(replay_failure_message(
+            check.regression_key,
+            entry,
+            value,
+            panic_message,
+          ))
       }
     }
   }
@@ -816,7 +861,7 @@ fn replay_regression(
 
 fn reproduce_entry_value(gen: Generator(a), entry: regression.Entry) -> a {
   let regenerate = fn() {
-    generator.generate_sized(
+    generator.generate(
       gen,
       seed_module.seed(entry.config_seed),
       entry.size,
@@ -844,6 +889,7 @@ fn replay_failure_message(
   mr_name: String,
   entry: regression.Entry,
   value: a,
+  panic_message: Option(String),
 ) -> String {
   string.concat([
     "× regression replay for `",
@@ -860,6 +906,10 @@ fn replay_failure_message(
     int.to_string(entry.max_size),
     "\n  reproduced input:\n    ",
     string.inspect(value),
+    case panic_message {
+      Some(message) -> "\n  panic message:\n    " <> message
+      None -> ""
+    },
     case entry.note {
       Some(n) -> "\n  note:\n    " <> n
       None -> ""
@@ -871,13 +921,13 @@ fn replay_failure_message(
 @external(javascript, "../../metamon_ffi.mjs", "now_microseconds")
 fn now_microseconds() -> Int
 
-/// The number of runs to target: `config.runs` times the positive integer
+/// The number of runs to target: `Config.runs` times the positive integer
 /// in `METAMON_RUNS_MULTIPLIER`, when that variable is set. A nightly job
 /// raises it to explore far more inputs than a pull request can afford,
 /// without editing any test. Any other value is a mistake in the job, so it
 /// stops the run instead of being ignored.
-fn total_runs(cfg: Config) -> Int {
-  config.runs(cfg) * runs_multiplier()
+fn total_runs(cfg: Settings) -> Int {
+  cfg.runs * runs_multiplier()
 }
 
 fn runs_multiplier() -> Int {

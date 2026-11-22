@@ -1,4 +1,5 @@
-// Environment and a call counter for runs_multiplier_test.gleam.
+// Environment and a call counter for runs_multiplier_test.gleam, and a
+// non-Gleam exception for panic_property_test.gleam.
 
 let count = 0;
 
@@ -24,4 +25,8 @@ export function count_bump() {
 
 export function count_get() {
   return count;
+}
+
+export function raise_foreign_error() {
+  throw new TypeError("badarg");
 }

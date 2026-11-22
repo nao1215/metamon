@@ -2,21 +2,21 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
 import gleeunit/should
-import metamon/generator/seed.{type Seed}
+import metamon/internal/seed.{type Seed}
 import test_helpers
 
 const default_state: Int = 0xDEADBEEF
 
 pub fn seed_is_deterministic_test() {
   let s = seed.seed(42)
-  let #(a, _) = seed.next_int(s)
-  let #(b, _) = seed.next_int(s)
+  let #(a, _) = seed.next_int_in(s, 0, 0xFFFFFFFF)
+  let #(b, _) = seed.next_int_in(s, 0, 0xFFFFFFFF)
   should.equal(a, b)
 }
 
 pub fn next_int_advances_state_test() {
   let s = seed.seed(42)
-  let #(_, s2) = seed.next_int(s)
+  let #(_, s2) = seed.next_int_in(s, 0, 0xFFFFFFFF)
   should.not_equal(seed.state(s), seed.state(s2))
 }
 
@@ -46,8 +46,8 @@ pub fn next_int_in_swaps_inverted_bounds_test() {
 pub fn split_yields_independent_streams_test() {
   let #(left, right) = seed.split(seed.seed(123))
   should.not_equal(seed.state(left), seed.state(right))
-  let #(a, _) = seed.next_int(left)
-  let #(b, _) = seed.next_int(right)
+  let #(a, _) = seed.next_int_in(left, 0, 0xFFFFFFFF)
+  let #(b, _) = seed.next_int_in(right, 0, 0xFFFFFFFF)
   should.not_equal(a, b)
 }
 
@@ -78,7 +78,7 @@ pub fn original_input_is_none_for_advanced_seeds_test() {
   // Advancement (next_int / split) does not preserve the original
   // user input — only the seed handed to seed/1 has it.
   let s = seed.seed(42)
-  let #(_, s2) = seed.next_int(s)
+  let #(_, s2) = seed.next_int_in(s, 0, 0xFFFFFFFF)
   should.equal(seed.original_input(s2), None)
   let #(left, right) = seed.split(s)
   should.equal(seed.original_input(left), None)

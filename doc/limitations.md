@@ -1,125 +1,51 @@
 # Limitations
 
-These are deliberate scope cuts, not bugs. They are listed so you
-know what failure or surprise to expect and how to work around it.
+What metamon does not do, and how to work around it.
 
-## `Transform(a)` is `a -> a`
+## `Transform(a)` is `fn(a) -> a`
 
-Type-changing transformations (`String -> Result(Spec, Error)`) cannot
-live inside the input transform of an MR.
-
-Workaround: encode the type change as `f` itself and use the output
-side of an Equivariant MR (or a plain `forall`) to assert the
-relation.
+A transform cannot change the type of its input, so `String -> Result(Spec, Error)` cannot be an input transform. Make the type change part of the function under test and use an `Equivariant` morph, or a plain `forall`.
 
 ## `Relation(b)` compares two `b` values
 
-Heterogeneous relations `(a, b) -> Bool` (e.g. "the output is bounded
-by the input") are not directly expressible.
-
-Workaround: use `metamon.forall` with a hand-written predicate that
-closes over both values.
+A relation between an input and an output, such as "the output is no longer than the input", is not a `Relation`. Write it as a `forall` property that closes over both values.
 
 ## `bind` shrinks shallowly
 
-Generators built with `bind` keep the outer shrink tree but the inner
-shrinks reflect only the first inner generator metamon saw — the
-shrunk failure may show an inner value that is not minimal.
+A generator built with `bind` shrinks the outer value, but the inner value only shrinks within the first inner generator, so a shrunk failure may show an inner value that is not minimal. Prefer `map2` to `map6` and `tuple2` to `tuple6` when the inner shape does not depend on the outer value.
 
-Workaround: prefer applicative composition (`map2` … `map8`,
-`tuple2` … `tuple8`) over monadic chains when both shapes fit. Reach
-for `bind` only when the inner shape genuinely depends on the outer
-value.
+## `recursive` does not swap branches while shrinking
 
-## `recursive` does not swap branches during shrinking
+A failing `Node(left, right)` does not reduce to `left` or `right`; only the leaves shrink. List the small shapes with `with_examples` so they are tried first.
 
-A failing `Node(left, right)` does not automatically reduce to either
-`left` or `right`; only the contained leaves shrink toward their
-origins.
+## Edge cases do not shrink
 
-Workaround: add `with_examples` listing the small base shapes
-(`Leaf(0)`, `Node(Leaf(0), Leaf(0))`, etc.) so the runner tries them
-explicitly before random sampling.
+Values listed with `with_examples` and the built-in edge cases are tried as they are. When one of them fails, the report shows it with `shrinks: 0`. Use `no_edges` to see a shrunk random failure instead.
 
-## `generator.filter` panics after 100 consecutive rejections
+## Shrinking keeps the panic message
 
-The `filter_retry_limit` is hard-coded; predicates that accept less
-than ~1% of generated values will hit the panic with the message
-`metamon.filter: predicate rejected the configured number of
-candidates in a row; the predicate is too strict`.
+A smaller input is kept only when it panics with the same message as the original failure, so the report never mixes one failure's input with another failure's message. A message that contains the input, such as `panic as { "got " <> int.to_string(n) }`, differs for every input and stops shrinking at the first failing input. Put the value in `annotate` and keep the message fixed.
 
-Workaround: tighten the underlying generator instead of filtering
-downstream — e.g. `int(range.constant(0, 9))` rather than
-`int(range.constant(-100, 100)) |> filter(fn(n) { n >= 0 && n <= 9 })`.
+## `filter` panics after 100 consecutive rejections
 
-## `with_examples` accumulates and does not deduplicate
+A predicate that accepts less than about 1% of the generated values makes `filter` panic. Narrow the generator instead, for example `int(range(from: 0, to: 9))` rather than filtering `int(range(from: -100, to: 100))`.
 
-Calling it twice with overlapping lists yields duplicate edges; the
-runner will try each duplicate separately before falling through to
-random sampling.
+## One property at a time on JavaScript
 
-Workaround: dedupe the example list yourself before passing it in, or
-use `add_edges` with a single known-unique set. The accumulation
-behaviour is intentional — composing a child generator's edges with
-its parent's needs append, not merge.
+`classify`, `cover` and `annotate` keep their state in a module-level `Map` on JavaScript. Test files run in separate workers, so files can run in parallel, but do not run two properties concurrently in one file. On Erlang each test runs in its own process.
 
-## JavaScript-target parallel runners
+## Strings hold valid UTF-8 only
 
-`metamon/annotate` and `metamon/coverage` use a module-level `Map` on
-the JS target. Vitest / Jest workers run each test file in an isolated
-worker thread, so parallelism between files is fine.
+`string(of: Unicode, ..)` and `character(of: Unicode)` produce Unicode scalar values only. A Gleam `String` cannot hold lone surrogates or malformed UTF-8, so test byte-level parsers with `bit_array(bytes: ..)`.
 
-Workaround: within a single file, do not call `metamon.forall*`
-concurrently — start one, wait for it, start the next. On the BEAM
-target every test runs in its own process, so the issue does not
-arise.
+## No bias toward normalisation boundaries
 
-## UTF-8 surrogate range is excluded from `string_unicode`
+`"é"` (U+00E9) and `"e\u{0301}"` are generated independently. Add equivalent forms with `with_examples` if a property depends on NFC and NFD.
 
-`generator.string_unicode(len)` and `generator.unicode_codepoint()`
-produce valid UTF-8 scalar values only. The surrogate range
-`[0xD800, 0xDFFF]` is intentionally excluded because Gleam strings are
-UTF-8 — lone surrogates would not survive
-`string.from_utf_codepoints`. Lone surrogates, overlong encodings,
-truncated continuation bytes, and other malformed UTF-8 byte sequences
-cannot exist inside a Gleam `String`, so a parser-hardening property
-that must accept or reject malformed UTF-8 input cannot reach those
-bytes through `string_unicode`.
+## `float` is finite only
 
-Workaround: drop down to `bit_array(byte_len)` and operate at the byte
-level instead.
+`float(from:, to:)` never produces NaN, infinities or subnormal values. Use `float_special()` for them. On Erlang, `float_special()` returns the largest finite floats in place of NaN and the infinities, because the BEAM cannot build non-finite floats; properties that need real non-finite values must run on JavaScript.
 
-## No built-in bias toward Unicode normalisation boundaries
+## Dependencies
 
-Equivalent forms like `"é" (U+00E9)` and `"e\u{0301}" (U+0065 U+0301)`
-are sampled independently from `string_unicode`.
-
-Workaround: pre-compose equivalence-class edges via `with_examples` if
-your property depends on NFC vs NFD distinctions.
-
-## `generator.float` is finite-only
-
-`generator.float(lo, hi)` never emits `NaN`, `±Infinity`, or denormal
-values. For codec / serialisation work where IEEE 754 special values
-are part of the input space (and where the failure modes — `NaN != NaN`
-breaking round-trips, `Infinity` formatting as `"Infinity"` in
-`f64.to_string`, `-0.0` round-tripping differently than `0.0`) must be
-exercised, reach for `generator.float_special()` or splice the eight
-special values into a range generator via
-`with_examples(my_float_gen, generator.float_special_edges())`.
-Compose with `forall_round_trip_under` and a NaN-aware relation if
-your property body needs to ignore NaN inputs explicitly.
-
-## Float special values differ between targets
-
-On JavaScript, `float_special` emits genuine `NaN` / `±Infinity` from
-`Number.{NaN, POSITIVE_INFINITY, NEGATIVE_INFINITY}`. On the BEAM, the
-same slots return finite sentinels (largest finite double, with the
-appropriate sign) because the BEAM has no portable way to construct
-non-finite IEEE 754 doubles from pure Erlang — `<<F/float>>` patterns,
-`binary_to_term/1` with `NEW_FLOAT_EXT`, and `binary_to_float/1` all
-reject NaN / ±Infinity bit patterns.
-
-Workaround: properties that strictly require genuine non-finite inputs
-must run on the JavaScript target; the BEAM run will exercise the
-finite anchors only.
+metamon depends on `gleam_stdlib`, `simplifile` and `gleam_json`. `simplifile` is used only when `Config.regression_file` is set, and `gleam_json` only when `Config.output` is `Json`.

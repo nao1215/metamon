@@ -49,7 +49,7 @@ pub fn seed(value: Int) -> Seed {
 }
 
 /// Construct a seed from the system clock. Useful for ad-hoc local
-/// runs; CI should pin a value via `metamon.with_seed(metamon.seed(_))`.
+/// runs; CI should pin a value with `Config(..default_config(), seed: Some(n))`.
 pub fn random_seed() -> Seed {
   Seed(state: normalise(now_microseconds()), original_input: None)
 }
@@ -65,14 +65,14 @@ pub fn state(s: Seed) -> Int {
 /// `None` for seeds derived from the system clock, from `next_int` /
 /// `next_int_in` advancement, or from `split`. `Some(n)` for seeds
 /// constructed via `seed(n)`. Failure reports compare this against
-/// `state/1` to decide whether to annotate "originally seed(n)".
+/// `state/1` to decide whether to show the configured seed.
 pub fn original_input(s: Seed) -> Option(Int) {
   s.original_input
 }
 
 /// Advance the seed once and return the next non-negative integer
 /// alongside the advanced seed.
-pub fn next_int(s: Seed) -> #(Int, Seed) {
+fn next_int(s: Seed) -> #(Int, Seed) {
   let next_state = step(s.state)
   #(next_state, Seed(state: next_state, original_input: None))
 }

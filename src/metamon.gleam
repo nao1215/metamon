@@ -1,563 +1,448 @@
-//// Metamon top-level public API.
+//// Property-based and metamorphic testing.
 ////
-//// `metamon` exports the small surface that most tests interact with:
-//// `forall`, `forall_observable`, `forall_morph`, `assert_morph`,
-//// `forall_morphs`, `forall_round_trip`, the `Mr` smart constructors,
-//// and a handful of metamorphic-relation templates (`idempotency_of`,
-//// `invariant_under`, `equivariant_under`, `commutativity_of`).
+//// `forall` runs a property on many generated inputs and shrinks the
+//// first input that makes it panic. `forall_morph` checks metamorphic
+//// relations: how the output of a function changes when its input is
+//// transformed. Generators live in `metamon/generator`.
 ////
-//// Configuration lives in `metamon/config`; generators in
-//// `metamon/generator`; transforms in `metamon/transform`; relations
-//// in `metamon/relation`; per-property context in `metamon/annotate`
-//// and `metamon/coverage`; structural diff in `metamon/diff`.
+//// ```gleam
+//// import gleam/list
+//// import metamon
+//// import metamon/generator
+////
+//// pub fn reverse_twice_test() {
+////   let lists =
+////     generator.list_of(
+////       generator.int(generator.range(from: -100, to: 100)),
+////       length: generator.range(from: 0, to: 20),
+////     )
+////   metamon.forall(lists, fn(items) {
+////     assert list.reverse(list.reverse(items)) == items
+////   })
+//// }
+//// ```
 
+import gleam/float
 import gleam/list
-import metamon/annotate
-import metamon/config
-import metamon/coverage
+import gleam/option.{type Option, None}
 import metamon/generator.{type Generator}
-import metamon/generator/seed as seed_module
-import metamon/internal/runner.{type MorphSpec}
-import metamon/relation.{type Relation}
-import metamon/transform.{type Transform}
+import metamon/internal/annotate as annotation
+import metamon/internal/coverage
+import metamon/internal/report
+import metamon/internal/runner
 
-/// Re-export of the seed type so callers can write `metamon.Seed`.
-pub type Seed =
-  seed_module.Seed
-
-/// Re-export of `Config` so callers can write `metamon.Config`.
-pub type Config =
-  config.Config
-
-/// Construct a deterministic seed from an integer.
-pub fn seed(value: Int) -> Seed {
-  seed_module.seed(value)
-}
-
-/// Convenience: a fresh random seed.
-pub fn random_seed() -> Seed {
-  seed_module.random_seed()
-}
-
-/// Re-export of `Config` and `default_config`.
-pub fn default_config() -> Config {
-  config.default_config()
-}
-
-/// Re-export of `with_seed`.
-pub fn with_seed(c: Config, s: Seed) -> Config {
-  config.with_seed(c, s)
-}
-
-/// Re-export of `with_runs`.
-pub fn with_runs(c: Config, n: Int) -> Result(Config, config.ConfigError) {
-  config.with_runs(c, n)
-}
-
-/// Re-export of `with_max_size`.
-pub fn with_max_size(c: Config, n: Int) -> Result(Config, config.ConfigError) {
-  config.with_max_size(c, n)
-}
-
-/// Re-export of `with_shrink_limit`.
-pub fn with_shrink_limit(
-  c: Config,
-  n: Int,
-) -> Result(Config, config.ConfigError) {
-  config.with_shrink_limit(c, n)
-}
-
-/// Re-export of `with_max_edges`.
-pub fn with_max_edges(c: Config, n: Int) -> Result(Config, config.ConfigError) {
-  config.with_max_edges(c, n)
-}
-
-/// Re-export of `with_regression_file`.
-pub fn with_regression_file(
-  c: Config,
-  path: String,
-) -> Result(Config, config.ConfigError) {
-  config.with_regression_file(c, path)
-}
-
-/// Re-export of `with_diff_enabled`.
-pub fn with_diff_enabled(c: Config, enabled: Bool) -> Config {
-  config.with_diff_enabled(c, enabled)
-}
-
-/// Re-export of `with_runs_or_panic`. Use in test code where the bound
-/// is statically known and the `let assert Ok(c) = ...` arm would be
-/// dead code.
-pub fn with_runs_or_panic(c: Config, n: Int) -> Config {
-  config.with_runs_or_panic(c, n)
-}
-
-/// Re-export of `with_max_size_or_panic`.
-pub fn with_max_size_or_panic(c: Config, n: Int) -> Config {
-  config.with_max_size_or_panic(c, n)
-}
-
-/// Re-export of `with_shrink_limit_or_panic`.
-pub fn with_shrink_limit_or_panic(c: Config, n: Int) -> Config {
-  config.with_shrink_limit_or_panic(c, n)
-}
-
-/// Re-export of `with_max_edges_or_panic`.
-pub fn with_max_edges_or_panic(c: Config, n: Int) -> Config {
-  config.with_max_edges_or_panic(c, n)
-}
-
-/// Re-export of `with_regression_file_or_panic`.
-pub fn with_regression_file_or_panic(c: Config, path: String) -> Config {
-  config.with_regression_file_or_panic(c, path)
-}
-
-/// Re-export of `OutputFormat` so callers can write
-/// `metamon.OutputFormat`.
-pub type OutputFormat =
-  config.OutputFormat
-
-/// Choose the failure-report output format. `Text` (default) is
-/// human-friendly; `Json` is single-line JSON for CI / LLM consumers.
-pub fn with_output_format(c: Config, fmt: OutputFormat) -> Config {
-  config.with_output_format(c, fmt)
-}
-
-// ---------- Mr type and constructors ----------
-
-/// A named metamorphic relation. Construct via `mr` (the Plain form,
-/// `f(T(x)) ≈ f(x)`) or `mr_equivariant` (the Equivariant form,
-/// `f(T(x)) ≈ U(f(x))`).
-///
-/// Opaque on purpose: future versions may add fields without breaking
-/// callers that always go through the smart constructors.
-pub opaque type Mr(a, b) {
-  Mr(spec: MorphSpec(a, b))
-}
-
-/// Construct a Plain MR. The relation is checked between
-/// `f(source_input)` and `f(transform.apply(source_input))`.
-pub fn mr(
-  name name: String,
-  transform transform: Transform(a),
-  relation relation: Relation(b),
-) -> Mr(a, b) {
-  Mr(spec: runner.plain(name, transform, relation))
-}
-
-/// Construct an Equivariant MR. The relation is checked between
-/// `output_transform.apply(f(source_input))` and
-/// `f(input_transform.apply(source_input))`.
-pub fn mr_equivariant(
-  name name: String,
-  input input_transform: Transform(a),
-  output output_transform: Transform(b),
-  relation relation: Relation(b),
-) -> Mr(a, b) {
-  Mr(spec: runner.equivariant(name, input_transform, output_transform, relation))
-}
-
-/// Get the user-facing name of an MR.
-pub fn name_of(m: Mr(a, b)) -> String {
-  runner.morph_name(m.spec)
-}
-
-// ---------- public runners ----------
-
-/// Run a property over many random inputs.
-pub fn forall(g: Generator(a), property: fn(a) -> Bool) -> Nil {
-  forall_with(default_config(), g, property)
-}
-
-/// Run a property with an explicit configuration.
-pub fn forall_with(
-  cfg: Config,
-  g: Generator(a),
-  property: fn(a) -> Bool,
-) -> Nil {
-  runner.run_forall(cfg, "forall", "(plain property)", g, property)
-}
-
-/// Run a property whose predicate also exposes its intermediate value.
-///
-/// `predicate` returns `#(observation, holds)`. `holds` decides whether
-/// the property is satisfied (same as `forall`); `observation` is
-/// recorded under the label `predicate value` and shown in the failure
-/// report — no manual `annotate.annotate_value` is needed.
-///
-/// Use this when the predicate's intermediate value (typically `f(input)`)
-/// is what determines the branch. Without it, `forall` failure reports
-/// only show the shrunk source input, which can force a debug round-trip
-/// to recover what `f(input)` actually was.
-pub fn forall_observable(
-  g: Generator(a),
-  predicate: fn(a) -> #(b, Bool),
-) -> Nil {
-  forall_observable_with(default_config(), g, predicate)
-}
-
-/// `forall_observable` with an explicit configuration.
-pub fn forall_observable_with(
-  cfg: Config,
-  g: Generator(a),
-  predicate: fn(a) -> #(b, Bool),
-) -> Nil {
-  runner.run_forall(cfg, "forall_observable", "(plain property)", g, fn(input) {
-    let #(observed, holds) = predicate(input)
-    annotate.annotate_value("predicate value", observed)
-    holds
-  })
-}
-
-/// Run a metamorphic relation over many random inputs.
-pub fn forall_morph(g: Generator(a), m: Mr(a, b), f: fn(a) -> b) -> Nil {
-  forall_morph_with(default_config(), g, m, f)
-}
-
-/// Run a metamorphic relation with an explicit configuration.
-pub fn forall_morph_with(
-  cfg: Config,
-  g: Generator(a),
-  m: Mr(a, b),
-  f: fn(a) -> b,
-) -> Nil {
-  runner.run_forall_morph(cfg, "forall_morph", g, m.spec, f)
-}
-
-/// Run a metamorphic relation against a single input. Generator-free.
-pub fn assert_morph(input: a, m: Mr(a, b), f: fn(a) -> b) -> Nil {
-  runner.run_assert_morph("assert_morph", m.spec, f, input)
-}
-
-/// Run an N-ary metamorphic relation: apply each of `transforms` to
-/// the source input to build follow-up inputs, then assert that the
-/// resulting outputs `[f(x), f(T0(x)), ..., f(Tn(x))]` satisfy
-/// `relation`. Useful when the property requires comparing more than
-/// two outputs in one shot (e.g. `(a, b, c) ↦ op(op(a,b), c)` and its
-/// re-associations all agree).
-///
-/// Passing `[]` for `transforms` is a programming error (vacuous test)
-/// and panics with a structured message.
-pub fn forall_morph_n(
-  g: Generator(a),
-  transforms: List(Transform(a)),
-  rel: relation.RelationN(b),
-  f: fn(a) -> b,
-) -> Nil {
-  forall_morph_n_with(default_config(), g, transforms, rel, f)
-}
-
-/// `forall_morph_n` with an explicit configuration.
-pub fn forall_morph_n_with(
-  cfg: Config,
-  g: Generator(a),
-  transforms: List(Transform(a)),
-  rel: relation.RelationN(b),
-  f: fn(a) -> b,
-) -> Nil {
-  runner.run_forall_morph_n(cfg, "forall_morph_n", g, transforms, rel, f)
-}
-
-/// Run multiple metamorphic relations against the same generator.
-/// Each MR is tried independently; failures are collected and reported
-/// together at the end.
-///
-/// Passing `[]` is a programming error (vacuous test) and panics with
-/// a structured message — use `forall(...)` for a single-input property.
-pub fn forall_morphs(
-  g: Generator(a),
-  ms: List(Mr(a, b)),
-  f: fn(a) -> b,
-) -> Nil {
-  runner.run_forall_morphs(
-    default_config(),
-    "forall_morphs",
-    g,
-    list.map(ms, fn(m) { m.spec }),
-    f,
-  )
-}
-
-// ---------- MR templates ----------
-//
-// All templates take `name` first and use labelled arguments so the
-// call sites read naturally:
-//
-//   metamon.idempotency_of(name: "trim", of: string.trim)
-//   metamon.invariant_under(name: "len_under_reverse", under: list_t.reverse())
-//
-// Round-trip is not exposed as a Plain MR — MR's two-point output
-// relation cannot express the source-vs-output comparison
-// `decode(encode(x)) == Ok(x)`. Instead, the runner-style helper
-// `forall_round_trip` (below) wraps `forall` with a named header
-// (`round_trip[<name>]`) so the failure report identifies which
-// round-trip broke, which is the discoverability win without forcing
-// a contrived MR shape.
-
-/// `f(f(x)) == f(x)`. Idempotency.
-///
-/// Encoded as a Plain MR whose transform is `f` itself and whose
-/// relation is structural equality.
-pub fn idempotency_of(name name: String, of f: fn(a) -> a) -> Mr(a, a) {
-  let apply_t = transform.new("apply " <> name, f)
-  mr(name: name, transform: apply_t, relation: relation.equal())
-}
-
-/// `f(T(x)) == f(x)` — `f` is invariant under the input transform.
-pub fn invariant_under(
-  name name: String,
-  under under: Transform(a),
-) -> Mr(a, b) {
-  mr(name: name, transform: under, relation: relation.equal())
-}
-
-/// `R(U(f(x)), f(T(x)))`. Equivariance: the input transform `T` and
-/// the output transform `U` commute with `f` modulo `R`.
-pub fn equivariant_under(
-  name name: String,
-  input input_transform: Transform(a),
-  output output_transform: Transform(b),
-  relation rel: Relation(b),
-) -> Mr(a, b) {
-  mr_equivariant(
-    name: name,
-    input: input_transform,
-    output: output_transform,
-    relation: rel,
-  )
-}
-
-/// `op(a, b) == op(b, a)` — `op` is commutative.
-///
-/// The MR is over the input pair `#(a, a)` and the output type `b`.
-/// Use it as:
+/// How a runner explores inputs and reports a failure. Build one from
+/// `default_config` and override the fields you need:
 ///
 /// ```gleam
-/// let mr = metamon.commutativity_of(name: "add_commutative")
-/// metamon.forall_morph(
-///   generator.tuple2(int_gen, int_gen),
-///   mr,
-///   fn(pair) { add(pair.0, pair.1) },
-/// )
+/// let config = metamon.Config(..metamon.default_config(), runs: 300)
 /// ```
-pub fn commutativity_of(name name: String) -> Mr(#(a, a), b) {
-  let swap = transform.new("swap", fn(pair: #(a, a)) { #(pair.1, pair.0) })
-  mr(name: name, transform: swap, relation: relation.equal())
+///
+/// The runners check the fields when they start; see `forall_with` for
+/// the values they reject.
+pub type Config {
+  Config(
+    /// The number of inputs to try, edge values included: the edge values
+    /// come first, and fewer runs than edge values try only the first
+    /// ones. `METAMON_RUNS_MULTIPLIER`, when set to a positive integer,
+    /// multiplies it.
+    runs: Int,
+    /// The seed of the random inputs. `None` draws a new seed for every
+    /// property; `Some(n)` replays the same inputs on every run.
+    seed: Option(Int),
+    /// The largest size given to the generators. Sizes grow from `0` on
+    /// the first run to `max_size` on the last.
+    max_size: Int,
+    /// The largest number of shrink steps taken on one failure.
+    shrink_limit: Int,
+    /// The largest number of edge values tried before the random inputs.
+    max_edges: Int,
+    /// A file that records every failing input and replays the recorded
+    /// inputs first on the next run. `None` turns recording off. Use one
+    /// file per plain `forall` property: every plain property records
+    /// under the same key, so a shared file replays one property's
+    /// failures against another.
+    regression_file: Option(String),
+    /// The format of the failure report.
+    output: Output,
+  )
 }
 
-/// Run a round-trip property over many random inputs:
-/// `decode(encode(x))` must equal `Ok(x)` for every generated `x`.
+/// The format of a failure report.
+pub type Output {
+  /// A multi-line report for people (the default).
+  Text
+  /// A single-line JSON object for CI and other tools.
+  Json
+}
+
+/// Return the default configuration: 100 runs, a new random seed for
+/// every property, `max_size` 99, at most 1024 shrink steps, at most 16
+/// edge values, no regression file and text output.
+pub fn default_config() -> Config {
+  Config(
+    runs: 100,
+    seed: None,
+    max_size: 99,
+    shrink_limit: 1024,
+    max_edges: 16,
+    regression_file: None,
+    output: Text,
+  )
+}
+
+/// The runner settings for `config`. Panics when a field is invalid.
+fn settings(config: Config) -> runner.Settings {
+  runner.settings(
+    runs: config.runs,
+    seed: config.seed,
+    max_size: config.max_size,
+    shrink_limit: config.shrink_limit,
+    max_edges: config.max_edges,
+    regression_file: config.regression_file,
+    json: config.output == Json,
+  )
+}
+
+/// A named transformation of an input, such as reversing a list. The
+/// name appears in failure reports. `apply` must be pure.
+pub type Transform(a) {
+  Transform(name: String, apply: fn(a) -> a)
+}
+
+/// A named check between two outputs, such as equality. The name appears
+/// in failure reports.
+pub type Relation(b) {
+  Relation(name: String, holds: fn(b, b) -> Bool)
+}
+
+/// A metamorphic relation of a function `f` from `a` to `b`. The name
+/// identifies the morph in failure reports and in the regression file.
+pub type Morph(a, b) {
+  /// `f(x)` and `f(transform.apply(x))` satisfy `relation`.
+  Morph(name: String, transform: Transform(a), relation: Relation(b))
+  /// `output.apply(f(x))` and `f(input.apply(x))` satisfy `relation`:
+  /// transforming the input transforms the output the same way.
+  Equivariant(
+    name: String,
+    input: Transform(a),
+    output: Transform(b),
+    relation: Relation(b),
+  )
+}
+
+/// Run `property` on many generated inputs. The property fails when it
+/// panics: a failing `assert` or `let assert`, a `panic`, or an Erlang
+/// error or JavaScript exception. On failure the input is shrunk to a
+/// smaller one that still panics, and the runner panics with a report of
+/// that input and its panic message.
 ///
-/// The failure report header is `round_trip[<name>]` so it is
-/// immediately obvious from the panic which round-trip broke. The
-/// underlying machinery is the same as `forall`, including shrinking
-/// of the source input.
+/// ```gleam
+/// metamon.forall(generator.int(generator.range(from: -100, to: 100)), fn(n) {
+///   assert n + 0 == n
+/// })
+/// ```
+pub fn forall(generator: Generator(a), property: fn(a) -> Nil) -> Nil {
+  forall_with(default_config(), generator, property)
+}
+
+/// Run `property` like `forall`, with an explicit configuration.
+///
+/// ## Panics
+///
+/// Panics when `config.runs`, `config.max_size`, `config.shrink_limit` or
+/// `config.max_edges` is not positive, or `config.regression_file` is
+/// `Some("")`. Every runner that takes a `Config` checks it the same way.
+pub fn forall_with(
+  config: Config,
+  generator: Generator(a),
+  property: fn(a) -> Nil,
+) -> Nil {
+  runner.run_forall(
+    settings(config),
+    "forall",
+    "(plain property)",
+    generator,
+    property,
+  )
+}
+
+/// Check every morph in `morphs` against `function` on many generated
+/// inputs. Each morph runs on its own; when any fails, the input is
+/// shrunk and the runner panics with the report of every failing morph.
+///
+/// ```gleam
+/// let lists =
+///   generator.list_of(
+///     generator.int(generator.range(from: 0, to: 9)),
+///     length: generator.range(from: 0, to: 10),
+///   )
+/// let reverse = metamon.Transform(name: "reverse", apply: list.reverse)
+/// metamon.forall_morph(
+///   lists,
+///   [metamon.invariant_under(name: "sum_under_reverse", under: reverse)],
+///   int.sum,
+/// )
+/// ```
+///
+/// ## Panics
+///
+/// Panics when `morphs` is empty.
+pub fn forall_morph(
+  generator: Generator(a),
+  morphs: List(Morph(a, b)),
+  function: fn(a) -> b,
+) -> Nil {
+  forall_morph_with(default_config(), generator, morphs, function)
+}
+
+/// Check `morphs` like `forall_morph`, with an explicit configuration.
+///
+/// ## Panics
+///
+/// Panics when `morphs` is empty, or when `config` is invalid as
+/// described in `forall_with`.
+pub fn forall_morph_with(
+  config: Config,
+  generator: Generator(a),
+  morphs: List(Morph(a, b)),
+  function: fn(a) -> b,
+) -> Nil {
+  runner.run_forall_morph(
+    settings(config),
+    "forall_morph",
+    generator,
+    list.map(morphs, spec),
+    function,
+  )
+}
+
+/// Check `morph` against `function` on the single input `input`, for
+/// example a shrunk input copied from a failure report. Panics with a
+/// report when the relation does not hold.
+pub fn assert_morph(input: a, morph: Morph(a, b), function: fn(a) -> b) -> Nil {
+  runner.run_assert_morph("assert_morph", spec(morph), function, input)
+}
+
+fn spec(morph: Morph(a, b)) -> runner.MorphSpec(a, b) {
+  case morph {
+    Morph(name:, transform:, relation:) ->
+      runner.MorphSpec(
+        name: name,
+        mode: report.Plain(transform_name: transform.name),
+        follow_up: transform.apply,
+        expected: fn(output) { output },
+        relation_name: relation.name,
+        holds: relation.holds,
+      )
+    Equivariant(name:, input:, output:, relation:) ->
+      runner.MorphSpec(
+        name: name,
+        mode: report.Equivariant(
+          input_transform_name: input.name,
+          output_transform_name: output.name,
+        ),
+        follow_up: input.apply,
+        expected: output.apply,
+        relation_name: relation.name,
+        holds: relation.holds,
+      )
+  }
+}
+
+/// Check that `decode(encode(x))` is `Ok(x)` for many generated `x`.
+/// The report is titled `round_trip[<name>]`, and a failing input is
+/// shrunk like in `forall`.
 ///
 /// ```gleam
 /// metamon.forall_round_trip(
-///   gen: generator.bit_array(range.constant(0, 16)),
-///   name: "base64",
-///   encode: base64.encode,
-///   decode: base64.decode,
+///   generator: generator.int(generator.range(from: -1000, to: 1000)),
+///   name: "int_to_string",
+///   encode: int.to_string,
+///   decode: int.parse,
 /// )
 /// ```
 pub fn forall_round_trip(
-  gen gen: Generator(a),
+  generator generator: Generator(a),
   name name: String,
   encode encode: fn(a) -> b,
   decode decode: fn(b) -> Result(a, e),
 ) -> Nil {
   forall_round_trip_with(
-    cfg: default_config(),
-    gen: gen,
+    config: default_config(),
+    generator: generator,
     name: name,
     encode: encode,
     decode: decode,
   )
 }
 
-/// `forall_round_trip` with an explicit configuration.
+/// Check a round trip like `forall_round_trip`, with an explicit
+/// configuration.
+///
+/// ## Panics
+///
+/// Panics when `config` is invalid as described in `forall_with`.
 pub fn forall_round_trip_with(
-  cfg cfg: Config,
-  gen gen: Generator(a),
+  config config: Config,
+  generator generator: Generator(a),
   name name: String,
   encode encode: fn(a) -> b,
   decode decode: fn(b) -> Result(a, e),
 ) -> Nil {
-  run_round_trip(
-    cfg,
-    name,
-    gen,
-    decodes_back(encode, decode, fn(decoded, input) { decoded == input }),
+  runner.run_round_trip(settings(config), name, generator, encode, decode)
+}
+
+/// Count the current run as hitting `label` when `condition` is true. A
+/// label counts at most once per run. The counts appear in the coverage
+/// part of a failure report.
+///
+/// ```gleam
+/// metamon.forall(lists, fn(items) {
+///   metamon.classify(label: "empty", when: items == [])
+///   assert list.reverse(list.reverse(items)) == items
+/// })
+/// ```
+pub fn classify(label label: String, when condition: Bool) -> Nil {
+  coverage.classify(label, condition)
+}
+
+/// Like `classify`, and require at least `percent` percent of the runs
+/// to hit `label`. When fewer do, the property fails after its last run
+/// with a coverage shortfall, even if every run passed.
+///
+/// ## Panics
+///
+/// Panics when `percent` is outside `[0.0, 100.0]` or NaN.
+pub fn cover(
+  at_least percent: Float,
+  label label: String,
+  when condition: Bool,
+) -> Nil {
+  coverage.cover(percent, label, condition)
+}
+
+/// Record `value` under `label` for the current run. The failure report
+/// shows the values recorded in the run of the reported input, rendered
+/// with `string.inspect`; a passing run discards them.
+///
+/// ```gleam
+/// metamon.forall(ints, fn(n) {
+///   let doubled = n * 2
+///   metamon.annotate(label: "doubled", value: doubled)
+///   assert doubled >= n
+/// })
+/// ```
+pub fn annotate(label label: String, value value: a) -> Nil {
+  annotation.annotate(label, value)
+}
+
+/// Return the morph `f(f(x)) == f(x)`: applying `function` twice gives
+/// the same output as applying it once. Use it as the morph of `function`
+/// itself.
+pub fn idempotency_of(
+  name name: String,
+  of function: fn(a) -> a,
+) -> Morph(a, a) {
+  Morph(
+    name: name,
+    transform: Transform(name: "apply " <> name, apply: function),
+    relation: equal(),
   )
 }
 
-/// Run `property` under the round-trip name, which is both the report's
-/// test name and the regression key.
-fn run_round_trip(
-  cfg: Config,
-  name: String,
-  gen: Generator(a),
-  property: fn(a) -> Bool,
-) -> Nil {
-  let test_name = "round_trip[" <> name <> "]"
-  runner.run_forall(cfg, test_name, test_name, gen, property)
+/// Return the morph `f(transform.apply(x)) == f(x)`: the output does not
+/// change when the input is transformed.
+pub fn invariant_under(
+  name name: String,
+  under transform: Transform(a),
+) -> Morph(a, b) {
+  Morph(name: name, transform: transform, relation: equal())
 }
 
-/// `decode(encode(input))` succeeds and `equal(decoded, input)` holds.
-fn decodes_back(
-  encode: fn(a) -> b,
-  decode: fn(b) -> Result(a, e),
-  equal: fn(a, a) -> Bool,
-) -> fn(a) -> Bool {
-  fn(input) {
-    case decode(encode(input)) {
-      Ok(decoded) -> equal(decoded, input)
-      Error(_) -> False
-    }
+/// Return the morph `f(#(a, b)) == f(#(b, a))` for a function of a pair:
+/// swapping the arguments does not change the output.
+pub fn commutativity_of(name name: String) -> Morph(#(a, a), b) {
+  Morph(
+    name: name,
+    transform: Transform(name: "swap", apply: fn(pair: #(a, a)) {
+      #(pair.1, pair.0)
+    }),
+    relation: equal(),
+  )
+}
+
+/// Return the relation that holds when both outputs are equal with `==`.
+pub fn equal() -> Relation(a) {
+  Relation(name: "equal", holds: fn(left, right) { left == right })
+}
+
+/// Return the relation that holds when two floats differ by at most
+/// `epsilon`.
+///
+/// ## Panics
+///
+/// Panics when `epsilon` is negative or NaN, since no pair of floats
+/// would then satisfy the relation.
+pub fn approximately(within epsilon: Float) -> Relation(Float) {
+  // NaN compares False against every operand, so it is rejected too.
+  case epsilon >=. 0.0 {
+    False ->
+      panic as "metamon.approximately: epsilon must be >= 0.0 and not NaN (otherwise every pair compares False, including a value with itself)"
+    True ->
+      Relation(
+        name: "approximately(" <> float.to_string(epsilon) <> ")",
+        holds: fn(left, right) {
+          let difference = case left >=. right {
+            True -> left -. right
+            False -> right -. left
+          }
+          difference <=. epsilon
+        },
+      )
   }
 }
 
-/// Run a round-trip property where the encoder is partial: the
-/// encoder returns `Result(b, e_enc)` because not every generated
-/// input is a valid input for the codec. Inputs the encoder rejects
-/// (`Error(_)`) are treated as out of scope and skipped — the
-/// property succeeds for them.
-///
-/// Use this variant for codecs whose encoder has structural
-/// preconditions: byte-alignment requirements, value-range checks,
-/// hrp / version constraints, etc. A typical pattern is to combine
-/// `forall_round_trip_partial` with a generator that produces the
-/// surrounding inputs (e.g. arbitrary `BitArray` plus arbitrary
-/// version bytes); the encoder filters down to the valid subset and
-/// the property checks the round-trip on that subset.
-///
-/// The failure report header is `round_trip[<name>]` so it is
-/// immediately obvious from the panic which round-trip broke. The
-/// underlying machinery is the same as `forall`, including shrinking
-/// of the source input.
-///
-/// ```gleam
-/// metamon.forall_round_trip_partial(
-///   gen: generator.tuple2(byte_gen, payload_gen),
-///   name: "base58check",
-///   encode: fn(pair) { base58check.encode(pair.0, pair.1) },
-///   decode: fn(s) {
-///     case base58check.decode(s) {
-///       Ok(decoded) -> Ok(#(decoded.version, decoded.payload))
-///       Error(e) -> Error(e)
-///     }
-///   },
-/// )
-/// ```
-pub fn forall_round_trip_partial(
-  gen gen: Generator(a),
+/// Return the relation that holds when both outputs are equal after
+/// `project`, such as equal ignoring case. The report names it
+/// `equivalent_under(<name>)`.
+pub fn equivalent_under(
   name name: String,
-  encode encode: fn(a) -> Result(b, e_enc),
-  decode decode: fn(b) -> Result(a, e_dec),
-) -> Nil {
-  forall_round_trip_partial_with(
-    cfg: default_config(),
-    gen: gen,
-    name: name,
-    encode: encode,
-    decode: decode,
-  )
-}
-
-/// `forall_round_trip_partial` with an explicit configuration.
-///
-/// The runner automatically registers a `coverage.cover_at_least(1,
-/// "encoder_accepted", ok)` requirement so a property whose generator
-/// is so wide that the encoder rejects every sample fails the test
-/// with a structured "coverage shortfall" message rather than passing
-/// silently. To enforce a stricter floor (e.g. "at least 50% of
-/// inputs must round-trip"), call
-/// `coverage.cover(50.0, "encoder_accepted", ok)` inside your own
-/// property body — coverage labels accumulate across calls.
-pub fn forall_round_trip_partial_with(
-  cfg cfg: Config,
-  gen gen: Generator(a),
-  name name: String,
-  encode encode: fn(a) -> Result(b, e_enc),
-  decode decode: fn(b) -> Result(a, e_dec),
-) -> Nil {
-  run_round_trip(cfg, name, gen, fn(input) {
-    case encode(input) {
-      // The encoder declared this input out of scope. Skip it: the
-      // property is vacuously true for inputs the codec does not
-      // accept. The cover_at_least(1, ...) requirement below ensures
-      // the runner panics with a "coverage shortfall" if every input
-      // is rejected, so a 100%-rejection generator does not silently
-      // pass.
-      Error(_) -> {
-        coverage.cover_at_least(1, "encoder_accepted", False)
-        True
-      }
-      Ok(encoded) -> {
-        coverage.cover_at_least(1, "encoder_accepted", True)
-        case decode(encoded) {
-          Ok(decoded) -> decoded == input
-          Error(_) -> False
-        }
-      }
-    }
+  via project: fn(b) -> c,
+) -> Relation(b) {
+  Relation(name: "equivalent_under(" <> name <> ")", holds: fn(left, right) {
+    project(left) == project(right)
   })
 }
 
-/// Run a round-trip property using a caller-supplied equality
-/// `Relation(a)` instead of structural `==`. The decoded value must
-/// satisfy `equality.holds(decoded, input)`.
-///
-/// Use this when the source type carries values that are not
-/// preserved verbatim across encode → decode: opaque types whose
-/// decoded form normalises (e.g. multipart `Part` with re-derived
-/// convenience fields), MIME types that lowercase the essence, JSON
-/// values whose key order is implementation-defined. Composing with
-/// `relation.equivalent_under(via, name)` lets you compare on a
-/// projection (e.g. `headers + body` ignoring derived caches).
-///
-/// The failure report header is `round_trip[<name>]`. The relation's
-/// own `name` appears under `relation:` in the failure block, just
-/// like `forall_morph` failures.
-///
-/// ```gleam
-/// metamon.forall_round_trip_under(
-///   gen: parts_gen(),
-///   name: "multipart_round_trip",
-///   encode: fn(parts) { multipartkit.encode(boundary, parts) },
-///   decode: fn(body) { multipartkit.parse(body, content_type) },
-///   equality: relation.equivalent_under(
-///     fn(parts) { list.map(parts, part_payload) },
-///     "wire_payload",
-///   ),
-/// )
-/// ```
-pub fn forall_round_trip_under(
-  gen gen: Generator(a),
-  name name: String,
-  encode encode: fn(a) -> b,
-  decode decode: fn(b) -> Result(a, e),
-  equality equality: Relation(a),
-) -> Nil {
-  forall_round_trip_under_with(
-    cfg: default_config(),
-    gen: gen,
-    name: name,
-    encode: encode,
-    decode: decode,
-    equality: equality,
-  )
+/// Return the relation that holds when two lists have the same elements
+/// with the same counts, in any order.
+pub fn permutation_of() -> Relation(List(a)) {
+  Relation(name: "permutation_of", holds: is_permutation)
 }
 
-/// `forall_round_trip_under` with an explicit configuration.
-pub fn forall_round_trip_under_with(
-  cfg cfg: Config,
-  gen gen: Generator(a),
-  name name: String,
-  encode encode: fn(a) -> b,
-  decode decode: fn(b) -> Result(a, e),
-  equality equality: Relation(a),
-) -> Nil {
-  run_round_trip(cfg, name, gen, decodes_back(encode, decode, equality.holds))
+fn is_permutation(left: List(a), right: List(a)) -> Bool {
+  list.length(left) == list.length(right) && remove_each(left, right) == []
+}
+
+/// `remaining` with one occurrence of every element of `to_remove`
+/// taken out, or a non-empty list as soon as an element is missing.
+fn remove_each(to_remove: List(a), remaining: List(a)) -> List(a) {
+  case to_remove {
+    [] -> remaining
+    [first, ..rest] ->
+      case remove_one(first, remaining, []) {
+        Ok(remaining_after) -> remove_each(rest, remaining_after)
+        Error(Nil) -> [first]
+      }
+  }
+}
+
+fn remove_one(target: a, items: List(a), acc: List(a)) -> Result(List(a), Nil) {
+  case items {
+    [] -> Error(Nil)
+    [first, ..rest] if first == target ->
+      Ok(list.append(list.reverse(acc), rest))
+    [first, ..rest] -> remove_one(target, rest, [first, ..acc])
+  }
 }

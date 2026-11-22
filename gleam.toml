@@ -20,12 +20,12 @@ include = ["src/", "test/"]
 
 [tools.glinter.rules]
 assert_ok_pattern = "error"
-# Runner / stateful / generator modules deliberately panic with
+# Runner / generator modules deliberately panic with
 # structured messages on failed properties — this is the entire
 # failure-report delivery channel and panic is the only signal
 # gleeunit reads. The rule stays on globally so accidental panics
-# in non-runner code still fail the build; the runner / stateful /
-# generator modules waive it via the per-file ignore list below.
+# in non-runner code still fail the build; the runner / generator
+# modules waive it via the per-file ignore list below.
 avoid_panic = "error"
 avoid_todo = "error"
 deep_nesting = "error"
@@ -96,27 +96,18 @@ unwrap_used = "error"
   "redundant_case",
 ]
 # Runner is the panic delivery mechanism; generator panics on a
-# stuck `filter`; stateful panics on a failing command.
-# `range.linear_from` panics when the origin lies outside [lo, hi]
-# (inverted bounds are swapped, not rejected).
+# stuck `filter`.
 "src/metamon/internal/runner.gleam" = ["avoid_panic"]
-"src/metamon/stateful.gleam" = ["avoid_panic"]
 "src/metamon/generator.gleam" = ["avoid_panic", "assert_ok_pattern"]
-"src/metamon/generator/range.gleam" = ["avoid_panic"]
-# `relation.approximately(epsilon)` rejects a negative epsilon at
+# `metamon.approximately(epsilon)` rejects a negative epsilon at
 # construction time with a structured panic. The "always false"
 # relation a negative epsilon would silently produce is never the
 # user's intent, so we fail visibly on the sign mistake.
-"src/metamon/relation.gleam" = ["avoid_panic"]
-# `_or_panic` config-builder variants intentionally panic with a
-# structured message so test code does not need `let assert Ok(c)`
-# for statically-known literals.
-"src/metamon/config.gleam" = ["avoid_panic"]
-# `coverage.cover` / `cover_at_least` panic on a malformed target
-# (target_pct outside [0.0, 100.0] or NaN, min_hits < 0) — the same
-# "fail visibly on misconfiguration" stance as relation.approximately
-# (negative epsilon) and Range constructors (inverted bounds).
-"src/metamon/coverage.gleam" = ["avoid_panic"]
+"src/metamon.gleam" = ["avoid_panic"]
+# `metamon.cover` panics on a malformed target (outside [0.0, 100.0]
+# or NaN), the same "fail visibly on misconfiguration" stance as
+# metamon.approximately (negative epsilon).
+"src/metamon/internal/coverage.gleam" = ["avoid_panic"]
 # Process-dictionary FFI shims (BEAM + JS) intentionally form the
 # metamon-FFI seam.
 "src/metamon/internal/process_state.gleam" = ["ffi_usage"]
@@ -129,3 +120,13 @@ unwrap_used = "error"
 # `gleam.mjs` to interop with Gleam-shaped Results. There is no
 # stable replacement for this on the JS target.
 "src/metamon_ffi.mjs" = ["ffi_usage"]
+
+[[documentation.pages]]
+title = "Limitations"
+path = "limitations.html"
+source = "./doc/limitations.md"
+
+[[documentation.pages]]
+title = "Targets"
+path = "targets.html"
+source = "./doc/targets.md"
