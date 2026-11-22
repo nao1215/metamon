@@ -11,14 +11,13 @@
 
 import gleeunit/should
 import metamon/generator
-import metamon/generator/range
 import metamon/internal/seed
 
 // ---------- functor laws ----------
 
 pub fn map_identity_law_test() {
   // map(g, id) and g must produce identical values for the same seed.
-  let g = generator.int(range.constant(0, 100))
+  let g = generator.int(generator.range(0, 100))
   let mapped = generator.map(g, fn(x) { x })
   let s = seed.seed(7)
   should.equal(
@@ -29,7 +28,7 @@ pub fn map_identity_law_test() {
 
 pub fn map_composition_law_test() {
   // map(g, h) ∘ map(_, f) ≡ map(g, h ∘ f) for any deterministic f, h.
-  let g = generator.int(range.constant(0, 50))
+  let g = generator.int(generator.range(0, 50))
   let f = fn(x: Int) { x * 2 }
   let h = fn(x: Int) { x + 1 }
   let lhs = generator.map(generator.map(g, f), h)
@@ -44,8 +43,8 @@ pub fn map_composition_law_test() {
 // ---------- applicative law: map2 with identity == zip ----------
 
 pub fn map2_with_pair_constructor_equals_tuple2_test() {
-  let g1 = generator.int(range.constant(0, 9))
-  let g2 = generator.int(range.constant(100, 199))
+  let g1 = generator.int(generator.range(0, 9))
+  let g2 = generator.int(generator.range(100, 199))
   let by_map2 = generator.map2(g1, g2, fn(a, b) { #(a, b) })
   let by_tuple = generator.tuple2(g1, g2)
   let s = seed.seed(41)
@@ -76,8 +75,8 @@ pub fn same_seed_yields_same_value_test() {
   // same seed, same size → bit-identical output every time.
   let g =
     generator.list_of(
-      generator.int(range.constant(0, 99)),
-      range.constant(0, 5),
+      generator.int(generator.range(0, 99)),
+      generator.range(0, 5),
     )
   let s = seed.seed(2026)
   should.equal(
@@ -89,9 +88,9 @@ pub fn same_seed_yields_same_value_test() {
 // ---------- map3..6 sanity ----------
 
 pub fn map3_distributes_over_tuple3_test() {
-  let g1 = generator.int(range.constant(0, 1))
-  let g2 = generator.int(range.constant(2, 3))
-  let g3 = generator.int(range.constant(4, 5))
+  let g1 = generator.int(generator.range(0, 1))
+  let g2 = generator.int(generator.range(2, 3))
+  let g3 = generator.int(generator.range(4, 5))
   let by_map3 = generator.map3(g1, g2, g3, fn(a, b, c) { #(a, b, c) })
   let by_tuple = generator.tuple3(g1, g2, g3)
   let s = seed.seed(7)

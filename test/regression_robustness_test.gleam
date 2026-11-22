@@ -28,7 +28,6 @@ import gleam/string
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
 import metamon/internal/regression
 
 // ---------- helpers ----------
@@ -188,7 +187,10 @@ pub fn regression_parse_no_panic_under_printable_ascii_fuzz_test() {
   // panics through the lenient parse path.
   metamon.forall_with(
     metamon.Config(..metamon.default_config(), runs: 200),
-    generator.string_printable_ascii(range.constant(0, 256)),
+    generator.string(
+      of: generator.PrintableAscii,
+      length: generator.range(0, 256),
+    ),
     fn(payload) {
       // Discard the result — only "did this return?" matters.
       let _ = regression.parse(payload)
@@ -203,7 +205,7 @@ pub fn regression_parse_no_panic_under_unicode_fuzz_test() {
   // would miss.
   metamon.forall_with(
     metamon.Config(..metamon.default_config(), runs: 200),
-    generator.string_unicode(range.constant(0, 64)),
+    generator.string(of: generator.Unicode, length: generator.range(0, 64)),
     fn(payload) {
       let _ = regression.parse(payload)
       Nil
@@ -214,7 +216,10 @@ pub fn regression_parse_no_panic_under_unicode_fuzz_test() {
 pub fn regression_parse_no_panic_under_long_ascii_fuzz_test() {
   metamon.forall_with(
     metamon.Config(..metamon.default_config(), runs: 200),
-    generator.string_printable_ascii(range.constant(0, 256)),
+    generator.string(
+      of: generator.PrintableAscii,
+      length: generator.range(0, 256),
+    ),
     fn(payload) {
       let _ = regression.parse(payload)
       Nil

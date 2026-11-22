@@ -9,11 +9,10 @@ import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/generator
-import metamon/generator/range
 import test_helpers
 
 fn ints() -> generator.Generator(Int) {
-  generator.int(range.constant(0, 1000)) |> generator.no_edges
+  generator.int(generator.range(0, 1000)) |> generator.no_edges
 }
 
 fn seeded(value: Int) -> metamon.Config {

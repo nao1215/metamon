@@ -7,7 +7,6 @@ import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/generator
-import metamon/generator/range
 import test_helpers
 
 fn failure_text(thunk: fn() -> Nil) -> String {
@@ -39,7 +38,7 @@ pub fn annotations_keep_registration_order_test() {
 pub fn annotations_keep_order_for_any_count_test() {
   metamon.forall_with(
     metamon.Config(..metamon.default_config(), runs: 30),
-    generator.int(range.constant(1, 40)),
+    generator.int(generator.range(1, 40)),
     fn(count) {
       let labels = list.map(test_helpers.integers_from(0, count), int.to_string)
       let text =
@@ -62,7 +61,7 @@ pub fn passing_runs_do_not_leak_annotations_test() {
     failure_text(fn() {
       metamon.forall_with(
         cfg,
-        generator.int(range.linear(0, 1000)) |> generator.no_edges,
+        generator.int(generator.linear_range(0, 1000)) |> generator.no_edges,
         fn(x) {
           metamon.annotate(label: "x", value: x)
           assert x < 500

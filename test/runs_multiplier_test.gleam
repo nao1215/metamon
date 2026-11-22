@@ -5,7 +5,6 @@ import gleam/string
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
 import test_helpers
 
 const var = "METAMON_RUNS_MULTIPLIER"
@@ -13,7 +12,7 @@ const var = "METAMON_RUNS_MULTIPLIER"
 fn run_counting(runs: Int) -> Int {
   let cfg = metamon.Config(..metamon.default_config(), runs: runs)
   count_reset()
-  metamon.forall_with(cfg, generator.int(range.constant(0, 1000)), fn(_) {
+  metamon.forall_with(cfg, generator.int(generator.range(0, 1000)), fn(_) {
     count_bump()
   })
   count_get()

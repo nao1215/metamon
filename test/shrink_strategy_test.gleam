@@ -15,7 +15,6 @@
 import gleam/list
 import gleeunit/should
 import metamon/generator
-import metamon/generator/range
 import metamon/internal/seed
 import metamon/internal/shrink
 import metamon/internal/tree
@@ -133,7 +132,10 @@ fn list_shrinks() -> #(List(Int), List(List(Int))) {
 
 fn four_elements(seed_value: Int) -> #(List(Int), List(List(Int))) {
   let g =
-    generator.list_of(generator.int(range.constant(1, 9)), range.constant(0, 4))
+    generator.list_of(
+      generator.int(generator.range(1, 9)),
+      generator.range(0, 4),
+    )
   let t = generator.generate(g, seed.seed(seed_value), 99, 99)
   case count(t.value) == 4 {
     False -> four_elements(seed_value + 1)

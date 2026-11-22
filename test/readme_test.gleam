@@ -13,7 +13,6 @@ import gleam/string
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
 
 // ===========================================================================
 // Quick start
@@ -24,7 +23,7 @@ pub fn readme_quick_start_test() {
   // gives the same result as applying it once.
   let mr = metamon.idempotency_of(name: "trim_idempotent", of: string.trim)
   metamon.forall_morph(
-    generator.string_ascii(range.constant(0, 16)),
+    generator.string(of: generator.Ascii, length: generator.range(0, 16)),
     [mr],
     string.trim,
   )
@@ -37,7 +36,10 @@ pub fn readme_quick_start_test() {
 pub fn readme_forall_test() {
   // For every list of small ints, reversing twice yields the original.
   metamon.forall(
-    generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 5)),
+    generator.list_of(
+      generator.int(generator.range(0, 9)),
+      generator.range(0, 5),
+    ),
     fn(xs) {
       assert list.reverse(list.reverse(xs)) == xs
     },
@@ -56,7 +58,10 @@ pub fn readme_idempotency_test() {
   let mr =
     metamon.idempotency_of(name: "sort_dedupe_idempotent", of: sort_dedupe)
   metamon.forall_morph(
-    generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 6)),
+    generator.list_of(
+      generator.int(generator.range(0, 9)),
+      generator.range(0, 6),
+    ),
     [mr],
     sort_dedupe,
   )
@@ -84,7 +89,7 @@ pub fn readme_round_trip_test() {
       transform: metamon.Transform("identity", fn(value) { value }),
       relation: r,
     )
-  metamon.forall_morph(generator.int(range.constant(-1000, 1000)), [mr], fn(n) {
+  metamon.forall_morph(generator.int(generator.range(-1000, 1000)), [mr], fn(n) {
     let assert Ok(parsed) = int.parse(int.to_string(n))
     parsed
   })
@@ -108,7 +113,10 @@ pub fn readme_invariance_test() {
       under: metamon.Transform("list.reverse", list.reverse),
     )
   metamon.forall_morph(
-    generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 8)),
+    generator.list_of(
+      generator.int(generator.range(0, 9)),
+      generator.range(0, 8),
+    ),
     [mr],
     list.length,
   )
@@ -126,7 +134,10 @@ pub fn readme_equivariance_test() {
       relation: metamon.equal(),
     )
   metamon.forall_morph(
-    generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 6)),
+    generator.list_of(
+      generator.int(generator.range(0, 9)),
+      generator.range(0, 6),
+    ),
     [mr],
     fn(xs) { list.map(xs, fn(n) { n * 2 }) },
   )
@@ -144,7 +155,10 @@ pub fn readme_manual_mr_test() {
       relation: metamon.equal(),
     )
   metamon.forall_morph(
-    generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 5)),
+    generator.list_of(
+      generator.int(generator.range(0, 9)),
+      generator.range(0, 5),
+    ),
     [mr],
     list_sum,
   )
@@ -169,8 +183,8 @@ pub fn readme_commutativity_test() {
   let mr = metamon.commutativity_of(name: "add_commutative")
   metamon.forall_morph(
     generator.tuple2(
-      generator.int(range.constant(-50, 50)),
-      generator.int(range.constant(-50, 50)),
+      generator.int(generator.range(-50, 50)),
+      generator.int(generator.range(-50, 50)),
     ),
     [mr],
     fn(pair) { add_int(pair.0, pair.1) },
@@ -183,7 +197,7 @@ fn add_int(a: Int, b: Int) -> Int {
 
 // 2.8. round-trip via PBT (no MR template — see README).
 pub fn readme_round_trip_via_forall_test() {
-  metamon.forall(generator.int(range.constant(-1000, 1000)), fn(n) {
+  metamon.forall(generator.int(generator.range(-1000, 1000)), fn(n) {
     assert case int.parse(int.to_string(n)) {
       Ok(parsed) -> parsed == n
       Error(_) -> False
@@ -206,7 +220,10 @@ pub fn readme_forall_morph_list_test() {
       }),
     )
   metamon.forall_morph(
-    generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 4)),
+    generator.list_of(
+      generator.int(generator.range(0, 9)),
+      generator.range(0, 4),
+    ),
     [invariant_under_reverse, invariant_under_append_zero],
     list_sum,
   )
@@ -224,8 +241,8 @@ pub type User {
 pub fn readme_user_generator_test() {
   let user_gen =
     generator.map2(
-      generator.string_ascii(range.constant(1, 8)),
-      generator.int(range.constant(0, 120)),
+      generator.string(of: generator.Ascii, length: generator.range(1, 8)),
+      generator.int(generator.range(0, 120)),
       User,
     )
   metamon.forall(user_gen, fn(u: User) {
@@ -254,7 +271,7 @@ pub fn readme_with_examples_test() {
       of: string.trim,
     )
   metamon.forall_morph(
-    generator.string_ascii(range.constant(0, 8))
+    generator.string(of: generator.Ascii, length: generator.range(0, 8))
       |> generator.with_examples(["", " ", "  ", "\t\n  hi  \n\t"]),
     [trim_idempotent],
     string.trim,
@@ -271,7 +288,7 @@ pub fn readme_recursive_generator_test() {
   let tree_gen =
     generator.recursive(
       // base case: leaf
-      generator.map(generator.int(range.constant(0, 9)), Leaf),
+      generator.map(generator.int(generator.range(0, 9)), Leaf),
       // step: build a Node from two smaller trees
       fn(smaller) { generator.map2(smaller, smaller, Node) },
     )
@@ -313,7 +330,7 @@ pub fn readme_coverage_test() {
   // The generator's edges include "" so the runner sees both sides.
   metamon.forall_with(
     test_config(50, 7),
-    generator.string_ascii(range.constant(0, 8)),
+    generator.string(of: generator.Ascii, length: generator.range(0, 8)),
     fn(s) {
       metamon.cover(
         at_least: 5.0,
@@ -332,7 +349,7 @@ pub fn readme_annotate_test() {
   // just demonstrate the call shape.
   metamon.forall_with(
     test_config(20, 0),
-    generator.int(range.constant(0, 100)),
+    generator.int(generator.range(0, 100)),
     fn(n) {
       metamon.annotate(label: "n", value: n)
       metamon.annotate(label: "doubled", value: n * 2)
@@ -347,7 +364,7 @@ pub fn readme_annotate_test() {
 
 pub fn readme_configuration_test() {
   let c = metamon.Config(..metamon.default_config(), seed: Some(2026), runs: 30)
-  metamon.forall_with(c, generator.int(range.constant(-100, 100)), fn(n) {
+  metamon.forall_with(c, generator.int(generator.range(-100, 100)), fn(n) {
     assert n + 0 == n
   })
 }
@@ -375,7 +392,7 @@ fn make_gcounter(pairs: List(#(String, Int))) -> GCounter {
 }
 
 pub fn readme_gcounter_idempotent_test() {
-  metamon.forall(generator.int(range.constant(0, 100)), fn(seed) {
+  metamon.forall(generator.int(generator.range(0, 100)), fn(seed) {
     let counter =
       make_gcounter([
         #("node-A", seed),
@@ -387,7 +404,7 @@ pub fn readme_gcounter_idempotent_test() {
 }
 
 pub fn readme_gcounter_commutative_test() {
-  metamon.forall(generator.int(range.constant(0, 100)), fn(seed) {
+  metamon.forall(generator.int(generator.range(0, 100)), fn(seed) {
     let left = make_gcounter([#("node-A", seed), #("node-B", seed * 2)])
     let right = make_gcounter([#("node-A", seed + 1), #("node-C", seed * 3)])
     assert merge(left, right) == merge(right, left)
@@ -395,7 +412,7 @@ pub fn readme_gcounter_commutative_test() {
 }
 
 pub fn readme_gcounter_associative_test() {
-  metamon.forall(generator.int(range.constant(0, 100)), fn(seed) {
+  metamon.forall(generator.int(generator.range(0, 100)), fn(seed) {
     let a = make_gcounter([#("X", seed), #("Y", seed + 1)])
     let b = make_gcounter([#("X", seed + 5), #("Z", seed + 7)])
     let c = make_gcounter([#("Y", seed + 9), #("Z", seed + 11)])

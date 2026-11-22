@@ -97,11 +97,8 @@ unwrap_used = "error"
 ]
 # Runner is the panic delivery mechanism; generator panics on a
 # stuck `filter`.
-# `range.linear_from` panics when the origin lies outside [lo, hi]
-# (inverted bounds are swapped, not rejected).
 "src/metamon/internal/runner.gleam" = ["avoid_panic"]
 "src/metamon/generator.gleam" = ["avoid_panic", "assert_ok_pattern"]
-"src/metamon/generator/range.gleam" = ["avoid_panic"]
 # `metamon.approximately(epsilon)` rejects a negative epsilon at
 # construction time with a structured panic. The "always false"
 # relation a negative epsilon would silently produce is never the

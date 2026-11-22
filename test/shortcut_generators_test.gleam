@@ -6,7 +6,6 @@ import gleam/bit_array
 import gleam/list
 import gleeunit/should
 import metamon/generator
-import metamon/generator/range
 import metamon/internal/seed
 
 pub fn bool_yields_both_values_test() {
@@ -19,32 +18,32 @@ pub fn bool_yields_both_values_test() {
   should.be_true(list.contains(observed, False))
 }
 
-pub fn non_negative_int_is_non_negative_test() {
-  let g = generator.non_negative_int()
+pub fn linear_range_from_zero_is_non_negative_test() {
+  let g = generator.int(generator.linear_range(0, 1_000_000))
   list.each([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], fn(i) {
     let n = generator.generate(g, seed.seed(i), 99, 99).value
     should.be_true(n >= 0)
   })
 }
 
-pub fn positive_int_is_strictly_positive_test() {
-  let g = generator.positive_int()
+pub fn linear_range_from_one_is_strictly_positive_test() {
+  let g = generator.int(generator.linear_range(1, 1_000_000))
   list.each([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], fn(i) {
     let n = generator.generate(g, seed.seed(i), 99, 99).value
     should.be_true(n >= 1)
   })
 }
 
-pub fn negative_int_is_strictly_negative_test() {
-  let g = generator.negative_int()
+pub fn linear_range_to_minus_one_is_strictly_negative_test() {
+  let g = generator.int(generator.linear_range(-1_000_000, -1))
   list.each([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], fn(i) {
     let n = generator.generate(g, seed.seed(i), 99, 99).value
     should.be_true(n <= -1)
   })
 }
 
-pub fn byte_in_unsigned_byte_range_test() {
-  let g = generator.byte()
+pub fn int_in_byte_range_test() {
+  let g = generator.int(generator.range(0, 255))
   list.each([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], fn(i) {
     let n = generator.generate(g, seed.seed(i), 99, 99).value
     should.be_true(n >= 0 && n <= 255)
@@ -52,7 +51,7 @@ pub fn byte_in_unsigned_byte_range_test() {
 }
 
 pub fn bit_array_byte_length_in_bounds_test() {
-  let g = generator.bit_array(range.constant(0, 4))
+  let g = generator.bit_array(generator.range(0, 4))
   list.each([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], fn(i) {
     let bits = generator.generate(g, seed.seed(i), 99, 99).value
     let byte_size = bit_array.byte_size(bits)

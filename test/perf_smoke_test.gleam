@@ -10,7 +10,6 @@ import gleam/option.{Some}
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
 
 pub fn forall_morph_thousand_runs_finishes_quickly_test() {
   let mr =
@@ -23,8 +22,8 @@ pub fn forall_morph_thousand_runs_finishes_quickly_test() {
   metamon.forall_morph_with(
     c,
     generator.list_of(
-      generator.int(range.constant(0, 100)),
-      range.constant(0, 16),
+      generator.int(generator.range(0, 100)),
+      generator.range(0, 16),
     ),
     [mr],
     list.length,
@@ -55,7 +54,7 @@ type RecTree {
 
 fn recursive_tree_gen() -> generator.Generator(RecTree) {
   generator.recursive(
-    generator.map(generator.int(range.constant(0, 9)), Leaf),
+    generator.map(generator.int(generator.range(0, 9)), Leaf),
     fn(smaller) { generator.map2(smaller, smaller, Node) },
   )
 }

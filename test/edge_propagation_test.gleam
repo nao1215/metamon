@@ -15,7 +15,6 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleeunit/should
 import metamon/generator
-import metamon/generator/range
 
 // ---------- propagation through map / filter / one_of ----------
 
@@ -59,7 +58,7 @@ pub fn one_of_concatenates_branch_edges_test() {
 // ---------- standard generators carry useful edges ----------
 
 pub fn int_with_negative_range_edges_include_zero_test() {
-  let g = generator.int(range.constant(-100, 100))
+  let g = generator.int(generator.range(-100, 100))
   let edges = generator.edges_of(g)
   should.be_true(list.contains(edges, 0))
   should.be_true(list.contains(edges, 1))
@@ -69,14 +68,14 @@ pub fn int_with_negative_range_edges_include_zero_test() {
 pub fn int_with_positive_range_edges_avoid_unreachable_test() {
   // For a range entirely above zero, -1 must not be in edges
   // (otherwise the runner would attempt impossible inputs).
-  let g = generator.int(range.constant(10, 50))
+  let g = generator.int(generator.range(10, 50))
   let edges = generator.edges_of(g)
   list.each(edges, fn(e) { should.be_true(e >= 10 && e <= 50) })
   should.be_false(list.contains(edges, -1))
 }
 
 pub fn list_of_edges_include_empty_and_singleton_test() {
-  let g = generator.list_of(generator.return(7), range.constant(0, 4))
+  let g = generator.list_of(generator.return(7), generator.range(0, 4))
   let edges = generator.edges_of(g)
   should.be_true(list.contains(edges, []))
   should.be_true(list.contains(edges, [7]))
@@ -128,7 +127,7 @@ pub fn add_edges_is_equivalent_to_with_examples_test() {
     |> generator.with_examples([5])
   let b =
     generator.return(0)
-    |> generator.add_edges([5])
+    |> generator.with_examples([5])
   should.equal(generator.edges_of(a), generator.edges_of(b))
 }
 

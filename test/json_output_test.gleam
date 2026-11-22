@@ -6,14 +6,13 @@ import gleam/string
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
 import test_helpers
 
 pub fn json_output_is_single_line_object_test() {
   let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   let outcome =
     test_helpers.capture_panic(fn() {
-      metamon.forall_with(cfg, generator.int(range.constant(0, 10)), fn(_n) {
+      metamon.forall_with(cfg, generator.int(generator.range(0, 10)), fn(_n) {
         test_helpers.fail()
       })
     })
@@ -45,7 +44,7 @@ pub fn json_output_for_morph_failure_test() {
     test_helpers.capture_panic(fn() {
       metamon.forall_morph_with(
         cfg,
-        generator.int(range.constant(1, 10)),
+        generator.int(generator.range(1, 10)),
         [bad_mr],
         fn(n) { n },
       )
@@ -61,7 +60,7 @@ pub fn json_output_for_morph_failure_test() {
 pub fn text_output_is_default_test() {
   let outcome =
     test_helpers.capture_panic(fn() {
-      metamon.forall(generator.int(range.constant(0, 10)), fn(_n) {
+      metamon.forall(generator.int(generator.range(0, 10)), fn(_n) {
         test_helpers.fail()
       })
     })

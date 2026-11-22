@@ -9,7 +9,6 @@ import gleam/string
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
 import metamon/internal/regression
 import simplifile
 import test_helpers
@@ -36,7 +35,7 @@ pub fn write_records_failing_input_test() {
         )
       metamon.forall_with(
         c,
-        generator.int(range.constant(0, 10)),
+        generator.int(generator.range(0, 10)),
         // Always-failing property: triggers an immediate write.
         fn(_n) { test_helpers.fail() },
       )
@@ -112,7 +111,7 @@ pub fn missing_file_is_silent_test() {
   // simply has nothing to replay and runs normally.
   let c =
     metamon.Config(..metamon.default_config(), regression_file: Some(tmp_path))
-  metamon.forall_with(c, generator.int(range.constant(0, 9)), fn(n) {
+  metamon.forall_with(c, generator.int(generator.range(0, 9)), fn(n) {
     assert n >= 0 && n <= 9
   })
   cleanup()
@@ -131,7 +130,7 @@ fn round_trip_with_file(
       seed: Some(seed),
       regression_file: Some(shared_path),
     ),
-    generator: generator.int(range.constant(0, 1000)) |> generator.no_edges,
+    generator: generator.int(generator.range(0, 1000)) |> generator.no_edges,
     name: name,
     encode: fn(n) { n },
     decode: fn(n) {
@@ -171,7 +170,7 @@ pub fn unwritable_regression_file_is_reported_test() {
     test_helpers.capture_panic(fn() {
       metamon.forall_with(
         metamon.Config(..metamon.default_config(), regression_file: Some(path)),
-        generator.int(range.constant(0, 10)),
+        generator.int(generator.range(0, 10)),
         fn(_) { test_helpers.fail() },
       )
     })
@@ -228,7 +227,7 @@ pub fn future_schema_version_file_is_not_replayed_test() {
             ..metamon.default_config(),
             regression_file: Some(tmp_path),
           ),
-          generator.int(range.constant(0, 9)),
+          generator.int(generator.range(0, 9)),
           fn(_) { test_helpers.fail() },
         )
       })
@@ -244,7 +243,8 @@ pub fn future_schema_version_file_is_not_replayed_test() {
 
 pub fn replay_uses_the_recorded_max_size_test() {
   cleanup()
-  let gen = generator.int(range.linear(0, 1_000_000)) |> generator.no_edges
+  let gen =
+    generator.int(generator.linear_range(0, 1_000_000)) |> generator.no_edges
   // Record a failure under max_size 30.
   let #(panicked, _) =
     test_helpers.capture_panic(fn() {

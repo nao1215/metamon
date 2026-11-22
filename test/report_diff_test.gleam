@@ -6,7 +6,6 @@ import gleam/list
 import gleam/string
 import metamon
 import metamon/generator
-import metamon/generator/range
 import metamon/internal/diff.{Differ, IndexedDiff, ListDiff, Same, TupleDiff}
 import test_helpers
 
@@ -75,12 +74,12 @@ pub fn list_diff_has_one_item_per_element_test() {
   metamon.forall(
     generator.tuple2(
       generator.list_of(
-        generator.string_ascii(range.constant(0, 4)),
-        range.constant(0, 4),
+        generator.string(of: generator.Ascii, length: generator.range(0, 4)),
+        generator.range(0, 4),
       ),
       generator.list_of(
-        generator.string_ascii(range.constant(0, 4)),
-        range.constant(0, 4),
+        generator.string(of: generator.Ascii, length: generator.range(0, 4)),
+        generator.range(0, 4),
       ),
     ),
     fn(pair) {

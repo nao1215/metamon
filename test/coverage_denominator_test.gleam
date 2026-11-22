@@ -8,7 +8,6 @@ import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/generator
-import metamon/generator/range
 import metamon/internal/coverage
 import simplifile
 import test_helpers
@@ -16,14 +15,14 @@ import test_helpers
 const tmp_path: String = "/tmp/metamon_coverage_denominator_test.toml"
 
 pub fn two_covers_per_run_count_each_run_once_test() {
-  metamon.forall(generator.int(range.constant(0, 100)), fn(_) {
+  metamon.forall(generator.int(generator.range(0, 100)), fn(_) {
     metamon.cover(at_least: 60.0, label: "a", when: True)
     metamon.cover(at_least: 60.0, label: "b", when: True)
   })
 }
 
 pub fn classify_does_not_dilute_cover_test() {
-  metamon.forall(generator.int(range.constant(0, 100)), fn(n) {
+  metamon.forall(generator.int(generator.range(0, 100)), fn(n) {
     metamon.cover(at_least: 100.0, label: "always", when: True)
     metamon.classify(label: "even", when: n % 2 == 0)
     metamon.classify(label: "small", when: n < 10)
@@ -35,7 +34,7 @@ pub fn classify_counts_appear_in_the_failure_report_test() {
     test_helpers.capture_panic(fn() {
       metamon.forall_with(
         metamon.Config(..metamon.default_config(), seed: Some(1)),
-        generator.int(range.constant(0, 100)) |> generator.no_edges,
+        generator.int(generator.range(0, 100)) |> generator.no_edges,
         fn(n) {
           metamon.classify(label: "any", when: True)
           assert n < 50
@@ -50,13 +49,13 @@ pub fn classify_counts_appear_in_the_failure_report_test() {
 pub fn every_run_count_keeps_full_coverage_test() {
   metamon.forall_with(
     metamon.Config(..metamon.default_config(), runs: 20),
-    generator.int(range.constant(1, 300)),
+    generator.int(generator.range(1, 300)),
     fn(runs) {
       let #(panicked, _) =
         test_helpers.capture_panic(fn() {
           metamon.forall_with(
             metamon.Config(..metamon.default_config(), runs: runs),
-            generator.int(range.constant(0, 9)),
+            generator.int(generator.range(0, 9)),
             fn(_) {
               metamon.cover(at_least: 100.0, label: "x", when: True)
               metamon.cover(at_least: 100.0, label: "y", when: True)
@@ -75,7 +74,7 @@ pub fn shortfall_reports_runs_as_the_denominator_test() {
     test_helpers.capture_panic(fn() {
       metamon.forall_with(
         metamon.Config(..metamon.default_config(), runs: 40),
-        generator.int(range.constant(0, 9)) |> generator.no_edges,
+        generator.int(generator.range(0, 9)) |> generator.no_edges,
         fn(_) {
           count_bump()
           metamon.classify(label: "noise", when: True)
@@ -96,7 +95,7 @@ pub fn regression_replay_does_not_count_towards_coverage_test() {
       runs: 10,
       regression_file: Some(tmp_path),
     )
-  let gen = generator.int(range.constant(0, 9)) |> generator.no_edges
+  let gen = generator.int(generator.range(0, 9)) |> generator.no_edges
   // Count the runs (METAMON_RUNS_MULTIPLIER may scale them).
   count_reset()
   metamon.forall_with(cfg, gen, fn(_) { count_bump() })
@@ -124,7 +123,7 @@ pub fn a_label_counts_once_per_run_test() {
     test_helpers.capture_panic(fn() {
       metamon.forall_with(
         metamon.Config(..metamon.default_config(), seed: Some(4)),
-        generator.int(range.constant(0, 1)),
+        generator.int(generator.range(0, 1)),
         fn(n) {
           metamon.cover(at_least: 60.0, label: "zero", when: n == 0)
           metamon.cover(at_least: 60.0, label: "zero", when: n == 0)
@@ -139,7 +138,7 @@ pub fn hits_never_exceed_runs_test() {
   count_reset()
   metamon.forall_with(
     metamon.Config(..metamon.default_config(), runs: 30),
-    generator.list_of(generator.return(0), range.constant(1, 5)),
+    generator.list_of(generator.return(0), generator.range(1, 5)),
     fn(xs) {
       count_bump()
       list.each(xs, fn(x) {

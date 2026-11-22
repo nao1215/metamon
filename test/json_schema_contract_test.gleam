@@ -24,7 +24,6 @@ import gleam/string
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
 import test_helpers
 
 // ---------- panic capture ----------
@@ -46,7 +45,7 @@ fn json_from_failure(thunk: fn() -> Nil) -> String {
 fn json_for_forall_failure() -> String {
   let cfg = metamon.Config(..metamon.default_config(), output: metamon.Json)
   json_from_failure(fn() {
-    metamon.forall_with(cfg, generator.int(range.constant(0, 10)), fn(_n) {
+    metamon.forall_with(cfg, generator.int(generator.range(0, 10)), fn(_n) {
       test_helpers.fail()
     })
   })
@@ -64,7 +63,7 @@ fn json_for_forall_morph_failure() -> String {
   json_from_failure(fn() {
     metamon.forall_morph_with(
       cfg,
-      generator.int(range.constant(1, 10)),
+      generator.int(generator.range(1, 10)),
       [bad_mr],
       fn(n) { n },
     )
@@ -77,7 +76,7 @@ fn json_for_forall_round_trip_failure() -> String {
     // A trivially broken codec: encoder and decoder do not invert.
     metamon.forall_round_trip_with(
       config: cfg,
-      generator: generator.int(range.constant(1, 10)),
+      generator: generator.int(generator.range(1, 10)),
       name: "broken_codec",
       encode: fn(n: Int) { n + 1 },
       decode: fn(n: Int) { Ok(n) },

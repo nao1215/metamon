@@ -6,7 +6,6 @@ import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/generator
-import metamon/generator/range
 import simplifile
 import test_helpers
 
@@ -19,7 +18,7 @@ fn failure_text(thunk: fn() -> Nil) -> String {
 }
 
 fn ints() -> generator.Generator(Int) {
-  generator.int(range.constant(0, 1000)) |> generator.no_edges
+  generator.int(generator.range(0, 1000)) |> generator.no_edges
 }
 
 fn below_ten() -> metamon.Morph(Int, Int) {

@@ -7,7 +7,6 @@ import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/generator
-import metamon/generator/range
 import test_helpers
 
 fn failure_text(thunk: fn() -> Nil) -> String {
@@ -21,7 +20,7 @@ fn seeded(value: Int) -> metamon.Config {
 }
 
 fn ints() -> generator.Generator(Int) {
-  generator.int(range.constant(0, 1000)) |> generator.no_edges
+  generator.int(generator.range(0, 1000)) |> generator.no_edges
 }
 
 fn shrunk_to(text: String, rendered: String) -> Bool {
@@ -44,7 +43,7 @@ pub fn forall_shrinks_to_the_boundary_for_every_seed_test() {
   // first, the reported input is the boundary value.
   metamon.forall_with(
     metamon.Config(..metamon.default_config(), runs: 20),
-    generator.int(range.constant(1, 100_000)),
+    generator.int(generator.range(1, 100_000)),
     fn(seed_value) {
       let text =
         failure_text(fn() {

@@ -3,7 +3,6 @@ import gleam/string
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
 import test_helpers
 
 // A function that is genuinely idempotent: trim removes leading/
@@ -12,7 +11,7 @@ fn trim_idempotent_test_input() -> Nil {
   let mr =
     metamon.idempotency_of(name: "string.trim_idempotent", of: string.trim)
   metamon.forall_morph(
-    generator.string_ascii(range.constant(0, 8)),
+    generator.string(of: generator.Ascii, length: generator.range(0, 8)),
     [mr],
     string.trim,
   )
@@ -31,7 +30,10 @@ pub fn invariant_under_reverse_for_length_test() {
       under: metamon.Transform("list.reverse", list.reverse),
     )
   metamon.forall_morph(
-    generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 5)),
+    generator.list_of(
+      generator.int(generator.range(0, 9)),
+      generator.range(0, 5),
+    ),
     [mr],
     list.length,
   )
@@ -48,7 +50,10 @@ pub fn equivariant_map_under_reverse_test() {
       relation: metamon.equal(),
     )
   metamon.forall_morph(
-    generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 5)),
+    generator.list_of(
+      generator.int(generator.range(0, 9)),
+      generator.range(0, 5),
+    ),
     [mr],
     fn(items) { list.map(items, plus_one) },
   )
@@ -68,7 +73,7 @@ pub fn manual_plain_mr_test() {
       relation: metamon.equal(),
     )
   metamon.forall_morph(
-    generator.string_ascii(range.constant(0, 6)),
+    generator.string(of: generator.Ascii, length: generator.range(0, 6)),
     [mr],
     string.uppercase,
   )
@@ -104,7 +109,10 @@ pub fn forall_morph_runs_each_morph_test() {
       }),
     )
   metamon.forall_morph(
-    generator.list_of(generator.int(range.constant(0, 9)), range.constant(0, 4)),
+    generator.list_of(
+      generator.int(generator.range(0, 9)),
+      generator.range(0, 4),
+    ),
     [invariant, plus_zero],
     list_sum,
   )
@@ -139,8 +147,8 @@ pub fn forall_morph_reports_every_failing_morph_test() {
     test_helpers.capture_panic(fn() {
       metamon.forall_morph(
         generator.list_of(
-          generator.int(range.constant(0, 5)),
-          range.constant(2, 4),
+          generator.int(generator.range(0, 5)),
+          generator.range(2, 4),
         ),
         [not_head, holds, not_head_after_append],
         list.first,
@@ -163,8 +171,8 @@ pub fn forall_morph_with_one_failure_shows_only_its_report_test() {
     test_helpers.capture_panic(fn() {
       metamon.forall_morph(
         generator.list_of(
-          generator.int(range.constant(0, 5)),
-          range.constant(2, 4),
+          generator.int(generator.range(0, 5)),
+          generator.range(2, 4),
         ),
         [not_head],
         list.first,

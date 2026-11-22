@@ -11,7 +11,6 @@ import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/generator
-import metamon/generator/range
 
 // § 8.1 — `naming.to_snake_case` idempotency + keyword coverage.
 //
@@ -34,7 +33,7 @@ pub fn snake_idempotent_with_examples_and_coverage_test() {
   let c = metamon.Config(..metamon.default_config(), seed: Some(2026), runs: 40)
   metamon.forall_morph_with(
     c,
-    generator.string_ascii(range.constant(0, 8))
+    generator.string(of: generator.Ascii, length: generator.range(0, 8))
       |> generator.with_examples(["", "Hello World", "OAuth2 Token"]),
     [mr],
     fn(s) {
@@ -62,7 +61,7 @@ pub fn normalize_idempotent_test() {
   let c = metamon.Config(..metamon.default_config(), runs: 30)
   metamon.forall_morph_with(
     c,
-    generator.string_ascii(range.constant(0, 16)),
+    generator.string(of: generator.Ascii, length: generator.range(0, 16)),
     [mr],
     normalize_stub,
   )
@@ -117,8 +116,8 @@ pub fn parse_write_round_trip_test() {
     )
   metamon.forall_morph(
     generator.list_of(
-      generator.int(range.constant(0, 99)),
-      range.constant(0, 5),
+      generator.int(generator.range(0, 99)),
+      generator.range(0, 5),
     ),
     [mr],
     write_spec,
@@ -152,7 +151,7 @@ pub fn yaml_json_equivalence_stub_test() {
       relation: metamon.equal(),
     )
   metamon.forall_morph(
-    generator.string_ascii(range.constant(0, 12))
+    generator.string(of: generator.Ascii, length: generator.range(0, 12))
       |> generator.with_examples(["a:1", "a: 1, b:2", " a : 1 "]),
     [mr],
     parse_kv,
@@ -176,9 +175,9 @@ pub fn field_order_invariance_test() {
     )
   metamon.forall_morph(
     generator.dict_of(
-      generator.string_ascii(range.constant(1, 4)),
-      generator.int(range.constant(0, 9)),
-      range.constant(0, 5),
+      generator.string(of: generator.Ascii, length: generator.range(1, 4)),
+      generator.int(generator.range(0, 9)),
+      generator.range(0, 5),
     ),
     [mr],
     count_pairs,

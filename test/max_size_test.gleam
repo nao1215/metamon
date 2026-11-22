@@ -5,7 +5,6 @@ import gleam/list
 import gleam/option.{Some}
 import metamon
 import metamon/generator
-import metamon/generator/range
 import test_helpers
 
 fn config(max_size: Int, runs: Int) -> metamon.Config {
@@ -22,7 +21,7 @@ pub fn small_max_size_still_reaches_the_full_range_test() {
     test_helpers.capture_panic(fn() {
       metamon.forall_with(
         config(10, 1000),
-        generator.int(range.linear(0, 1000)) |> generator.no_edges,
+        generator.int(generator.linear_range(0, 1000)) |> generator.no_edges,
         fn(x) {
           assert x < 200
         },
@@ -34,7 +33,7 @@ pub fn small_max_size_still_reaches_the_full_range_test() {
 pub fn linear_bounds_scale_with_the_configured_max_size_test() {
   let sized_value =
     generator.sized(fn(size) {
-      generator.int(range.linear(0, 1_000_000))
+      generator.int(generator.linear_range(0, 1_000_000))
       |> generator.map(fn(x) { #(size, x) })
     })
     |> generator.no_edges
@@ -49,7 +48,7 @@ pub fn linear_bounds_scale_with_the_configured_max_size_test() {
 pub fn list_length_scales_with_the_configured_max_size_test() {
   let sized_list =
     generator.sized(fn(size) {
-      generator.list_of(generator.return(0), range.linear(0, 1000))
+      generator.list_of(generator.return(0), generator.linear_range(0, 1000))
       |> generator.map(fn(items) { #(size, list.length(items)) })
     })
     |> generator.no_edges

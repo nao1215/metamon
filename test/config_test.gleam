@@ -6,12 +6,11 @@ import gleam/string
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
 import test_helpers
 
 fn run(config: metamon.Config) -> #(Bool, String) {
   test_helpers.capture_panic(fn() {
-    metamon.forall_with(config, generator.int(range.constant(0, 9)), fn(_) {
+    metamon.forall_with(config, generator.int(generator.range(0, 9)), fn(_) {
       Nil
     })
   })
@@ -106,7 +105,7 @@ pub fn very_large_values_are_accepted_test() {
 
 pub fn every_runner_checks_the_config_test() {
   let bad = metamon.Config(..default(), runs: 0)
-  let ints = generator.int(range.constant(0, 9))
+  let ints = generator.int(generator.range(0, 9))
   let #(morph_panicked, morph_message) =
     test_helpers.capture_panic(fn() {
       metamon.forall_morph_with(

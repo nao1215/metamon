@@ -1,5 +1,5 @@
 //// Regression tests for #3: curated edge values must respect the
-//// user-supplied length range. Before the fix, `string_ascii(range.constant(5, 8))`
+//// user-supplied length range. Before the fix, `string_ascii(generator.range(5, 8))`
 //// emitted `""`, `" "`, and `"OAuth2Token"` (length 11) regardless of the
 //// requested 5..8 window.
 
@@ -7,10 +7,9 @@ import gleam/list
 import gleam/string
 import gleeunit/should
 import metamon/generator
-import metamon/generator/range
 
 pub fn string_ascii_edges_respect_length_range_test() {
-  let g = generator.string_ascii(range.constant(5, 8))
+  let g = generator.string(of: generator.Ascii, length: generator.range(5, 8))
   let edges = generator.edges_of(g)
   let all_in_range =
     list.all(edges, fn(s) {
@@ -21,7 +20,7 @@ pub fn string_ascii_edges_respect_length_range_test() {
 }
 
 pub fn string_unicode_edges_respect_length_range_test() {
-  let g = generator.string_unicode(range.constant(2, 4))
+  let g = generator.string(of: generator.Unicode, length: generator.range(2, 4))
   let edges = generator.edges_of(g)
   let all_in_range =
     list.all(edges, fn(s) {
@@ -32,7 +31,7 @@ pub fn string_unicode_edges_respect_length_range_test() {
 }
 
 pub fn string_edges_respect_length_range_test() {
-  let g = generator.string(generator.ascii_lower(), range.constant(3, 5))
+  let g = generator.string_from(lowercase(), generator.range(3, 5))
   let edges = generator.edges_of(g)
   let all_in_range =
     list.all(edges, fn(s) {
@@ -43,7 +42,11 @@ pub fn string_edges_respect_length_range_test() {
 }
 
 pub fn list_of_edges_respect_length_range_test() {
-  let g = generator.list_of(generator.byte(), range.constant(3, 5))
+  let g =
+    generator.list_of(
+      generator.int(generator.range(0, 255)),
+      generator.range(3, 5),
+    )
   let edges = generator.edges_of(g)
   let all_in_range =
     list.all(edges, fn(xs) {
@@ -68,18 +71,10 @@ pub fn float_edges_are_deduplicated_test() {
 
 pub fn int_edges_are_deduplicated_test() {
   // lo, hi, lo + 1 and hi - 1 coincide with the anchors 0, 1 and -1.
-  generator.edges_of(generator.int(range.constant(-1, 1)))
+  generator.edges_of(generator.int(generator.range(-1, 1)))
   |> should.equal([0, 1, -1])
 }
 
-pub fn non_empty_list_of_drops_the_empty_list_when_the_range_allows_it_test() {
-  // range.constant(0, 3) admits length 0, so the empty list must be
-  // filtered out of both the edges and the random samples.
-  let g = generator.non_empty_list_of(generator.byte(), range.constant(0, 3))
-  generator.edges_of(g)
-  |> list.any(fn(xs) { xs == [] })
-  |> should.be_false
-  generator.sample(g, 200)
-  |> list.any(fn(xs) { xs == [] })
-  |> should.be_false
+fn lowercase() -> generator.Generator(String) {
+  generator.element_of(string.to_graphemes("abcdefghijklmnopqrstuvwxyz"))
 }

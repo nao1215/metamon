@@ -9,7 +9,6 @@ import gleam/string
 import gleeunit/should
 import metamon
 import metamon/generator
-import metamon/generator/range
 import test_helpers
 
 pub type CapturedPanic {
@@ -29,7 +28,7 @@ pub fn forall_panics_on_violation_test() {
   let outcome =
     capture(fn() {
       metamon.forall(
-        generator.int(range.constant(0, 100)),
+        generator.int(generator.range(0, 100)),
         // false for everything ≥ 0, which is everything → instant fail
         fn(_n) { test_helpers.fail() },
       )
@@ -57,7 +56,7 @@ pub fn forall_morph_panics_with_named_relation_test() {
   let outcome =
     capture(fn() {
       metamon.forall_morph(
-        generator.int(range.constant(1, 10)),
+        generator.int(generator.range(1, 10)),
         [bad_mr],
         fn(n) { n },
       )
@@ -96,7 +95,7 @@ pub fn forall_round_trip_panics_on_decode_error_test() {
   let outcome =
     capture(fn() {
       metamon.forall_round_trip(
-        generator: generator.int(range.constant(0, 100)),
+        generator: generator.int(generator.range(0, 100)),
         name: "broken",
         encode: int.to_string,
         decode: fn(_value) { Error(Nil) },
@@ -114,7 +113,7 @@ pub fn forall_round_trip_panics_on_decode_error_test() {
 pub fn forall_morph_panics_on_empty_morph_list_test() {
   let outcome =
     capture(fn() {
-      metamon.forall_morph(generator.int(range.constant(0, 100)), [], fn(n) {
+      metamon.forall_morph(generator.int(generator.range(0, 100)), [], fn(n) {
         n
       })
     })
@@ -135,7 +134,7 @@ pub fn config_seed_zero_renders_with_originally_annotation_test() {
   let cfg = metamon.Config(..metamon.default_config(), seed: Some(0))
   let outcome =
     capture(fn() {
-      metamon.forall_with(cfg, generator.int(range.constant(0, 100)), fn(_n) {
+      metamon.forall_with(cfg, generator.int(generator.range(0, 100)), fn(_n) {
         test_helpers.fail()
       })
     })
