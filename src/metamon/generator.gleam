@@ -924,51 +924,144 @@ fn codepoint_to_string(codepoint: Int) -> String {
 /// A list of values whose length is drawn from `len`. Shrinking removes
 /// elements via `shrink/list_drops` and shrinks each remaining element.
 pub fn list_of(element: Generator(a), len: Range) -> Generator(List(a)) {
+  list_at_least(element, len, 0)
+}
+
+/// `list_of` whose length, and every shrink of it, is at least
+/// `floor` and at least the range's lower bound.
+fn list_at_least(
+  element: Generator(a),
+  len: Range,
+  floor: Int,
+) -> Generator(List(a)) {
   let #(lo_len, hi_len) = range.bounds(len, 99, 99)
+  let min_length = int.max(lo_len, floor)
   Generator(
     run: fn(s: Seed, size: Int, max_size: Int) {
       let #(s_len, s_items) = seed_module.split(s)
       let #(lo, hi) = range.bounds(len, size, max_size)
-      let #(length, _) = seed_module.next_int_in(s_len, lo, hi)
-      generate_list_tree(element, s_items, size, max_size, length)
+      let lo = int.max(lo, min_length)
+      let #(length, _) = seed_module.next_int_in(s_len, lo, int.max(hi, lo))
+      generate_element_trees(element, s_items, size, max_size, length, [])
+      |> list_tree(min_length)
     },
-    edges: list_edges_in_range(element.edges, lo_len, hi_len),
+    edges: list_edges_in_range(element.edges, min_length, hi_len),
   )
 }
 
-fn generate_list_tree(
+fn generate_element_trees(
   element: Generator(a),
   s: Seed,
   size: Int,
   max_size: Int,
-  length: Int,
-) -> Tree(List(a)) {
-  case length <= 0 {
-    True -> tree.singleton([])
+  remaining: Int,
+  acc: List(Tree(a)),
+) -> List(Tree(a)) {
+  case remaining <= 0 {
+    True -> list.reverse(acc)
     False -> {
       let #(s_head, s_tail) = seed_module.split(s)
-      let head_tree = element.run(s_head, size, max_size)
-      let tail_tree =
-        generate_list_tree(element, s_tail, size, max_size, length - 1)
-      let combined =
-        tree.zip(head_tree, tail_tree)
-        |> tree.map(fn(pair) { [pair.0, ..pair.1] })
-      attach_drop_shrinks(combined)
+      let head = element.run(s_head, size, max_size)
+      generate_element_trees(element, s_tail, size, max_size, remaining - 1, [
+        head,
+        ..acc
+      ])
     }
   }
 }
 
-/// The drop candidates are listed only when shrinking forces them. This
-/// runs for every suffix of every generated list, so computing them
-/// eagerly made generating a list of length n cost O(n^2) even when the
-/// property passed.
-fn attach_drop_shrinks(t: Tree(List(a))) -> Tree(List(a)) {
+/// The tree of a list built from its elements' trees. It shrinks by
+/// dropping windows of elements (largest first, never below
+/// `min_length`), then by shrinking one element at a time. Every
+/// candidate is again a list tree, so shrinking continues from it.
+///
+/// Each candidate is built only when shrinking reaches it, and the
+/// streams are joined pairwise so forcing them never nests deeper than
+/// the log of the length.
+fn list_tree(trees: List(Tree(a)), min_length: Int) -> Tree(List(a)) {
+  let length = list.length(trees)
   let drops =
-    tree.lazy_shrinks(fn() {
-      shrink_lib.list_drops(t.value)
-      |> list.map(tree.singleton)
+    drop_windows(length, min_length)
+    |> list.map(fn(window) {
+      let #(start, count) = window
+      tree.lazy_shrinks(fn() {
+        let kept =
+          list.append(list.take(trees, start), list.drop(trees, start + count))
+        [list_tree(kept, min_length)]
+      })
     })
-  Tree(value: t.value, shrinks: tree.append_shrinks(drops, t.shrinks))
+  let element_shrinks =
+    list.index_map(trees, fn(element, index) {
+      tree.map_shrinks(element.shrinks, fn(child) {
+        let replaced =
+          list.append(list.take(trees, index), [
+            child,
+            ..list.drop(trees, index + 1)
+          ])
+        list_tree(replaced, min_length)
+      })
+    })
+  Tree(
+    value: list.map(trees, fn(element) { element.value }),
+    shrinks: concat_shrinks(list.append(drops, element_shrinks)),
+  )
+}
+
+/// `(start, count)` windows to drop, in the order `shrink.list_drops`
+/// tries them: the whole list, then halves, quarters and so on, each
+/// size from the end of the list towards the start.
+fn drop_windows(length: Int, min_length: Int) -> List(#(Int, Int)) {
+  drop_windows_loop(length, length, length - min_length, [])
+  |> list.reverse
+}
+
+fn drop_windows_loop(
+  length: Int,
+  window: Int,
+  max_drop: Int,
+  acc: List(#(Int, Int)),
+) -> List(#(Int, Int)) {
+  case window <= 0 {
+    True -> acc
+    False -> {
+      let acc = case window <= max_drop {
+        True -> window_starts(length - window, window, acc)
+        False -> acc
+      }
+      drop_windows_loop(length, window / 2, max_drop, acc)
+    }
+  }
+}
+
+fn window_starts(
+  start: Int,
+  window: Int,
+  acc: List(#(Int, Int)),
+) -> List(#(Int, Int)) {
+  case start < 0 {
+    True -> acc
+    False -> window_starts(start - window, window, [#(start, window), ..acc])
+  }
+}
+
+fn concat_shrinks(streams: List(tree.Shrinks(b))) -> tree.Shrinks(b) {
+  case streams {
+    [] -> tree.no_shrinks()
+    [only] -> only
+    _ -> concat_shrinks(pair_up(streams, []))
+  }
+}
+
+fn pair_up(
+  streams: List(tree.Shrinks(b)),
+  acc: List(tree.Shrinks(b)),
+) -> List(tree.Shrinks(b)) {
+  case streams {
+    [left, right, ..rest] ->
+      pair_up(rest, [tree.append_shrinks(left, right), ..acc])
+    [last] -> list.reverse([last, ..acc])
+    [] -> list.reverse(acc)
+  }
 }
 
 fn list_edges_in_range(
@@ -986,18 +1079,12 @@ fn list_edges_in_range(
   })
 }
 
-/// Non-empty list. Wraps `list_of` and rejects empty lists from edges.
+/// Non-empty list. Like `list_of`, but the length is at least 1.
 pub fn non_empty_list_of(
   element: Generator(a),
   len: Range,
 ) -> Generator(List(a)) {
-  list_of(element, len)
-  |> filter(fn(items) {
-    case items {
-      [] -> False
-      _ -> True
-    }
-  })
+  list_at_least(element, len, 1)
 }
 
 /// Generate a `dict.Dict(k, v)` of size in `len`. Duplicate keys are
