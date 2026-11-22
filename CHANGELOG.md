@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `forall`, `forall_with`, `forall_observable` and the `forall_round_trip` runners now shrink a failing input. They used to report the first failing input with `shrinks: 0`.
+- A generated list keeps shrinking after an element is dropped, and never shrinks below the range's minimum length.
+- `with_max_size` now reaches the generators. Ranges used to grow as if `max_size` were 99.
+- The coverage percentage is now hits per run. A label counts at most once per run, and calling `cover` or `classify` several times in a run no longer lowers or raises other labels' percentages.
+- Annotations appear in the order they were registered, and only the annotations of the reported input are shown.
+- `forall_morphs` and `forall_morph_n` now replay and record regression entries, check coverage and shrink, like the other runners.
+- Round-trip runners key their regression entries by the round-trip name, so two round trips sharing a file no longer replay each other's entries.
+- `string` and the `string_*` generators no longer add `" "` and `"\n"` as edge cases outside the character set.
+- Generating a long list on JavaScript no longer overflows the stack.
+- `non_empty_list_of` no longer panics at small sizes. It panics when the range has no length of 1 or more.
+- Failure reports show the structured list and tuple diff again, and strings are no longer escaped twice.
+- A regression file that cannot be written is reported in the failure footnote instead of being ignored. Entries are appended instead of rewriting the file.
+
+### Changed
+
+- Regression files use schema version 2, which records `max_size`. Version 1 files are still read, with `max_size` 99. Entries recorded by earlier versions for round trips (under `(plain property)`) or for string and list edge cases may no longer replay; delete and re-record them.
+
 ## [0.13.0] - 2026-11-19
 
 ### Changed
