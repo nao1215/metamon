@@ -380,13 +380,14 @@ pub fn equal() -> Relation(a) {
 ///
 /// ## Panics
 ///
-/// Panics when `epsilon` is negative, since no pair of floats would then
-/// satisfy the relation.
+/// Panics when `epsilon` is negative or NaN, since no pair of floats
+/// would then satisfy the relation.
 pub fn approximately(within epsilon: Float) -> Relation(Float) {
-  case epsilon <. 0.0 {
-    True ->
-      panic as "metamon.approximately: epsilon must be >= 0.0 (a negative epsilon would make every pair compare False, including a value with itself)"
+  // NaN compares False against every operand, so it is rejected too.
+  case epsilon >=. 0.0 {
     False ->
+      panic as "metamon.approximately: epsilon must be >= 0.0 and not NaN (otherwise every pair compares False, including a value with itself)"
+    True ->
       Relation(
         name: "approximately(" <> float.to_string(epsilon) <> ")",
         holds: fn(left, right) {

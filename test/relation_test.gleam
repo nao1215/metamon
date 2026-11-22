@@ -1,6 +1,7 @@
 import gleam/string
 import gleeunit/should
 import metamon
+import metamon/internal/float_special
 import test_helpers
 
 pub fn equal_holds_when_structurally_same_test() {
@@ -74,4 +75,20 @@ pub fn permutation_of_test() {
   should.be_true(r.holds([1, 2, 3], [3, 1, 2]))
   should.be_false(r.holds([1, 2, 3], [1, 2, 4]))
   should.be_false(r.holds([1, 2, 3], [1, 2]))
+}
+
+pub fn approximately_rejects_nan_test() {
+  // Erlang cannot build NaN, so float_special.nan() is a finite stand-in
+  // there and only the JavaScript target exercises the NaN branch.
+  let nan = float_special.nan()
+  let #(panicked, message) =
+    test_helpers.capture_panic(fn() { metamon.approximately(within: nan) })
+  // NaN is neither >= 0.0 nor < 0.0.
+  case nan >=. 0.0 || nan <. 0.0 {
+    True -> should.be_false(panicked)
+    False -> {
+      should.be_true(panicked)
+      should.be_true(string.contains(message, "metamon.approximately"))
+    }
+  }
 }
