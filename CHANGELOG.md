@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-22
+
 ### Changed
 
 - Breaking: the public API is two modules, `metamon` and `metamon/generator`. Everything else is internal or removed. Packages that use metamon in their tests need updating.
