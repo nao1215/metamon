@@ -410,6 +410,8 @@ fn check_step(
   source: InputSource,
   run_index: Int,
 ) -> Step {
+  // Annotations describe one run; coverage accumulates across runs.
+  annotate.reset()
   case check.holds(input) {
     True -> Continue
     False -> {
