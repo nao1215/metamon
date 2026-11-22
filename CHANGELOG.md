@@ -22,30 +22,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Edge cases count toward `Config.runs`, so `runs: 1` tries one input.
 - Regression files use schema version 2, which records `max_size`. Version 1 files are still read, with `max_size` 99. Entries recorded by earlier versions for round trips (under `(plain property)`) or for string and list edge cases may no longer replay; delete and re-record them.
 
-```gleam
-// Before
-let config =
-  metamon.default_config()
-  |> metamon.with_seed(metamon.seed(42))
-  |> metamon.with_runs_or_panic(300)
-metamon.forall_with(
-  config,
-  generator.list_of(generator.int(range.constant(-100, 100)), range.constant(0, 20)),
-  fn(items) { list.reverse(list.reverse(items)) == items },
-)
-
-// After
-let config = metamon.Config(..metamon.default_config(), seed: Some(42), runs: 300)
-metamon.forall_with(
-  config,
-  generator.list_of(
-    generator.int(generator.range(from: -100, to: 100)),
-    length: generator.range(from: 0, to: 20),
-  ),
-  fn(items) { assert list.reverse(list.reverse(items)) == items },
-)
-```
-
 ### Removed
 
 - Breaking: the modules `metamon/config`, `metamon/relation`, `metamon/transform`, `metamon/transform/list`, `metamon/transform/string`, `metamon/transform/dict`, `metamon/coverage`, `metamon/annotate`, `metamon/diff`, `metamon/stateful`, `metamon/command` and `metamon/generator/{range,seed,tree,shrink,edges}`.
