@@ -163,29 +163,16 @@ pub fn run_forall_morph_n(
       )
     _ -> Nil
   }
-  reset_state()
-  case
-    iterate_inputs(cfg, gen, fn(input, source, run_index) {
-      let outputs = compute_n_outputs(transforms, f, input)
-      case rel.holds(outputs) {
-        True -> Continue
-        False ->
-          Stop(morph_n_failure(
-            cfg,
-            test_name,
-            transforms,
-            rel,
-            run_index,
-            input,
-            source,
-            outputs,
-          ))
-      }
-    })
-  {
-    Done -> coverage_outcome(test_name, Some(rel.name)) |> finish
-    Halted(text) -> panic_with(text)
-  }
+  let check =
+    Check(
+      regression_key: rel.name,
+      coverage_name: Some(rel.name),
+      holds: fn(input) { rel.holds(compute_n_outputs(transforms, f, input)) },
+      report: fn(failure) {
+        morph_n_failure(cfg, test_name, transforms, rel, f, failure)
+      },
+    )
+  run_check(cfg, test_name, gen, check) |> finish
 }
 
 fn compute_n_outputs(
@@ -204,11 +191,10 @@ fn morph_n_failure(
   test_name: String,
   transforms: List(Transform(a)),
   rel: relation.RelationN(b),
-  run_index: Int,
-  input: a,
-  source: InputSource,
-  outputs: List(b),
+  f: fn(a) -> b,
+  failure: Failure(a),
 ) -> String {
+  let outputs = compute_n_outputs(transforms, f, failure.input)
   let transform_names =
     list.map(transforms, fn(t: Transform(a)) { t.name })
     |> string.join(", ")
@@ -228,11 +214,17 @@ fn morph_n_failure(
       seed_module.original_input(config.seed(cfg)),
     ),
     "\n  runs:        ",
-    int.to_string(run_index),
+    int.to_string(failure.run_index),
     " / ",
     int.to_string(total_runs(cfg)),
+    "\n  shrinks:     ",
+    int.to_string(failure.shrinks),
+    case failure.capped {
+      True -> "+ (limit reached)"
+      False -> ""
+    },
     "\n  source:      ",
-    case source {
+    case failure.source {
       EdgeSource(i) -> "edge(" <> int.to_string(i) <> ")"
       RandomSource(s, sz) ->
         "random(seed="
@@ -244,7 +236,7 @@ fn morph_n_failure(
     "\n  transforms:  ",
     transform_names,
     "\n  source input:\n    ",
-    string.inspect(input),
+    string.inspect(failure.input),
     "\n  outputs (source first, then each follow-up):\n",
     outputs_rendered,
   ])
@@ -269,17 +261,9 @@ pub fn run_forall_morphs(
   }
   let collected =
     list.fold(specs, [], fn(reports, spec) {
-      reset_state()
-      let check = morph_check(cfg, test_name, spec, f)
-      let outcome =
-        iterate_inputs(cfg, gen, fn(input, source, run_index) {
-          case check.holds(input) {
-            True -> Continue
-            False ->
-              Stop(shrunk_failure(cfg, gen, check, input, source, run_index))
-          }
-        })
-      case outcome {
+      case
+        run_check(cfg, test_name, gen, morph_check(cfg, test_name, spec, f))
+      {
         Done -> reports
         Halted(text) -> [text, ..reports]
       }
