@@ -1,6 +1,7 @@
 //// The coverage percentage is hits over runs, however many coverage
 //// calls one run makes.
 
+import gleam/int
 import gleam/string
 import metamon
 import metamon/coverage
@@ -55,12 +56,14 @@ pub fn every_run_count_keeps_full_coverage_test() {
 }
 
 pub fn shortfall_reports_runs_as_the_denominator_test() {
+  count_reset()
   let #(panicked, text) =
     capture_panic(fn() {
       metamon.forall_with(
         metamon.default_config() |> metamon.with_runs_or_panic(40),
         generator.int(range.constant(0, 9)) |> generator.no_edges,
         fn(_) {
+          count_bump()
           coverage.classify("noise", True)
           coverage.cover(50.0, "never", False)
           True
@@ -68,7 +71,7 @@ pub fn shortfall_reports_runs_as_the_denominator_test() {
       )
     })
   assert panicked
-  assert string.contains(text, "hit 0/40 ")
+  assert string.contains(text, "hit 0/" <> int.to_string(count_get()) <> " ")
 }
 
 pub fn regression_replay_does_not_count_towards_coverage_test() {
@@ -79,18 +82,38 @@ pub fn regression_replay_does_not_count_towards_coverage_test() {
     |> metamon.with_runs_or_panic(10)
     |> metamon.with_regression_file_or_panic(tmp_path)
   let gen = generator.int(range.constant(0, 9)) |> generator.no_edges
+  // Count the runs (METAMON_RUNS_MULTIPLIER may scale them).
+  count_reset()
+  metamon.forall_with(cfg, gen, fn(_) {
+    count_bump()
+    True
+  })
+  let runs = count_get()
   // Record one entry with a failing run.
   let _ = capture_panic(fn() { metamon.forall_with(cfg, gen, fn(_) { False }) })
-  // The replayed entry runs the property once more, but only the ten
-  // runs count, so eleven hits are out of reach.
+  // The replayed entry runs the property once more, but only the runs
+  // count, so runs + 1 hits are out of reach.
   let #(panicked, text) =
     capture_panic(fn() {
       metamon.forall_with(cfg, gen, fn(_) {
-        coverage.cover_at_least(11, "hit", True)
+        coverage.cover_at_least(runs + 1, "hit", True)
         True
       })
     })
   let _ = simplifile.delete(tmp_path)
   assert panicked
-  assert string.contains(text, "hit 10/10 ")
+  let runs = int.to_string(runs)
+  assert string.contains(text, "hit " <> runs <> "/" <> runs <> " ")
 }
+
+@external(erlang, "metamon_env_test_ffi", "count_reset")
+@external(javascript, "./metamon_env_test_ffi.mjs", "count_reset")
+fn count_reset() -> Nil
+
+@external(erlang, "metamon_env_test_ffi", "count_bump")
+@external(javascript, "./metamon_env_test_ffi.mjs", "count_bump")
+fn count_bump() -> Nil
+
+@external(erlang, "metamon_env_test_ffi", "count_get")
+@external(javascript, "./metamon_env_test_ffi.mjs", "count_get")
+fn count_get() -> Int
