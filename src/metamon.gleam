@@ -174,7 +174,7 @@ pub fn forall_with(
   g: Generator(a),
   property: fn(a) -> Bool,
 ) -> Nil {
-  runner.run_forall(cfg, "forall", g, property)
+  runner.run_forall(cfg, "forall", "(plain property)", g, property)
 }
 
 /// Run a property whose predicate also exposes its intermediate value.
@@ -201,7 +201,7 @@ pub fn forall_observable_with(
   g: Generator(a),
   predicate: fn(a) -> #(b, Bool),
 ) -> Nil {
-  runner.run_forall(cfg, "forall_observable", g, fn(input) {
+  runner.run_forall(cfg, "forall_observable", "(plain property)", g, fn(input) {
     let #(observed, holds) = predicate(input)
     annotate.annotate_value("predicate value", observed)
     holds
@@ -390,12 +390,18 @@ pub fn forall_round_trip_with(
   encode encode: fn(a) -> b,
   decode decode: fn(b) -> Result(a, e),
 ) -> Nil {
-  runner.run_forall(cfg, "round_trip[" <> name <> "]", gen, fn(input) {
-    case decode(encode(input)) {
-      Ok(decoded) -> decoded == input
-      Error(_) -> False
-    }
-  })
+  runner.run_forall(
+    cfg,
+    "round_trip[" <> name <> "]",
+    "(plain property)",
+    gen,
+    fn(input) {
+      case decode(encode(input)) {
+        Ok(decoded) -> decoded == input
+        Error(_) -> False
+      }
+    },
+  )
 }
 
 /// Run a round-trip property where the encoder is partial: the
@@ -462,27 +468,33 @@ pub fn forall_round_trip_partial_with(
   encode encode: fn(a) -> Result(b, e_enc),
   decode decode: fn(b) -> Result(a, e_dec),
 ) -> Nil {
-  runner.run_forall(cfg, "round_trip[" <> name <> "]", gen, fn(input) {
-    case encode(input) {
-      // The encoder declared this input out of scope. Skip it: the
-      // property is vacuously true for inputs the codec does not
-      // accept. The cover_at_least(1, ...) requirement below ensures
-      // the runner panics with a "coverage shortfall" if every input
-      // is rejected, so a 100%-rejection generator does not silently
-      // pass.
-      Error(_) -> {
-        coverage.cover_at_least(1, "encoder_accepted", False)
-        True
-      }
-      Ok(encoded) -> {
-        coverage.cover_at_least(1, "encoder_accepted", True)
-        case decode(encoded) {
-          Ok(decoded) -> decoded == input
-          Error(_) -> False
+  runner.run_forall(
+    cfg,
+    "round_trip[" <> name <> "]",
+    "(plain property)",
+    gen,
+    fn(input) {
+      case encode(input) {
+        // The encoder declared this input out of scope. Skip it: the
+        // property is vacuously true for inputs the codec does not
+        // accept. The cover_at_least(1, ...) requirement below ensures
+        // the runner panics with a "coverage shortfall" if every input
+        // is rejected, so a 100%-rejection generator does not silently
+        // pass.
+        Error(_) -> {
+          coverage.cover_at_least(1, "encoder_accepted", False)
+          True
+        }
+        Ok(encoded) -> {
+          coverage.cover_at_least(1, "encoder_accepted", True)
+          case decode(encoded) {
+            Ok(decoded) -> decoded == input
+            Error(_) -> False
+          }
         }
       }
-    }
-  })
+    },
+  )
 }
 
 /// Run a round-trip property using a caller-supplied equality
@@ -539,10 +551,16 @@ pub fn forall_round_trip_under_with(
   decode decode: fn(b) -> Result(a, e),
   equality equality: Relation(a),
 ) -> Nil {
-  runner.run_forall(cfg, "round_trip[" <> name <> "]", gen, fn(input) {
-    case decode(encode(input)) {
-      Ok(decoded) -> equality.holds(decoded, input)
-      Error(_) -> False
-    }
-  })
+  runner.run_forall(
+    cfg,
+    "round_trip[" <> name <> "]",
+    "(plain property)",
+    gen,
+    fn(input) {
+      case decode(encode(input)) {
+        Ok(decoded) -> equality.holds(decoded, input)
+        Error(_) -> False
+      }
+    },
+  )
 }
