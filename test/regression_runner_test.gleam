@@ -200,3 +200,40 @@ pub fn regression_entries_share_one_header_test() {
   let _ = simplifile.delete(shared_path)
   Nil
 }
+
+pub fn future_schema_version_file_is_not_replayed_test() {
+  let entry =
+    regression.Entry(
+      mr_name: "(plain property)",
+      config_seed: 0,
+      run_index: 0,
+      size: 0,
+      edge_index: Some(0),
+      note: None,
+      recorded: "0",
+    )
+  let run = fn(version: String) {
+    cleanup()
+    let _ =
+      simplifile.write(
+        tmp_path,
+        "schema_version = " <> version <> "\n\n" <> regression.render(entry),
+      )
+    let #(panicked, text) =
+      capture_panic(fn() {
+        metamon.forall_with(
+          metamon.default_config()
+            |> metamon.with_regression_file_or_panic(tmp_path),
+          generator.int(range.constant(0, 9)),
+          fn(_) { False },
+        )
+      })
+    cleanup()
+    should.be_true(panicked)
+    string.contains(text, "regression replay")
+  }
+  // The current schema replays the entry; a newer one is skipped and
+  // the property fails on its own runs instead.
+  should.be_true(run("1"))
+  should.be_false(run("99"))
+}

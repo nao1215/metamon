@@ -33,7 +33,7 @@ import gleam/result
 import gleam/string
 
 /// Highest schema version this build can read and write.
-pub const current_schema_version: Int = 1
+const current_schema_version: Int = 1
 
 /// Reasons a regression file fails to parse: unknown version, or a
 /// malformed `schema_version` line. Per-block syntax errors are still
@@ -41,7 +41,7 @@ pub const current_schema_version: Int = 1
 /// human-edited content), but a forward-incompatible file is a hard
 /// stop because mis-replaying a future format is worse than skipping
 /// replay entirely.
-pub type ParseError {
+type ParseError {
   UnsupportedSchemaVersion(found: Int)
   MalformedSchemaVersion(line: String)
 }
@@ -101,7 +101,7 @@ pub fn render(entry: Entry) -> String {
 /// `schema_version` (e.g. a file written by a newer metamon) returns
 /// an error and the runner should skip replay. The legacy v0 shape
 /// (no `schema_version` line) is accepted for backward compatibility.
-pub fn parse_with_version(contents: String) -> Result(List(Entry), ParseError) {
+fn parse_with_version(contents: String) -> Result(List(Entry), ParseError) {
   use _ <- result.try(check_schema_version(contents))
   Ok(
     string.split(contents, "[[failures]]")

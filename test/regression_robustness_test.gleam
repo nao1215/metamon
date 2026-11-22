@@ -1,5 +1,4 @@
-//// Robustness tests for the `regression.parse` / `parse_with_version`
-//// path. (#84)
+//// Robustness tests for the `regression.parse` path. (#84)
 ////
 //// `with_regression_file` is metamon's only public surface that
 //// ingests user-controlled file content from outside the test process.
@@ -15,13 +14,9 @@
 ////
 //// - **Block-level malformed content**: silently skipped. The parser
 ////   is intentionally lenient because the file is human-edited.
-//// - **Unknown future `schema_version`**: `parse_with_version` returns
-////   `Error(UnsupportedSchemaVersion)`. The lenient `parse` wrapper
-////   downgrades this to `[]` so a stale file from a newer metamon
-////   does not abort the test run.
-//// - **Malformed `schema_version` line** (non-integer value):
-////   `Error(MalformedSchemaVersion)` from `parse_with_version`, `[]`
-////   from `parse`.
+//// - **Unknown future `schema_version`**: `parse` returns `[]` so a
+////   stale file from a newer metamon does not abort the test run.
+//// - **Malformed `schema_version` line** (non-integer value): `[]`.
 //// - **Legacy v0 files** (no header): accepted as-is for backward
 ////   compatibility.
 ////
@@ -56,15 +51,6 @@ pub fn parse_malformed_toml_returns_empty_test() {
   should.equal(parsed, [])
 }
 
-pub fn parse_with_version_malformed_toml_returns_ok_empty_test() {
-  // Without a schema_version line, the parser treats malformed
-  // content as a legacy v0 file and just produces no entries.
-  case regression.parse_with_version("this is not [valid toml ===") {
-    Ok(entries) -> should.equal(entries, [])
-    Error(_) -> should.fail()
-  }
-}
-
 // ---------- 2. Truncated file ----------
 
 pub fn parse_truncated_block_skips_partial_test() {
@@ -85,17 +71,6 @@ pub fn parse_truncated_block_skips_partial_test() {
 
 // ---------- 3. Unknown future schema_version ----------
 
-pub fn parse_with_version_rejects_future_schema_version_test() {
-  // A v2+ file is a forward-compatibility scenario: the file was
-  // written by a newer metamon, the user downgraded. `parse_with_version`
-  // must return an explicit error (not silently mis-parse forward-
-  // incompatible content).
-  case regression.parse_with_version("schema_version = 999\n" <> valid_block) {
-    Error(regression.UnsupportedSchemaVersion(999)) -> Nil
-    _ -> should.fail()
-  }
-}
-
 pub fn parse_lenient_skips_replay_on_future_schema_version_test() {
   // The lenient `parse` wrapper used by the runner downgrades the
   // schema-version error to an empty list so a stale checked-in
@@ -105,19 +80,6 @@ pub fn parse_lenient_skips_replay_on_future_schema_version_test() {
 }
 
 // ---------- 4. Malformed schema_version line ----------
-
-pub fn parse_with_version_rejects_non_integer_schema_version_test() {
-  // A user typo in the schema_version line (e.g. quoting it as a
-  // string) must surface as a structured MalformedSchemaVersion.
-  case
-    regression.parse_with_version(
-      "schema_version = \"not-a-number\"\n" <> valid_block,
-    )
-  {
-    Error(regression.MalformedSchemaVersion(_)) -> Nil
-    _ -> should.fail()
-  }
-}
 
 pub fn parse_lenient_skips_on_malformed_schema_version_test() {
   let parsed =
@@ -251,15 +213,13 @@ pub fn regression_parse_no_panic_under_unicode_fuzz_test() {
   )
 }
 
-pub fn regression_parse_with_version_no_panic_under_fuzz_test() {
-  // Same property for the strict variant. It returns
-  // `Result(List(Entry), ParseError)`; either outcome is fine.
+pub fn regression_parse_no_panic_under_long_ascii_fuzz_test() {
   metamon.forall_with(
     metamon.default_config()
       |> metamon.with_runs_or_panic(200),
     generator.string_printable_ascii(range.constant(0, 256)),
     fn(payload) {
-      let _ = regression.parse_with_version(payload)
+      let _ = regression.parse(payload)
       True
     },
   )
@@ -270,13 +230,6 @@ pub fn regression_parse_with_version_no_panic_under_fuzz_test() {
 pub fn parse_handles_empty_string_test() {
   let parsed = regression.parse("")
   should.equal(parsed, [])
-}
-
-pub fn parse_with_version_handles_empty_string_test() {
-  case regression.parse_with_version("") {
-    Ok(entries) -> should.equal(entries, [])
-    Error(_) -> should.fail()
-  }
 }
 
 // ---------- 10. Spot-check that valid inputs still parse ----------

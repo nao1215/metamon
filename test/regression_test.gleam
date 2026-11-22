@@ -1,4 +1,3 @@
-import gleam/int
 import gleam/option.{None, Some}
 import gleam/string
 import gleeunit/should
@@ -111,26 +110,6 @@ pub fn parse_accepts_v1_files_with_version_header_test() {
   }
 }
 
-pub fn parse_with_version_rejects_unknown_schema_version_test() {
-  // A future v99 file written by a newer metamon must be rejected
-  // by the current parser, not silently mis-parsed.
-  let raw = "schema_version = 99\n\n[[failures]]\nmr = \"future\"\n"
-  case regression.parse_with_version(raw) {
-    Ok(_) -> should.fail()
-    Error(regression.UnsupportedSchemaVersion(found)) -> should.equal(found, 99)
-    Error(_) -> should.fail()
-  }
-}
-
-pub fn parse_with_version_rejects_malformed_version_test() {
-  let raw = "schema_version = not_a_number\n\n[[failures]]\nmr = \"x\"\n"
-  case regression.parse_with_version(raw) {
-    Ok(_) -> should.fail()
-    Error(regression.MalformedSchemaVersion(_)) -> Nil
-    Error(_) -> should.fail()
-  }
-}
-
 pub fn parse_lenient_returns_empty_on_unknown_version_test() {
   // The lenient `parse` wrapper used by the runner returns [] (skip
   // replay) instead of bubbling the error so a stale checked-in
@@ -140,8 +119,5 @@ pub fn parse_lenient_returns_empty_on_unknown_version_test() {
 }
 
 pub fn version_header_exposes_current_value_test() {
-  should.equal(
-    regression.version_header(),
-    "schema_version = " <> int.to_string(regression.current_schema_version),
-  )
+  should.equal(regression.version_header(), "schema_version = 1")
 }
