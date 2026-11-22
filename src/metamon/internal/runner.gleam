@@ -223,15 +223,7 @@ fn morph_n_failure(
       False -> ""
     },
     "\n  source:      ",
-    case failure.source {
-      EdgeSource(i) -> "edge(" <> int.to_string(i) <> ")"
-      RandomSource(s, sz) ->
-        "random(seed="
-        <> int.to_string(s)
-        <> ", size="
-        <> int.to_string(sz)
-        <> ")"
-    },
+    report_module.format_source(failure.source),
     "\n  transforms:  ",
     transform_names,
     "\n  source input:\n    ",
@@ -354,7 +346,11 @@ fn run_random(
       let size = scaled_size(start_index, sizes.total, sizes.max)
       let value = generator.generate_sized(gen, here, size, sizes.max).value
       case
-        body(value, RandomSource(seed_module.state(here), size), start_index)
+        body(
+          value,
+          RandomSource(seed_module.state(here), size, sizes.max),
+          start_index,
+        )
       {
         Continue ->
           run_random(
@@ -416,7 +412,7 @@ fn run_check(
 ) -> Outcome {
   reset_state()
   let entries = load_regression_for(cfg, check.regression_key)
-  use <- and_then(replay_regression(cfg, gen, check, entries))
+  use <- and_then(replay_regression(gen, check, entries))
   // The replayed entries are not runs: start counting coverage afresh.
   reset_state()
   use <- and_then(
@@ -648,13 +644,13 @@ fn shrink_input(
 ) -> #(a, Int, Bool) {
   case source {
     EdgeSource(_) -> #(input, 0, False)
-    RandomSource(seed_value, size) -> {
+    RandomSource(seed_value, size, max_size) -> {
       let initial_tree =
         generator.generate_sized(
           gen,
           seed_module.seed(seed_value),
           size,
-          config.max_size(cfg),
+          max_size,
         )
       shrink_loop(initial_tree, fails, input, config.shrink_limit(cfg), 0)
     }
@@ -749,15 +745,19 @@ fn record_regression_for(
     Some(path) -> {
       let edge_index = case source {
         EdgeSource(i) -> Some(i)
-        RandomSource(_, _) -> None
+        RandomSource(..) -> None
       }
-      let #(seed_value, size) = case source {
-        EdgeSource(_) -> #(seed_module.state(config.seed(cfg)), 0)
-        RandomSource(s, sz) -> #(s, sz)
+      let #(seed_value, size, max_size) = case source {
+        EdgeSource(_) -> #(
+          seed_module.state(config.seed(cfg)),
+          0,
+          config.max_size(cfg),
+        )
+        RandomSource(s, sz, max) -> #(s, sz, max)
       }
       let run_index = case source {
         EdgeSource(i) -> i
-        RandomSource(_, _) -> 0
+        RandomSource(..) -> 0
       }
       let entry =
         regression.Entry(
@@ -765,6 +765,7 @@ fn record_regression_for(
           config_seed: seed_value,
           run_index: run_index,
           size: size,
+          max_size: max_size,
           edge_index: edge_index,
           note: Some(string.inspect(input)),
           recorded: int.to_string(now_microseconds()),
@@ -796,7 +797,6 @@ fn append_regression_entry(
 }
 
 fn replay_regression(
-  cfg: Config,
   gen: Generator(a),
   check: Check(a),
   entries: List(regression.Entry),
@@ -804,9 +804,9 @@ fn replay_regression(
   case entries {
     [] -> Done
     [entry, ..rest] -> {
-      let value = reproduce_entry_value(cfg, gen, entry)
+      let value = reproduce_entry_value(gen, entry)
       case check.holds(value) {
-        True -> replay_regression(cfg, gen, check, rest)
+        True -> replay_regression(gen, check, rest)
         False ->
           Halted(replay_failure_message(check.regression_key, entry, value))
       }
@@ -814,17 +814,13 @@ fn replay_regression(
   }
 }
 
-fn reproduce_entry_value(
-  cfg: Config,
-  gen: Generator(a),
-  entry: regression.Entry,
-) -> a {
+fn reproduce_entry_value(gen: Generator(a), entry: regression.Entry) -> a {
   let regenerate = fn() {
     generator.generate_sized(
       gen,
       seed_module.seed(entry.config_seed),
       entry.size,
-      config.max_size(cfg),
+      entry.max_size,
     ).value
   }
   case entry.edge_index {
@@ -860,6 +856,8 @@ fn replay_failure_message(
     int.to_string(entry.run_index),
     "\n  size:        ",
     int.to_string(entry.size),
+    "\n  max_size:    ",
+    int.to_string(entry.max_size),
     "\n  reproduced input:\n    ",
     string.inspect(value),
     case entry.note {

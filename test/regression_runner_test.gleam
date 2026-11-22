@@ -75,6 +75,7 @@ pub fn read_replays_existing_entry_test() {
       config_seed: 0,
       run_index: 0,
       size: 0,
+      max_size: 99,
       edge_index: Some(0),
       note: Some("from test"),
       recorded: "0",
@@ -193,7 +194,7 @@ pub fn regression_entries_share_one_header_test() {
   let assert Ok(content) = simplifile.read(shared_path)
   should.be_true(string.starts_with(
     content,
-    "schema_version = 1\n\n[[failures]]\n",
+    "schema_version = 2\n\n[[failures]]\n",
   ))
   should.equal(list.length(string.split(content, "schema_version")), 2)
   should.equal(list.length(regression.parse(content)), 2)
@@ -208,6 +209,7 @@ pub fn future_schema_version_file_is_not_replayed_test() {
       config_seed: 0,
       run_index: 0,
       size: 0,
+      max_size: 99,
       edge_index: Some(0),
       note: None,
       recorded: "0",
@@ -236,4 +238,40 @@ pub fn future_schema_version_file_is_not_replayed_test() {
   // the property fails on its own runs instead.
   should.be_true(run("1"))
   should.be_false(run("99"))
+}
+
+pub fn replay_uses_the_recorded_max_size_test() {
+  cleanup()
+  let gen = generator.int(range.linear(0, 1_000_000)) |> generator.no_edges
+  // Record a failure under max_size 30.
+  let #(panicked, _) =
+    capture_panic(fn() {
+      metamon.forall_with(
+        metamon.default_config()
+          |> metamon.with_seed(metamon.seed(5))
+          |> metamon.with_max_size_or_panic(30)
+          |> metamon.with_regression_file_or_panic(tmp_path),
+        gen,
+        fn(x) { x < 1000 },
+      )
+    })
+  should.be_true(panicked)
+  let assert Ok(content) = simplifile.read(tmp_path)
+  let assert [entry] = regression.parse(content)
+  let assert Some(recorded) = entry.note
+  // A later run with the default max_size must replay the same input.
+  let #(panicked, text) =
+    capture_panic(fn() {
+      metamon.forall_with(
+        metamon.default_config()
+          |> metamon.with_seed(metamon.seed(6))
+          |> metamon.with_regression_file_or_panic(tmp_path),
+        gen,
+        fn(x) { string.inspect(x) != recorded },
+      )
+    })
+  cleanup()
+  should.be_true(panicked)
+  should.be_true(string.contains(text, "regression replay"))
+  should.be_true(string.contains(text, "reproduced input:\n    " <> recorded))
 }

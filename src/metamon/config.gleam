@@ -91,7 +91,7 @@ pub fn with_max_edges(c: Config, n: Int) -> Result(Config, ConfigError) {
 /// Set a regression file path. The file is created on first failure
 /// and read on every subsequent run.
 ///
-/// File format (TOML-flavoured, schema version 1) is documented in
+/// File format (TOML-flavoured, schema version 2) is documented in
 /// `metamon/internal/regression`. A version mismatch (a file written
 /// by a newer metamon) makes the runner skip replay rather than
 /// silently mis-parse forward-incompatible content; legacy v0 files

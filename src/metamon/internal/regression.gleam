@@ -5,16 +5,17 @@
 //// Files are append-only from the runner's perspective; the user
 //// can manually delete or edit them.
 ////
-//// Schema (current version: 1):
+//// Schema (current version: 2):
 ////
 //// ```
-//// schema_version = 1
+//// schema_version = 2
 //// # optional comment lines and blank lines tolerated above [[failures]]
 //// [[failures]]
 //// mr          = "<test name or relation name>"
 //// config_seed = <integer (canonical 32-bit PRNG state)>
 //// run_index   = <integer>
 //// size        = <integer>
+//// max_size    = <integer (version 2; read as 99 when absent)>
 //// edge_index  = none | <integer>
 //// note        = "<rendered failing input, optional>"
 //// recorded    = "<microsecond timestamp>"
@@ -22,7 +23,7 @@
 ////
 //// Multiple `[[failures]]` blocks accumulate one per failure across
 //// runs. `schema_version` may be omitted on legacy v0 files; the
-//// parser accepts both. A future schema bump (v2+) will be rejected
+//// parser accepts v0, v1 and v2. A future schema bump (v3+) will be rejected
 //// here with a clear error so an outdated metamon downgrade does not
 //// silently mis-parse a forward-incompatible file.
 
@@ -33,7 +34,10 @@ import gleam/result
 import gleam/string
 
 /// Highest schema version this build can read and write.
-const current_schema_version: Int = 1
+const current_schema_version: Int = 2
+
+/// `max_size` of entries written before it was recorded (the default).
+const legacy_max_size: Int = 99
 
 /// Reasons a regression file fails to parse: unknown version, or a
 /// malformed `schema_version` line. Per-block syntax errors are still
@@ -54,6 +58,9 @@ pub type Entry {
     config_seed: Int,
     run_index: Int,
     size: Int,
+    /// The run's `max_size`; the same seed and size generate a
+    /// different value under another `max_size`.
+    max_size: Int,
     edge_index: Option(Int),
     note: Option(String),
     recorded: String,
@@ -83,6 +90,9 @@ pub fn render(entry: Entry) -> String {
     "\n",
     "size        = ",
     int.to_string(entry.size),
+    "\n",
+    "max_size    = ",
+    int.to_string(entry.max_size),
     "\n",
     edge_part,
     note_part,
@@ -133,7 +143,7 @@ fn check_schema_version(contents: String) -> Result(Nil, ParseError) {
     Some(raw) ->
       case parse_version_value(raw) {
         Ok(n) ->
-          case n == current_schema_version {
+          case n >= 1 && n <= current_schema_version {
             True -> Ok(Nil)
             False -> Error(UnsupportedSchemaVersion(found: n))
           }
@@ -207,11 +217,23 @@ fn build_entry(
         config_seed: seed_value,
         run_index: run_value,
         size: size_value,
+        max_size: lookup_max_size(pairs),
         edge_index: edge,
         note: lookup_note(pairs),
         recorded: strip_quotes(rec),
       ))
     _, _, _, _ -> Error(Nil)
+  }
+}
+
+fn lookup_max_size(pairs: List(#(String, String))) -> Int {
+  case list.key_find(pairs, "max_size") {
+    Ok(text) ->
+      case int.parse(text) {
+        Ok(n) if n > 0 -> n
+        _ -> legacy_max_size
+      }
+    Error(_) -> legacy_max_size
   }
 }
 

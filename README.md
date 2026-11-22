@@ -822,7 +822,7 @@ The panic message has these blocks; only the ones that apply appear:
 ```
 × metamorphic relation `<mr.name>` failed
   test:        <gleeunit test name>
-  source:      edge(<i>) | random(seed=<n>, size=<n>)
+  source:      edge(<i>) | random(seed=<n>, size=<n>, max_size=<n>)
   config seed: <integer>
   runs:        <i> / <total>
   shrinks:     <count> | <count>+ (limit reached)
