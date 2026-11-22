@@ -309,8 +309,10 @@ fn iterate_inputs(
       let remaining = run_total - edge_count
       case remaining <= 0 {
         True -> Done
-        False ->
-          run_random(cfg, gen, edge_count, remaining, config.seed(cfg), body)
+        False -> {
+          let sizes = Sizes(total: run_total, max: config.max_size(cfg))
+          run_random(gen, sizes, edge_count, remaining, config.seed(cfg), body)
+        }
       }
     }
   }
@@ -331,9 +333,15 @@ fn run_edges(
   }
 }
 
+/// The run count and `max_size`, read once per property: the run count
+/// reads `METAMON_RUNS_MULTIPLIER` from the environment.
+type Sizes {
+  Sizes(total: Int, max: Int)
+}
+
 fn run_random(
-  cfg: Config,
   gen: Generator(a),
+  sizes: Sizes,
   start_index: Int,
   remaining: Int,
   s: Seed,
@@ -343,14 +351,20 @@ fn run_random(
     True -> Done
     False -> {
       let #(here, rest_seed) = seed_module.split(s)
-      let size = scaled_size(start_index, total_runs(cfg), config.max_size(cfg))
-      let value =
-        generator.generate_sized(gen, here, size, config.max_size(cfg)).value
+      let size = scaled_size(start_index, sizes.total, sizes.max)
+      let value = generator.generate_sized(gen, here, size, sizes.max).value
       case
         body(value, RandomSource(seed_module.state(here), size), start_index)
       {
         Continue ->
-          run_random(cfg, gen, start_index + 1, remaining - 1, rest_seed, body)
+          run_random(
+            gen,
+            sizes,
+            start_index + 1,
+            remaining - 1,
+            rest_seed,
+            body,
+          )
         Stop(text) -> Halted(text)
       }
     }
