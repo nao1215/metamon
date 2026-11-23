@@ -80,8 +80,12 @@ pub fn no_shrinks_is_empty_test() {
   should.equal(to_list(tree.no_shrinks()), [])
 }
 
-pub fn from_list_keeps_the_given_order_test() {
-  let t = tree.from_list(5, [tree.singleton(1), tree.singleton(3)])
+pub fn lazy_shrinks_keeps_the_given_order_test() {
+  let t =
+    tree.Tree(
+      value: 5,
+      shrinks: tree.lazy_shrinks(fn() { [tree.singleton(1), tree.singleton(3)] }),
+    )
   should.equal(all_values(t), [5, 1, 3])
 }
 

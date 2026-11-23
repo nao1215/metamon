@@ -22,9 +22,10 @@
 //// }
 //// ```
 
+import gleam/dict.{type Dict}
 import gleam/float
 import gleam/list
-import gleam/option.{type Option, None}
+import gleam/option.{type Option, None, Some}
 import metamon/generator.{type Generator}
 import metamon/internal/annotate as annotation
 import metamon/internal/coverage
@@ -51,17 +52,21 @@ pub type Config {
     /// property; `Some(n)` replays the same inputs on every run.
     seed: Option(Int),
     /// The largest size given to the generators. Sizes grow from `0` on
-    /// the first run to `max_size` on the last.
+    /// the first random input, after the edge values, to `max_size` on the
+    /// last.
     max_size: Int,
     /// The largest number of shrink steps taken on one failure.
     shrink_limit: Int,
     /// The largest number of edge values tried before the random inputs.
     max_edges: Int,
     /// A file that records every failing input and replays the recorded
-    /// inputs first on the next run. `None` turns recording off. Use one
-    /// file per plain `forall` property: every plain property records
-    /// under the same key, so a shared file replays one property's
-    /// failures against another.
+    /// inputs first on the next run. `None` turns recording off. Several
+    /// properties can share a file: an entry is replayed only when the
+    /// generator reproduces the input it recorded, compared as rendered by
+    /// `string.inspect`, so an entry of another property, or of a generator
+    /// that has since changed, is skipped. Floats render differently on
+    /// Erlang and JavaScript, so a file recorded on one target may skip
+    /// such entries on the other.
     regression_file: Option(String),
     /// The format of the failure report.
     output: Output,
@@ -131,11 +136,12 @@ pub type Morph(a, b) {
   )
 }
 
-/// Run `property` on many generated inputs. The property fails when it
+/// Run `property` on many generated inputs: the edge values of the
+/// generator first, then random inputs. The property fails when it
 /// panics: a failing `assert` or `let assert`, a `panic`, or an Erlang
-/// error or JavaScript exception. On failure the input is shrunk to a
-/// smaller one that still panics, and the runner panics with a report of
-/// that input and its panic message.
+/// error or JavaScript exception. On failure the input, an edge value
+/// included, is shrunk to a smaller one that still panics, and the runner
+/// panics with a report of that input and its panic message.
 ///
 /// ```gleam
 /// metamon.forall(generator.int(generator.range(from: -100, to: 100)), fn(n) {
@@ -378,7 +384,7 @@ pub fn equal() -> Relation(a) {
 }
 
 /// Return the relation that holds when two floats differ by at most
-/// `epsilon`.
+/// `epsilon`. Equal values, infinities included, always hold.
 ///
 /// ## Panics
 ///
@@ -392,14 +398,21 @@ pub fn approximately(within epsilon: Float) -> Relation(Float) {
     True ->
       Relation(
         name: "approximately(" <> float.to_string(epsilon) <> ")",
-        holds: fn(left, right) {
-          let difference = case left >=. right {
-            True -> left -. right
-            False -> right -. left
-          }
-          difference <=. epsilon
-        },
+        holds: fn(left, right) { left == right || within(left, right, epsilon) },
       )
+  }
+}
+
+fn within(left: Float, right: Float, epsilon: Float) -> Bool {
+  let #(high, low) = case left >=. right {
+    True -> #(left, right)
+    False -> #(right, left)
+  }
+  case low <. 0.0 && high >=. 0.0 {
+    // `high - low` can be beyond the largest float, which raises badarith
+    // on Erlang; `epsilon + low` cannot.
+    True -> high <=. epsilon +. low
+    False -> high -. low <=. epsilon
   }
 }
 
@@ -421,28 +434,29 @@ pub fn permutation_of() -> Relation(List(a)) {
   Relation(name: "permutation_of", holds: is_permutation)
 }
 
+// Counts the elements of `left` and takes `right` away from the counts, so
+// the check is linear instead of searching `right` once per element.
 fn is_permutation(left: List(a), right: List(a)) -> Bool {
-  list.length(left) == list.length(right) && remove_each(left, right) == []
+  let counts =
+    list.fold(left, dict.new(), fn(counts, item) {
+      dict.upsert(counts, item, fn(count) {
+        case count {
+          Some(count) -> count + 1
+          None -> 1
+        }
+      })
+    })
+  list.length(left) == list.length(right) && take_away(right, counts)
 }
 
-/// `remaining` with one occurrence of every element of `to_remove`
-/// taken out, or a non-empty list as soon as an element is missing.
-fn remove_each(to_remove: List(a), remaining: List(a)) -> List(a) {
-  case to_remove {
-    [] -> remaining
-    [first, ..rest] ->
-      case remove_one(first, remaining, []) {
-        Ok(remaining_after) -> remove_each(rest, remaining_after)
-        Error(Nil) -> [first]
-      }
-  }
-}
-
-fn remove_one(target: a, items: List(a), acc: List(a)) -> Result(List(a), Nil) {
+fn take_away(items: List(a), counts: Dict(a, Int)) -> Bool {
   case items {
-    [] -> Error(Nil)
-    [first, ..rest] if first == target ->
-      Ok(list.append(list.reverse(acc), rest))
-    [first, ..rest] -> remove_one(target, rest, [first, ..acc])
+    [] -> True
+    [first, ..rest] ->
+      case dict.get(counts, first) {
+        Ok(count) if count > 0 ->
+          take_away(rest, dict.insert(counts, first, count - 1))
+        _ -> False
+      }
   }
 }

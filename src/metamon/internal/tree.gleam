@@ -122,11 +122,6 @@ pub fn unfold(value: a, expand: fn(a) -> List(a)) -> Tree(a) {
   )
 }
 
-/// Build a tree from a value and a pre-computed list of sub-trees.
-pub fn from_list(value: a, shrinks: List(Tree(a))) -> Tree(a) {
-  Tree(value: value, shrinks: shrinks_from_list(shrinks))
-}
-
 /// Map a function over every value in the tree, preserving the shrink
 /// structure.
 pub fn map(tree: Tree(a), f: fn(a) -> b) -> Tree(b) {

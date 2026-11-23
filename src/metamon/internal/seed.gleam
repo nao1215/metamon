@@ -34,15 +34,14 @@ pub opaque type Seed {
 
 /// Construct a seed from an integer.
 ///
-/// The integer is masked to a 32-bit non-negative window so the
-/// stream stays target-portable. A masked-to-zero value is silently
-/// replaced with `0xDEADBEEF` because the xorshift family has `0` as
-/// a fixed point — emitting it would degenerate the stream.
-///
-/// Both normalisation steps mean `seed(0)`, `seed(0x100000000)` (= 2^32),
-/// and any other `value` whose 32-bit-masked form is `0` collapse to
-/// the same canonical state. Failure reports annotate the canonical
-/// state with the original input when normalisation kicked in (see
+/// The 32-bit chunks of the magnitude are folded together with xor, and
+/// a negative value flips the top bit, so the stream stays
+/// target-portable while `seed(-n)` and `seed(n + 2^32)` differ from
+/// `seed(n)`. Distinct integers can still fold to the same state, such as
+/// `seed(0x100000000)` and `seed(1)`. A fold of `0` is replaced with
+/// `0xDEADBEEF` because the xorshift family has `0` as a fixed point, so
+/// `seed(0)` and `seed(0xDEADBEEF)` are the same. Failure reports annotate
+/// the canonical state with the original input when they differ (see
 /// `original_input/1`).
 pub fn seed(value: Int) -> Seed {
   Seed(state: normalise(value), original_input: Some(value))
@@ -82,6 +81,13 @@ fn next_int(s: Seed) -> #(Int, Seed) {
 /// If `lo > hi` the bounds are swapped. If `lo == hi` the bound is
 /// returned without consuming randomness (the seed is still advanced
 /// for determinism).
+///
+/// A span of up to 2^16 values reduces one 32-bit draw, which is uniform
+/// to within 1 part in 65536. A wider span draws 53 bits and rejects the
+/// draws past the largest multiple of the span, so every value is equally
+/// likely and both targets compute the same value exactly. A span beyond
+/// 2^53 is halved by a fair coin until it fits, which keeps every value
+/// exact on JavaScript within the safe integers.
 pub fn next_int_in(s: Seed, lo: Int, hi: Int) -> #(Int, Seed) {
   let #(low, high) = case lo > hi {
     True -> #(hi, lo)
@@ -93,10 +99,54 @@ pub fn next_int_in(s: Seed, lo: Int, hi: Int) -> #(Int, Seed) {
       #(low, s2)
     }
     False -> {
-      let #(raw, s2) = next_int(s)
       let span = high - low + 1
-      #(low + raw % span, s2)
+      case span <= one_word_span, span - 1 <= max_safe_integer {
+        True, _ -> {
+          let #(raw, s2) = next_int(s)
+          #(low + raw % span, s2)
+        }
+        False, True -> {
+          let #(offset, s2) = uniform_below(s, span)
+          #(low + offset, s2)
+        }
+        False, False -> halve(s, low, high, span)
+      }
     }
+  }
+}
+
+/// The widest span reduced from a single 32-bit draw.
+const one_word_span: Int = 0x10000
+
+/// 2^53 - 1, the largest integer JavaScript holds exactly.
+const max_safe_integer: Int = 9_007_199_254_740_991
+
+/// A 53-bit draw: 21 bits of one word above the 32 bits of the next.
+fn draw_53_bits(s: Seed) -> #(Int, Seed) {
+  let #(high, s1) = next_int(s)
+  let #(low, s2) = next_int(s1)
+  #(high % 0x200000 * 0x100000000 + low, s2)
+}
+
+/// A value in `[0, span)` for `span <= 2^53`, by rejection: draws at or past
+/// the largest multiple of `span` below 2^53 are drawn again.
+fn uniform_below(s: Seed, span: Int) -> #(Int, Seed) {
+  let limit = max_safe_integer - { max_safe_integer % span + 1 } % span
+  let #(raw, s2) = draw_53_bits(s)
+  case raw <= limit {
+    True -> #(raw % span, s2)
+    False -> uniform_below(s2, span)
+  }
+}
+
+// A span beyond 2^53: pick the lower or the upper half with a fair coin
+// and draw within it. The halves differ in size by at most one value.
+fn halve(s: Seed, low: Int, high: Int, span: Int) -> #(Int, Seed) {
+  let middle = low + span / 2
+  let #(coin, s2) = next_int(s)
+  case coin % 2 {
+    0 -> next_int_in(s2, low, middle - 1)
+    _ -> next_int_in(s2, middle, high)
   }
 }
 
@@ -138,15 +188,28 @@ fn step(state: Int) -> Int {
   int.bitwise_and(after_third_shift, mask_32)
 }
 
+// Every 32-bit chunk of the magnitude is folded in, and a negative value
+// flips the top bit, so `seed(-n)` and `seed(n + 2^32)` differ from
+// `seed(n)`. A fold of 0 is replaced by the default state.
 fn normalise(value: Int) -> Int {
-  let positive = case value < 0 {
-    True -> 0 - value
-    False -> value
+  let folded = case value < 0 {
+    True -> int.bitwise_exclusive_or(fold_chunks(0 - value, 0), 0x80000000)
+    False -> fold_chunks(value, 0)
   }
-  let masked = int.bitwise_and(positive, mask_32)
-  case masked {
+  case folded {
     0 -> default_state
     n -> n
+  }
+}
+
+fn fold_chunks(value: Int, acc: Int) -> Int {
+  case value {
+    0 -> acc
+    _ ->
+      fold_chunks(
+        value / 0x100000000,
+        int.bitwise_exclusive_or(acc, value % 0x100000000),
+      )
   }
 }
 

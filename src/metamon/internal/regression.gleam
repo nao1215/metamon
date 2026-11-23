@@ -267,17 +267,36 @@ fn parse_edge(value: String) -> Result(Option(Int), Nil) {
   }
 }
 
+/// The text of a quoted value, with `\\` and `\"` read back. Any other
+/// backslash is kept, so files written before backslashes were escaped
+/// still read the same.
 fn strip_quotes(value: String) -> String {
   case string.starts_with(value, "\""), string.ends_with(value, "\"") {
     True, True ->
       value
       |> string.drop_start(1)
       |> string.drop_end(1)
+      |> string.to_graphemes
+      |> unescape([])
     _, _ -> value
   }
 }
 
+fn unescape(graphemes: List(String), acc: List(String)) -> String {
+  case graphemes {
+    [] -> string.concat(list.reverse(acc))
+    ["\\", "\\", ..rest] -> unescape(rest, ["\\", ..acc])
+    ["\\", "\"", ..rest] -> unescape(rest, ["\"", ..acc])
+    [first, ..rest] -> unescape(rest, [first, ..acc])
+  }
+}
+
+/// A TOML basic string: quotes around the value, with backslashes and
+/// quotes escaped.
 fn escape_string(value: String) -> String {
-  // Minimal: enclose in double quotes, escape internal double quotes.
-  "\"" <> string.replace(value, "\"", "\\\"") <> "\""
+  let escaped =
+    value
+    |> string.replace("\\", "\\\\")
+    |> string.replace("\"", "\\\"")
+  "\"" <> escaped <> "\""
 }

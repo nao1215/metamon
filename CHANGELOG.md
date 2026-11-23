@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- A failing edge value shrinks like a random input. The built-in edge values of every generator carry their shrink trees, so `int(range(from: 0, to: 100))` with `assert n < 50` reports `50` instead of the edge `100`. Values added with `with_examples` are still reported as they are.
+- `float(from:, to:)` draws 53-bit fractions instead of one of a million steps, and shrinks toward 0.0 (or the lower bound) and whole numbers instead of toward the bounds, so `assert x <. 500.0` reports `500.0` instead of `1000.0`.
+- `character(of: Unicode)` shrinks toward U+0000 across the whole set; a value above the surrogates used to shrink only to U+E000. `bool()` shrinks `True` to `False`, and `option_of` shrinks `Some(x)` to `None` before shrinking `x`.
+- Sizes grow from 0 on the first random input, after the edge values. With the 16 default edge values the first random input used to get size 16.
+- Regression entries are replayed only when the generator reproduces the recorded input, so plain `forall` properties can share a regression file, and entries recorded by an older generator are skipped instead of replaying a different input.
+- `Config.seed`: `Some(-n)` and `Some(n + 2^32)` no longer give the same inputs as `Some(n)`.
+- A fixed seed gives other inputs than in 0.14.0 for `float`, for `int` ranges wider than 65,536 values, and for sized generators that have edge values. Regression entries recorded with 0.14.0 that no longer reproduce are skipped.
+
+### Fixed
+
+- `int` ranges wider than 2^32 values cover the whole range. `range(from: 0, to: 1_000_000_000_000)` stayed below 4,294,967,296, and the safe-integer range produced no positive value. Ranges wider than 2^53 values stay exact on JavaScript within the safe integers. Ranges wider than 65,536 values are no longer biased toward their lower part.
+- `float(from: -1.7e308, to: 1.7e308)` no longer crashes on Erlang with `badarith` (or overflows to Infinity on JavaScript).
+- `approximately` no longer raises `badarith` on Erlang when the difference of the two floats is beyond the largest float, and holds for equal infinities.
+- `permutation_of` runs in linear time.
+- Regression files escape backslashes as TOML requires, so a recorded input that contains a backslash, such as a string, reads back unchanged.
+
 ## [0.14.0] - 2026-11-22
 
 ### Changed

@@ -61,11 +61,11 @@ pub fn seed_negative_one_is_non_zero_test() {
   should.not_equal(seed.state(seed.seed(-1)), 0)
 }
 
-pub fn seed_overflow_collapses_to_default_state_test() {
-  // 0x100000000 (= 2^32) masks to 0, which the rerouting then maps to
-  // the default. seed(0) and seed(2^32) thus exercise the same stream.
-  should.equal(seed.state(seed.seed(0x100000000)), default_state)
-  should.equal(seed.state(seed.seed(0x100000000)), seed.state(seed.seed(0)))
+pub fn seed_overflow_folds_the_high_bits_test() {
+  // 0x100000000 (= 2^32) used to mask to 0 and collapse into the
+  // default state, the same stream as seed(0).
+  should.not_equal(seed.state(seed.seed(0x100000000)), default_state)
+  should.not_equal(seed.state(seed.seed(0x100000000)), seed.state(seed.seed(0)))
 }
 
 pub fn original_input_records_user_value_test() {
@@ -98,4 +98,13 @@ pub fn long_run_distribution_is_spread_test() {
     |> fn(pair) { pair.1 }
   let distinct = values |> set.from_list() |> set.size()
   should.be_true(distinct >= 50)
+}
+
+pub fn a_negative_seed_differs_from_its_absolute_value_test() {
+  should.not_equal(seed.state(seed.seed(-5)), seed.state(seed.seed(5)))
+  should.not_equal(seed.state(seed.seed(-1)), seed.state(seed.seed(1)))
+}
+
+pub fn seeds_beyond_32_bits_keep_their_high_bits_test() {
+  should.not_equal(seed.state(seed.seed(0x100000005)), seed.state(seed.seed(5)))
 }

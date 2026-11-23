@@ -43,10 +43,10 @@ When a property fails, metamon shrinks the input and panics with a report. For `
 ```text
 × property failed
   test:        forall
-  source:      random(seed=4268083006, size=1, max_size=99)
+  source:      edge(2)
   config seed: 42
-  runs:        1 / 100
-  shrinks:     10
+  runs:        2 / 100
+  shrinks:     2
 
   source input  (shrunk):
     [0, 1]

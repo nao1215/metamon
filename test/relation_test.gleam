@@ -92,3 +92,22 @@ pub fn approximately_rejects_nan_test() {
     }
   }
 }
+
+pub fn approximately_does_not_overflow_on_opposite_signs_test() {
+  // The difference of 1e308 and -1e308 is beyond the largest float:
+  // Erlang raised badarith and JavaScript computed Infinity.
+  let r = metamon.approximately(within: 1.0)
+  should.be_false(r.holds(1.0e308, -1.0e308))
+  should.be_false(r.holds(-1.0e308, 1.0e308))
+  should.be_true(r.holds(-0.5, 0.25))
+  let wide = metamon.approximately(within: 1.7e308)
+  should.be_true(wide.holds(8.0e307, -8.0e307))
+}
+
+pub fn approximately_holds_for_equal_infinities_test() {
+  // Python's math.isclose(inf, inf) is True; inf - inf is NaN.
+  let r = metamon.approximately(within: 0.5)
+  let infinity = float_special.positive_infinity()
+  should.be_true(r.holds(infinity, infinity))
+  should.be_false(r.holds(infinity, 1.0))
+}
