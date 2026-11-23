@@ -62,8 +62,11 @@ pub type Config {
     /// A file that records every failing input and replays the recorded
     /// inputs first on the next run. `None` turns recording off. Several
     /// properties can share a file: an entry is replayed only when the
-    /// generator reproduces the input it recorded, so an entry of another
-    /// property, or of a generator that has since changed, is skipped.
+    /// generator reproduces the input it recorded, compared as rendered by
+    /// `string.inspect`, so an entry of another property, or of a generator
+    /// that has since changed, is skipped. Floats render differently on
+    /// Erlang and JavaScript, so a file recorded on one target may skip
+    /// such entries on the other.
     regression_file: Option(String),
     /// The format of the failure report.
     output: Output,

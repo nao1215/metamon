@@ -67,3 +67,17 @@ pub fn floats_are_not_limited_to_a_million_steps_test() {
     })
   assert off_grid > 150
 }
+
+pub fn the_safe_integer_range_produces_even_and_odd_values_test() {
+  // On JavaScript, accumulating 32-bit draws past 2^53 rounded every
+  // value onto a coarse grid of odd numbers.
+  let values =
+    generator.int(generator.range(
+      from: -9_007_199_254_740_991,
+      to: 9_007_199_254_740_991,
+    ))
+    |> generator.sample(count: 1000, seed: 2)
+  let even = list.count(values, int.is_even)
+  assert even > 400 && even < 600
+  assert list.length(list.unique(values)) > 990
+}

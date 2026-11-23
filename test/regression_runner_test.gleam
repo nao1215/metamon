@@ -354,3 +354,39 @@ pub fn plain_properties_sharing_a_file_replay_only_matching_entries_test() {
   let _ = simplifile.delete(plain_path)
   Nil
 }
+
+const string_path: String = "/tmp/metamon_regression_string_test.toml"
+
+pub fn a_recorded_string_input_is_replayed_test() {
+  // The note of a string input holds quotes and backslashes, which the
+  // file escapes; replay compares the note read back with the input.
+  let _ = simplifile.delete(string_path)
+  let config =
+    metamon.Config(
+      ..metamon.default_config(),
+      seed: Some(42),
+      regression_file: Some(string_path),
+    )
+  let strings =
+    generator.string(of: generator.Ascii, length: generator.range(1, 8))
+    |> generator.no_edges
+  let property = fn(text) { should.be_false(string.contains(text, "\\")) }
+  let quoted = fn(text) {
+    should.be_false(string.contains(text, "\"") || string.contains(text, "a"))
+  }
+  list.each([property, quoted], fn(check) {
+    let _ = simplifile.delete(string_path)
+    let #(panicked, _) =
+      test_helpers.capture_panic(fn() {
+        metamon.forall_with(config, strings, check)
+      })
+    should.be_true(panicked)
+    let #(_, text) =
+      test_helpers.capture_panic(fn() {
+        metamon.forall_with(config, strings, check)
+      })
+    should.be_true(string.contains(text, "regression replay"))
+  })
+  let _ = simplifile.delete(string_path)
+  Nil
+}

@@ -3,7 +3,6 @@
 //// list of "smaller" candidates that the runner will explore in order.
 
 import gleam/float
-import gleam/int
 import gleam/list
 
 /// Halve `value` toward `origin`. Returns the empty list when no
@@ -34,8 +33,8 @@ fn compute_halves(n: Int) -> List(Int) {
 }
 
 /// Floats closer to `origin` than `value` and inside `[low, high]`: the
-/// origin, the whole number `value` truncates to, then `value` minus a
-/// half, a quarter and so on of its distance to the origin. Repeating it
+/// origin, the whole number next to `value` on the side of the origin, then
+/// `value` minus a half, a quarter and so on of its distance to the origin. Repeating it
 /// on the first failing candidate walks to the boundary of the failure,
 /// such as `500.0` for `x <. 500.0`.
 pub fn float_toward(
@@ -44,13 +43,15 @@ pub fn float_toward(
   low: Float,
   high: Float,
 ) -> List(Float) {
-  case value == origin {
+  let distance = value -. origin
+  // Compared as numbers: on Erlang -0.0 is not `==` to 0.0.
+  case is_zero(distance) {
     True -> []
     False -> {
-      let distance = value -. origin
       // Beyond 2^53 every float is already a whole number.
       let whole = case float.absolute_value(value) <. 9.0e15 {
-        True -> [int.to_float(float.truncate(value))]
+        True if distance >. 0.0 -> [float.floor(value)]
+        True -> [float.ceiling(value)]
         False -> []
       }
       [origin, ..list.append(whole, float_halves(value, distance /. 2.0, []))]
@@ -67,8 +68,12 @@ pub fn float_toward(
 
 fn float_halves(value: Float, step: Float, acc: List(Float)) -> List(Float) {
   let candidate = value -. step
-  case candidate == value {
+  case is_zero(candidate -. value) {
     True -> list.reverse(acc)
     False -> float_halves(value, step /. 2.0, [candidate, ..acc])
   }
+}
+
+fn is_zero(x: Float) -> Bool {
+  x >=. 0.0 && x <=. 0.0
 }

@@ -18,10 +18,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- `int` ranges wider than 2^32 values cover the whole range. `range(from: 0, to: 1_000_000_000_000)` stayed below 4,294,967,296, and the safe-integer range produced no positive value. Ranges wider than 65,536 values are no longer biased toward their lower part.
+- `int` ranges wider than 2^32 values cover the whole range. `range(from: 0, to: 1_000_000_000_000)` stayed below 4,294,967,296, and the safe-integer range produced no positive value. Ranges wider than 2^53 values stay exact on JavaScript within the safe integers. Ranges wider than 65,536 values are no longer biased toward their lower part.
 - `float(from: -1.7e308, to: 1.7e308)` no longer crashes on Erlang with `badarith` (or overflows to Infinity on JavaScript).
 - `approximately` no longer raises `badarith` on Erlang when the difference of the two floats is beyond the largest float, and holds for equal infinities.
 - `permutation_of` runs in linear time.
+- Regression files escape backslashes as TOML requires, so a recorded input that contains a backslash, such as a string, reads back unchanged.
 
 ## [0.14.0] - 2026-11-22
 

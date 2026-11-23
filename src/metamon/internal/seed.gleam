@@ -34,15 +34,14 @@ pub opaque type Seed {
 
 /// Construct a seed from an integer.
 ///
-/// The integer is masked to a 32-bit non-negative window so the
-/// stream stays target-portable. A masked-to-zero value is silently
-/// replaced with `0xDEADBEEF` because the xorshift family has `0` as
-/// a fixed point — emitting it would degenerate the stream.
-///
-/// Both normalisation steps mean `seed(0)`, `seed(0x100000000)` (= 2^32),
-/// and any other `value` whose 32-bit-masked form is `0` collapse to
-/// the same canonical state. Failure reports annotate the canonical
-/// state with the original input when normalisation kicked in (see
+/// The 32-bit chunks of the magnitude are folded together with xor, and
+/// a negative value flips the top bit, so the stream stays
+/// target-portable while `seed(-n)` and `seed(n + 2^32)` differ from
+/// `seed(n)`. Distinct integers can still fold to the same state, such as
+/// `seed(0x100000000)` and `seed(1)`. A fold of `0` is replaced with
+/// `0xDEADBEEF` because the xorshift family has `0` as a fixed point, so
+/// `seed(0)` and `seed(0xDEADBEEF)` are the same. Failure reports annotate
+/// the canonical state with the original input when they differ (see
 /// `original_input/1`).
 pub fn seed(value: Int) -> Seed {
   Seed(state: normalise(value), original_input: Some(value))
@@ -86,9 +85,9 @@ fn next_int(s: Seed) -> #(Int, Seed) {
 /// A span of up to 2^16 values reduces one 32-bit draw, which is uniform
 /// to within 1 part in 65536. A wider span draws 53 bits and rejects the
 /// draws past the largest multiple of the span, so every value is equally
-/// likely and both targets compute the same value exactly. Spans beyond
-/// 2^53, which only Erlang holds exactly, add 32-bit draws until there
-/// are 32 bits to spare.
+/// likely and both targets compute the same value exactly. A span beyond
+/// 2^53 is halved by a fair coin until it fits, which keeps every value
+/// exact on JavaScript within the safe integers.
 pub fn next_int_in(s: Seed, lo: Int, hi: Int) -> #(Int, Seed) {
   let #(low, high) = case lo > hi {
     True -> #(hi, lo)
@@ -101,18 +100,17 @@ pub fn next_int_in(s: Seed, lo: Int, hi: Int) -> #(Int, Seed) {
     }
     False -> {
       let span = high - low + 1
-      let #(offset, s2) = case span <= one_word_span {
-        True -> {
+      case span <= one_word_span, span - 1 <= max_safe_integer {
+        True, _ -> {
           let #(raw, s2) = next_int(s)
-          #(raw % span, s2)
+          #(low + raw % span, s2)
         }
-        False ->
-          case span - 1 <= max_safe_integer {
-            True -> uniform_below(s, span)
-            False -> wide_draw(s, span, 0, 1)
-          }
+        False, True -> {
+          let #(offset, s2) = uniform_below(s, span)
+          #(low + offset, s2)
+        }
+        False, False -> halve(s, low, high, span)
       }
-      #(low + offset, s2)
     }
   }
 }
@@ -141,13 +139,14 @@ fn uniform_below(s: Seed, span: Int) -> #(Int, Seed) {
   }
 }
 
-fn wide_draw(s: Seed, span: Int, acc: Int, bound: Int) -> #(Int, Seed) {
-  case bound / 0x100000000 >= span {
-    True -> #(acc % span, s)
-    False -> {
-      let #(word, s2) = next_int(s)
-      wide_draw(s2, span, acc * 0x100000000 + word, bound * 0x100000000)
-    }
+// A span beyond 2^53: pick the lower or the upper half with a fair coin
+// and draw within it. The halves differ in size by at most one value.
+fn halve(s: Seed, low: Int, high: Int, span: Int) -> #(Int, Seed) {
+  let middle = low + span / 2
+  let #(coin, s2) = next_int(s)
+  case coin % 2 {
+    0 -> next_int_in(s2, low, middle - 1)
+    _ -> next_int_in(s2, middle, high)
   }
 }
 

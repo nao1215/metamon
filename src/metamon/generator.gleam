@@ -84,14 +84,15 @@ pub fn generate(
   generator.run(seed, size, max_size)
 }
 
-/// The edge values of a generator.
+/// The edge values of a generator. Used by the runner to try them and to
+/// replay regression entries recorded for them.
 @internal
 pub fn edges_of(generator: Generator(a)) -> List(a) {
   list.map(generator.edges, fn(edge) { edge.value })
 }
 
 /// The edge values of a generator with their shrink trees. Used by the
-/// runner.
+/// runner to shrink a failing edge value.
 @internal
 pub fn edge_trees(generator: Generator(a)) -> List(Tree(a)) {
   generator.edges

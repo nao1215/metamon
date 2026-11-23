@@ -154,3 +154,25 @@ pub fn an_option_shrinks_to_none_test() {
   }
   assert shrinks_to(options, property, 2) == "Some(0)"
 }
+
+pub fn a_negative_zero_edge_shrinks_without_hanging_test() {
+  // On Erlang -0.0 differs from 0.0, so shrinking it must not loop.
+  let floats = generator.float(from: -0.0, to: 1.0)
+  let text =
+    failure_text(fn() {
+      metamon.forall_with(seeded(1), floats, fn(_) { test_helpers.fail() })
+    })
+  assert string.contains(text, "shrinks:")
+}
+
+pub fn a_float_in_a_negative_range_shrinks_to_a_whole_number_test() {
+  // The origin is the lower bound -10.5, so whole numbers are taken
+  // toward it: -2.9 tries -3.0, which reaches the boundary exactly.
+  let floats = generator.float(from: -10.5, to: -2.0) |> generator.no_edges
+  let property = fn(x) {
+    assert x <. -3.0
+  }
+  list.each([1, 2, 3, 4], fn(seed) {
+    assert shrinks_to(floats, property, seed) == string.inspect(-3.0)
+  })
+}
