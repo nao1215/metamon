@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-23
+
 ### Changed
 
 - A failing edge value shrinks like a random input. The built-in edge values of every generator carry their shrink trees, so `int(range(from: 0, to: 100))` with `assert n < 50` reports `50` instead of the edge `100`. Values added with `with_examples` are still reported as they are.
