@@ -3,6 +3,7 @@
 
 import gleam/list
 import gleam/option.{Some}
+import gleam/string
 import metamon
 import metamon/generator
 import test_helpers
@@ -55,4 +56,21 @@ pub fn list_length_scales_with_the_configured_max_size_test() {
   metamon.forall_with(config(1000, 100), sized_list, fn(pair) {
     assert pair.1 <= pair.0
   })
+}
+
+pub fn the_first_random_input_has_size_zero_test() {
+  // Sizes grow from 0 on the first random input, after the edge values,
+  // as QuickCheck and Hedgehog start small.
+  let sizes =
+    generator.sized(fn(size) { generator.return(size) |> generator.no_edges })
+    |> generator.with_examples([-1, -2, -3, -4, -5, -6, -7, -8])
+  let #(panicked, text) =
+    test_helpers.capture_panic(fn() {
+      metamon.forall_with(config(99, 100), sizes, fn(size) {
+        assert size < 0
+      })
+    })
+  assert panicked
+  assert string.contains(text, "size=0, max_size=99)")
+  assert string.contains(text, "    0\n")
 }

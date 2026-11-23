@@ -77,7 +77,9 @@ pub fn read_replays_existing_entry_test() {
       size: 0,
       max_size: 99,
       edge_index: Some(0),
-      note: Some("from test"),
+      // The note is the recorded input; replay skips an entry whose note
+      // differs from the value the generator reproduces.
+      note: Some("0"),
       recorded: "0",
     )
   let _ = simplifile.write(tmp_path, regression.render(entry))
@@ -310,4 +312,45 @@ pub fn replay_failure_shows_the_panic_message_test() {
   should.be_true(panicked)
   should.be_true(string.contains(text, "regression replay"))
   should.be_true(string.contains(text, "panic message:\n    replayed failure"))
+}
+
+const plain_path: String = "/tmp/metamon_regression_plain_shared_test.toml"
+
+pub fn plain_properties_sharing_a_file_replay_only_matching_entries_test() {
+  let _ = simplifile.delete(plain_path)
+  let config =
+    metamon.Config(
+      ..metamon.default_config(),
+      seed: Some(42),
+      regression_file: Some(plain_path),
+    )
+  let ints = generator.int(generator.range(0, 1000)) |> generator.no_edges
+  // `a` fails and records its input.
+  let #(panicked, _) =
+    test_helpers.capture_panic(fn() {
+      metamon.forall_with(config, ints, fn(n) { should.be_true(n < 10) })
+    })
+  should.be_true(panicked)
+  // `b` draws from another generator, so the recorded seed gives it a
+  // different value than the one `a` recorded. Its failure comes from
+  // its own run, not from a replay of `a`'s entry.
+  let shifted = generator.map(ints, fn(n) { n + 5000 })
+  let #(panicked, text) =
+    test_helpers.capture_panic(fn() {
+      metamon.forall_with(
+        metamon.Config(..config, seed: Some(7)),
+        shifted,
+        fn(_) { test_helpers.fail() },
+      )
+    })
+  should.be_true(panicked)
+  should.be_false(string.contains(text, "regression replay"))
+  // `a` still replays its own entry.
+  let #(_, text) =
+    test_helpers.capture_panic(fn() {
+      metamon.forall_with(config, ints, fn(n) { should.be_true(n < 10) })
+    })
+  should.be_true(string.contains(text, "regression replay"))
+  let _ = simplifile.delete(plain_path)
+  Nil
 }

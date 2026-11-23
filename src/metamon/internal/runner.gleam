@@ -318,7 +318,8 @@ fn iterate_inputs(
       case remaining <= 0 {
         True -> Done
         False -> {
-          let sizes = Sizes(total: run_total, max: cfg.max_size)
+          let sizes =
+            Sizes(total: remaining, max: cfg.max_size, first_index: edge_count)
           run_random(gen, sizes, edge_count, remaining, cfg.seed, body)
         }
       }
@@ -341,10 +342,12 @@ fn run_edges(
   }
 }
 
-/// The run count and `max_size`, read once per property: the run count
-/// reads `METAMON_RUNS_MULTIPLIER` from the environment.
+/// The number of random runs, `max_size` and the run index of the first
+/// random run, read once per property: the run count reads
+/// `METAMON_RUNS_MULTIPLIER` from the environment. The size grows from 0
+/// on the first random run, after the edge values, to `max` on the last.
 type Sizes {
-  Sizes(total: Int, max: Int)
+  Sizes(total: Int, max: Int, first_index: Int)
 }
 
 fn run_random(
@@ -359,7 +362,8 @@ fn run_random(
     True -> Done
     False -> {
       let #(here, rest_seed) = seed_module.split(s)
-      let size = scaled_size(start_index, sizes.total, sizes.max)
+      let size =
+        scaled_size(start_index - sizes.first_index, sizes.total, sizes.max)
       let value = generator.generate(gen, here, size, sizes.max).value
       case
         body(
@@ -680,7 +684,11 @@ fn shrink_input(
   source: InputSource,
 ) -> #(a, Int, Bool) {
   case source {
-    EdgeSource(_) -> #(input, 0, False)
+    EdgeSource(index) ->
+      case list.drop(generator.edge_trees(gen), index) {
+        [edge, ..] -> shrink_loop(edge, fails, input, cfg.shrink_limit, 0)
+        [] -> #(input, 0, False)
+      }
     RandomSource(seed_value, size, max_size) -> {
       let initial_tree =
         generator.generate(gen, seed_module.seed(seed_value), size, max_size)
@@ -845,7 +853,15 @@ fn replay_regression(
     [] -> Done
     [entry, ..rest] -> {
       let value = reproduce_entry_value(gen, entry)
-      case check.verdict(value) {
+      // An entry records the inspected input. When the generator gives
+      // another value, the entry belongs to another property sharing the
+      // file, or the generator has changed, so it is skipped.
+      let rendered = string.inspect(value)
+      let verdict = case entry.note {
+        Some(note) if note != rendered -> Passed
+        _ -> check.verdict(value)
+      }
+      case verdict {
         Passed -> replay_regression(gen, check, rest)
         Failed(panic_message) ->
           Halted(replay_failure_message(

@@ -3,7 +3,8 @@
 //// A `Generator(a)` produces values of type `a` from a seed and a size,
 //// together with smaller alternatives the runner tries when a property
 //// fails, and a short list of edge values the runner tries first. The
-//// size grows from 0 on the first run to `Config.max_size` on the last.
+//// size grows from 0 on the first random input to `Config.max_size` on the
+//// last.
 ////
 //// ```gleam
 //// let names =
@@ -17,6 +18,7 @@
 
 import gleam/bit_array
 import gleam/dict.{type Dict}
+import gleam/float as float_module
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -38,8 +40,9 @@ const default_max_size: Int = 99
 /// this module.
 pub opaque type Generator(a) {
   // `run` takes the seed, the current size and the largest size of the
-  // run, so ranges can scale to the configured `max_size`.
-  Generator(run: fn(Seed, Int, Int) -> Tree(a), edges: List(a))
+  // run, so ranges can scale to the configured `max_size`. Each edge value
+  // carries its shrink tree, so a failing edge value shrinks too.
+  Generator(run: fn(Seed, Int, Int) -> Tree(a), edges: List(Tree(a)))
 }
 
 /// An integer interval for `int`, and the lengths and sizes of the
@@ -81,9 +84,16 @@ pub fn generate(
   generator.run(seed, size, max_size)
 }
 
-/// The edge values of a generator. Used by the runner.
+/// The edge values of a generator.
 @internal
 pub fn edges_of(generator: Generator(a)) -> List(a) {
+  list.map(generator.edges, fn(edge) { edge.value })
+}
+
+/// The edge values of a generator with their shrink trees. Used by the
+/// runner.
+@internal
+pub fn edge_trees(generator: Generator(a)) -> List(Tree(a)) {
   generator.edges
 }
 
@@ -155,12 +165,16 @@ fn full_bounds(range: Range) -> #(Int, Int) {
 // ---------- edge management ----------
 
 /// Add `examples` to the edge values of `generator`, which the runner
-/// tries before any random input.
+/// tries before any random input. A failing example is reported as it is,
+/// without shrinking; the built-in edge values shrink like random inputs.
 pub fn with_examples(
   generator: Generator(a),
   examples: List(a),
 ) -> Generator(a) {
-  Generator(run: generator.run, edges: list.append(generator.edges, examples))
+  Generator(
+    run: generator.run,
+    edges: list.append(generator.edges, list.map(examples, tree.singleton)),
+  )
 }
 
 /// Remove the edge values of `generator`, so the runner starts with
@@ -176,7 +190,7 @@ pub fn no_edges(generator: Generator(a)) -> Generator(a) {
 pub fn return(value: a) -> Generator(a) {
   Generator(
     run: fn(_seed: Seed, _size: Int, _max_size: Int) { tree.singleton(value) },
-    edges: [value],
+    edges: [tree.singleton(value)],
   )
 }
 
@@ -187,14 +201,14 @@ pub fn map(generator: Generator(a), with function: fn(a) -> b) -> Generator(b) {
     run: fn(seed: Seed, size: Int, max_size: Int) {
       tree.map(generator.run(seed, size, max_size), function)
     },
-    edges: list.map(generator.edges, function),
+    edges: list.map(generator.edges, tree.map(_, function)),
   )
 }
 
 /// Use each value of `generator` to choose the generator of the result.
 /// Shrinking shrinks the first value, then the second. The edge values
 /// are those of the generators chosen for the edge values of
-/// `generator`.
+/// `generator`, and they shrink within the chosen generator only.
 pub fn bind(
   generator: Generator(a),
   with function: fn(a) -> Generator(b),
@@ -207,7 +221,9 @@ pub fn bind(
         function(value).run(s_inner, size, max_size)
       })
     },
-    edges: list.flat_map(generator.edges, fn(value) { function(value).edges })
+    edges: list.flat_map(generator.edges, fn(edge) {
+      function(edge.value).edges
+    })
       |> list.take(default_max_edges),
   )
 }
@@ -227,7 +243,14 @@ pub fn map2(
         tree.zip(g1.run(s1, size, max_size), g2.run(s2, size, max_size))
       tree.map(zipped, fn(pair) { function(pair.0, pair.1) })
     },
-    edges: cartesian_capped(g1.edges, g2.edges, function, default_max_edges),
+    edges: cartesian_capped(
+      g1.edges,
+      g2.edges,
+      fn(left, right) {
+        tree.map(tree.zip(left, right), fn(pair) { function(pair.0, pair.1) })
+      },
+      default_max_edges,
+    ),
   )
 }
 
@@ -435,8 +458,8 @@ fn pick_by_weight(
 // ---------- sized / filter / recursive ----------
 
 /// Build the generator from the current size, which grows from 0 on the
-/// first run to `Config.max_size` on the last. The edge values are those
-/// of the generator built for size 0.
+/// first random input to `Config.max_size` on the last. The edge values
+/// are those of the generator built for size 0.
 pub fn sized(builder: fn(Int) -> Generator(a)) -> Generator(a) {
   Generator(
     run: fn(seed: Seed, size: Int, max_size: Int) {
@@ -473,7 +496,9 @@ pub fn filter(
     run: fn(seed: Seed, size: Int, max_size: Int) {
       filter_run(generator, predicate, seed, size, max_size, filter_retry_limit)
     },
-    edges: list.filter(generator.edges, predicate),
+    edges: generator.edges
+      |> list.filter(fn(edge) { predicate(edge.value) })
+      |> list.map(tree.filter(_, predicate)),
   )
 }
 
@@ -537,38 +562,56 @@ pub fn int(range: Range) -> Generator(Int) {
     run: fn(seed: Seed, size: Int, max_size: Int) {
       let #(lo, hi) = bounds(range, size, max_size)
       let #(value, _) = seed_module.next_int_in(seed, lo, hi)
-      tree.unfold(value, fn(v) { shrink_lib.int_toward(origin, v) })
+      int_tree(value, origin)
     },
     edges: {
       let #(lo, hi) = full_bounds(range)
-      edge_lib.ints_in(lo, hi)
+      list.map(edge_lib.ints_in(lo, hi), int_tree(_, origin))
     },
   )
 }
 
-/// Return a generator of `True` and `False` with equal chance.
+fn int_tree(value: Int, origin: Int) -> Tree(Int) {
+  tree.unfold(value, shrink_lib.int_toward(origin, _))
+}
+
+/// Return a generator of `True` and `False` with equal chance. `True`
+/// shrinks to `False`.
 pub fn bool() -> Generator(Bool) {
-  one_of([return(True), return(False)])
+  map(int(range(from: 0, to: 1)), with: fn(bit) { bit == 1 })
 }
 
 /// Return a generator of finite floats between `from` and `to`, both
-/// included, in either order. Values shrink toward the bounds. It never
-/// produces NaN, infinities or denormal values; see `float_special`.
+/// included, in either order. Values shrink toward 0.0 when the range
+/// contains it, otherwise toward the lower bound, and toward whole numbers
+/// on the way. It never produces NaN or infinities; see `float_special`.
 pub fn float(from from: Float, to to: Float) -> Generator(Float) {
   let #(low, high) = case from >. to {
     True -> #(to, from)
     False -> #(from, to)
   }
+  let origin = case low <=. 0.0 && 0.0 <=. high {
+    True -> 0.0
+    False -> low
+  }
+  let float_tree = fn(value) {
+    tree.unfold(value, shrink_lib.float_toward(origin, _, low, high))
+  }
   Generator(
     run: fn(seed: Seed, _size: Int, _max_size: Int) {
-      let #(scaled, _) = seed_module.next_int_in(seed, 0, 1_000_000)
-      let fraction = int.to_float(scaled) /. 1_000_000.0
-      let value = low +. { high -. low } *. fraction
-      tree.from_list(value, [tree.singleton(low), tree.singleton(high)])
+      let #(steps, _) = seed_module.next_int_in(seed, 0, max_safe_integer)
+      let fraction = int.to_float(steps) /. 9_007_199_254_740_992.0
+      // Interpolating avoids `high - low`, which overflows for a range as
+      // wide as the doubles.
+      let value = low *. { 1.0 -. fraction } +. high *. fraction
+      float_tree(float_module.clamp(value, min: low, max: high))
     },
-    edges: edge_lib.floats_in(low, high),
+    edges: list.map(edge_lib.floats_in(low, high), float_tree),
   )
 }
+
+/// 2^53 - 1: a float has 53 bits of precision.
+const max_safe_integer: Int = 9_007_199_254_740_991
 
 /// Return a generator of the IEEE 754 values `float` never produces: NaN,
 /// positive and negative infinity, `0.0`, `-0.0`, `1.0`, the smallest
@@ -589,7 +632,7 @@ pub fn float_special() -> Generator(Float) {
       }
       tree.singleton(value)
     },
-    edges: edges,
+    edges: list.map(edges, tree.singleton),
   )
 }
 
@@ -645,22 +688,41 @@ fn pack_single_bits(bits: List(Int)) -> BitArray {
 /// shrink toward the lowest code point of the set.
 pub fn character(of characters: Characters) -> Generator(String) {
   case characters {
-    Ascii ->
-      code_points(0, 127, [
-        "\u{0000}", "\t", "\n", " ", "0", "A", "z", "~", "\u{007F}",
-      ])
-    PrintableAscii -> code_points(32, 126, [" ", "0", "A", "z", "~"])
+    // NUL, tab, line feed, space, "0", "A", "z", "~" and DEL.
+    Ascii -> code_points(0, 127, [0, 9, 10, 32, 48, 65, 122, 126, 127])
+    PrintableAscii -> code_points(32, 126, [32, 48, 65, 122, 126])
     Alphabetic -> letters()
     Alphanumeric -> one_of([letters(), digits()])
     Digits -> digits()
-    Unicode ->
-      one_of([
-        int(range(from: 0, to: 0xD7FF)),
-        int(range(from: 0xE000, to: 0x10FFFF)),
-      ])
-      |> override_edges([0, 32, 65, 0x4E00, 0x1F600])
-      |> map(with: codepoint_int_to_string)
+    Unicode -> unicode_character()
   }
+}
+
+/// Every Unicode scalar value, drawn as an index into the scalar values
+/// with the surrogates left out, so a value shrinks toward U+0000 and never
+/// lands on a surrogate. Half of the values lie below the surrogates.
+fn unicode_character() -> Generator(String) {
+  let character_tree = fn(index) {
+    int_tree(index, 0)
+    |> tree.map(fn(index) {
+      codepoint_int_to_string(case index < 0xD800 {
+        True -> index
+        False -> index + 0x800
+      })
+    })
+  }
+  Generator(
+    run: fn(seed: Seed, _size: Int, _max_size: Int) {
+      let #(half, rest) = seed_module.next_int_in(seed, 0, 1)
+      let #(index, _) = case half {
+        0 -> seed_module.next_int_in(rest, 0, 0xD7FF)
+        _ -> seed_module.next_int_in(rest, 0xD800, 0x10F7FF)
+      }
+      character_tree(index)
+    },
+    // U+0000, space, "A", U+4E00 and U+1F600 (an emoji).
+    edges: list.map([0, 32, 65, 0x4E00, 0x1F600 - 0x800], character_tree),
+  )
 }
 
 /// Return a generator of strings of `characters` whose length in
@@ -699,19 +761,22 @@ pub fn string_from(
 
 fn letters() -> Generator(String) {
   one_of([
-    code_points(97, 122, ["a", "z", "m"]),
-    code_points(65, 90, ["A", "Z", "M"]),
+    code_points(97, 122, [97, 122, 109]),
+    code_points(65, 90, [65, 90, 77]),
   ])
 }
 
 fn digits() -> Generator(String) {
-  code_points(48, 57, ["0", "9", "5"])
+  code_points(48, 57, [48, 57, 53])
 }
 
-/// One character with a code point in `[lo, hi]` and the given edges.
-fn code_points(lo: Int, hi: Int, edges: List(String)) -> Generator(String) {
-  map(int(range(from: lo, to: hi)), with: codepoint_int_to_string)
-  |> override_edges(edges)
+/// One character with a code point in `[lo, hi]`, with the characters of
+/// `edges` as its edge values.
+fn code_points(lo: Int, hi: Int, edges: List(Int)) -> Generator(String) {
+  let codes = int(range(from: lo, to: hi))
+  let origin = range(from: lo, to: hi).interval.origin
+  override_edges(codes, list.map(edges, int_tree(_, origin)))
+  |> map(with: codepoint_int_to_string)
 }
 
 /// A string of `characters`, whose edges are the ones built from the
@@ -725,12 +790,30 @@ fn string_with_edges(
 ) -> Generator(String) {
   let built = list_of(characters, length: length) |> map(with: string.concat)
   let #(lo, hi) = full_bounds(length)
+  // A curated string shrinks by dropping characters, like a generated one.
   let fitting =
-    list.filter(curated, fn(text) {
+    curated
+    |> list.filter(fn(text) {
       let count = string.length(text)
       count >= lo && count <= hi
     })
-  override_edges(built, list.append(built.edges, fitting) |> list.unique)
+    |> list.map(fn(text) {
+      list_tree(list.map(string.to_graphemes(text), tree.singleton), lo)
+      |> tree.map(string.concat)
+    })
+  override_edges(built, unique_edges(list.append(built.edges, fitting)))
+}
+
+/// The edge trees without later trees whose value repeats an earlier one.
+fn unique_edges(edges: List(Tree(a))) -> List(Tree(a)) {
+  list.fold(edges, #([], []), fn(acc, edge) {
+    let #(seen, kept) = acc
+    case list.contains(seen, edge.value) {
+      True -> acc
+      False -> #([edge.value, ..seen], [edge, ..kept])
+    }
+  }).1
+  |> list.reverse
 }
 
 @external(erlang, "metamon_ffi", "codepoint_to_string")
@@ -878,18 +961,20 @@ fn pair_up(
 }
 
 fn list_edges_in_range(
-  element_edges: List(a),
+  element_edges: List(Tree(a)),
   lo_len: Int,
   hi_len: Int,
-) -> List(List(a)) {
+) -> List(Tree(List(a))) {
   let candidates = case element_edges {
     [] -> [[]]
     [first, ..] -> [[], [first], element_edges]
   }
-  list.filter(candidates, fn(xs) {
-    let length = list.length(xs)
+  candidates
+  |> list.filter(fn(trees) {
+    let length = list.length(trees)
     length >= lo_len && length <= hi_len
   })
+  |> list.map(list_tree(_, lo_len))
 }
 
 /// Return a generator of dicts with keys from `keys` and values from
@@ -914,20 +999,31 @@ pub fn set_of(generator: Generator(a), size size: Range) -> Generator(Set(a)) {
 }
 
 /// Return a generator of `None` and of `Some` with the values of
-/// `generator`, `Some` three times as often.
+/// `generator`, `Some` three times as often. `Some` shrinks to `None`
+/// first, then shrinks its value.
 pub fn option_of(generator: Generator(a)) -> Generator(Option(a)) {
-  frequency([
-    #(1, return(None)),
-    #(3, map(generator, with: Some)),
-  ])
-  |> override_edges(option_edges(generator.edges))
+  let somes =
+    Generator(
+      run: fn(seed: Seed, size: Int, max_size: Int) {
+        some_tree(generator.run(seed, size, max_size))
+      },
+      edges: list.map(generator.edges, some_tree),
+    )
+  frequency([#(1, return(None)), #(3, somes)])
+  |> override_edges(case somes.edges {
+    [] -> [tree.singleton(None)]
+    [first, ..] -> [tree.singleton(None), first]
+  })
 }
 
-fn option_edges(inner_edges: List(a)) -> List(Option(a)) {
-  case inner_edges {
-    [] -> [None]
-    [first, ..] -> [None, Some(first)]
-  }
+fn some_tree(inner: Tree(a)) -> Tree(Option(a)) {
+  Tree(
+    value: Some(inner.value),
+    shrinks: tree.append_shrinks(
+      tree.lazy_shrinks(fn() { [tree.singleton(None)] }),
+      tree.map_shrinks(inner.shrinks, some_tree),
+    ),
+  )
 }
 
 /// Return a generator of `Ok` with the values of `ok` and of `Error` with
@@ -943,21 +1039,24 @@ pub fn result_of(
   |> override_edges(result_edges(ok.edges, error.edges))
 }
 
-fn result_edges(ok_edges: List(a), err_edges: List(e)) -> List(Result(a, e)) {
+fn result_edges(
+  ok_edges: List(Tree(a)),
+  err_edges: List(Tree(e)),
+) -> List(Tree(Result(a, e))) {
   let ok_part = case ok_edges {
     [] -> []
-    [first, ..] -> [Ok(first)]
+    [first, ..] -> [tree.map(first, Ok)]
   }
   let err_part = case err_edges {
     [] -> []
-    [first, ..] -> [Error(first)]
+    [first, ..] -> [tree.map(first, Error)]
   }
   list.append(ok_part, err_part)
 }
 
 // ---------- internal helpers ----------
 
-fn override_edges(generator: Generator(a), new: List(a)) -> Generator(a) {
+fn override_edges(generator: Generator(a), new: List(Tree(a))) -> Generator(a) {
   Generator(run: generator.run, edges: new)
 }
 

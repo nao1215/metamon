@@ -18,9 +18,9 @@ A generator built with `bind` shrinks the outer value, but the inner value only 
 
 A failing `Node(left, right)` does not reduce to `left` or `right`; only the leaves shrink. List the small shapes with `with_examples` so they are tried first.
 
-## Edge cases do not shrink
+## Examples do not shrink
 
-Values listed with `with_examples` and the built-in edge cases are tried as they are. When one of them fails, the report shows it with `shrinks: 0`. Use `no_edges` to see a shrunk random failure instead.
+A value listed with `with_examples` is reported as it is when it fails, with `shrinks: 0`, because it is the caller's own input. The built-in edge values shrink like random inputs.
 
 ## Shrinking keeps the panic message
 
@@ -44,7 +44,7 @@ A predicate that accepts less than about 1% of the generated values makes `filte
 
 ## `float` is finite only
 
-`float(from:, to:)` never produces NaN, infinities or subnormal values. Use `float_special()` for them. On Erlang, `float_special()` returns the largest finite floats in place of NaN and the infinities, because the BEAM cannot build non-finite floats; properties that need real non-finite values must run on JavaScript.
+`float(from:, to:)` never produces NaN or infinities. Use `float_special()` for them and for the smallest subnormal value. On Erlang, `float_special()` returns the largest finite floats in place of NaN and the infinities, because the BEAM cannot build non-finite floats; properties that need real non-finite values must run on JavaScript.
 
 ## Dependencies
 

@@ -82,6 +82,13 @@ fn next_int(s: Seed) -> #(Int, Seed) {
 /// If `lo > hi` the bounds are swapped. If `lo == hi` the bound is
 /// returned without consuming randomness (the seed is still advanced
 /// for determinism).
+///
+/// A span of up to 2^16 values reduces one 32-bit draw, which is uniform
+/// to within 1 part in 65536. A wider span draws 53 bits and rejects the
+/// draws past the largest multiple of the span, so every value is equally
+/// likely and both targets compute the same value exactly. Spans beyond
+/// 2^53, which only Erlang holds exactly, add 32-bit draws until there
+/// are 32 bits to spare.
 pub fn next_int_in(s: Seed, lo: Int, hi: Int) -> #(Int, Seed) {
   let #(low, high) = case lo > hi {
     True -> #(hi, lo)
@@ -93,9 +100,53 @@ pub fn next_int_in(s: Seed, lo: Int, hi: Int) -> #(Int, Seed) {
       #(low, s2)
     }
     False -> {
-      let #(raw, s2) = next_int(s)
       let span = high - low + 1
-      #(low + raw % span, s2)
+      let #(offset, s2) = case span <= one_word_span {
+        True -> {
+          let #(raw, s2) = next_int(s)
+          #(raw % span, s2)
+        }
+        False ->
+          case span - 1 <= max_safe_integer {
+            True -> uniform_below(s, span)
+            False -> wide_draw(s, span, 0, 1)
+          }
+      }
+      #(low + offset, s2)
+    }
+  }
+}
+
+/// The widest span reduced from a single 32-bit draw.
+const one_word_span: Int = 0x10000
+
+/// 2^53 - 1, the largest integer JavaScript holds exactly.
+const max_safe_integer: Int = 9_007_199_254_740_991
+
+/// A 53-bit draw: 21 bits of one word above the 32 bits of the next.
+fn draw_53_bits(s: Seed) -> #(Int, Seed) {
+  let #(high, s1) = next_int(s)
+  let #(low, s2) = next_int(s1)
+  #(high % 0x200000 * 0x100000000 + low, s2)
+}
+
+/// A value in `[0, span)` for `span <= 2^53`, by rejection: draws at or past
+/// the largest multiple of `span` below 2^53 are drawn again.
+fn uniform_below(s: Seed, span: Int) -> #(Int, Seed) {
+  let limit = max_safe_integer - { max_safe_integer % span + 1 } % span
+  let #(raw, s2) = draw_53_bits(s)
+  case raw <= limit {
+    True -> #(raw % span, s2)
+    False -> uniform_below(s2, span)
+  }
+}
+
+fn wide_draw(s: Seed, span: Int, acc: Int, bound: Int) -> #(Int, Seed) {
+  case bound / 0x100000000 >= span {
+    True -> #(acc % span, s)
+    False -> {
+      let #(word, s2) = next_int(s)
+      wide_draw(s2, span, acc * 0x100000000 + word, bound * 0x100000000)
     }
   }
 }
@@ -138,15 +189,28 @@ fn step(state: Int) -> Int {
   int.bitwise_and(after_third_shift, mask_32)
 }
 
+// Every 32-bit chunk of the magnitude is folded in, and a negative value
+// flips the top bit, so `seed(-n)` and `seed(n + 2^32)` differ from
+// `seed(n)`. A fold of 0 is replaced by the default state.
 fn normalise(value: Int) -> Int {
-  let positive = case value < 0 {
-    True -> 0 - value
-    False -> value
+  let folded = case value < 0 {
+    True -> int.bitwise_exclusive_or(fold_chunks(0 - value, 0), 0x80000000)
+    False -> fold_chunks(value, 0)
   }
-  let masked = int.bitwise_and(positive, mask_32)
-  case masked {
+  case folded {
     0 -> default_state
     n -> n
+  }
+}
+
+fn fold_chunks(value: Int, acc: Int) -> Int {
+  case value {
+    0 -> acc
+    _ ->
+      fold_chunks(
+        value / 0x100000000,
+        int.bitwise_exclusive_or(acc, value % 0x100000000),
+      )
   }
 }
 

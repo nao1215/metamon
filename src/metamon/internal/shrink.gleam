@@ -2,6 +2,8 @@
 //// `Tree(a)`-shaped values for primitive types. Each helper returns a
 //// list of "smaller" candidates that the runner will explore in order.
 
+import gleam/float
+import gleam/int
 import gleam/list
 
 /// Halve `value` toward `origin`. Returns the empty list when no
@@ -28,5 +30,45 @@ fn compute_halves(n: Int) -> List(Int) {
   case n == 0 {
     True -> []
     False -> [n, ..compute_halves(n / 2)]
+  }
+}
+
+/// Floats closer to `origin` than `value` and inside `[low, high]`: the
+/// origin, the whole number `value` truncates to, then `value` minus a
+/// half, a quarter and so on of its distance to the origin. Repeating it
+/// on the first failing candidate walks to the boundary of the failure,
+/// such as `500.0` for `x <. 500.0`.
+pub fn float_toward(
+  origin: Float,
+  value: Float,
+  low: Float,
+  high: Float,
+) -> List(Float) {
+  case value == origin {
+    True -> []
+    False -> {
+      let distance = value -. origin
+      // Beyond 2^53 every float is already a whole number.
+      let whole = case float.absolute_value(value) <. 9.0e15 {
+        True -> [int.to_float(float.truncate(value))]
+        False -> []
+      }
+      [origin, ..list.append(whole, float_halves(value, distance /. 2.0, []))]
+      |> list.filter(fn(candidate) {
+        candidate >=. low
+        && candidate <=. high
+        && float.absolute_value(candidate -. origin)
+        <. float.absolute_value(distance)
+      })
+      |> list.unique
+    }
+  }
+}
+
+fn float_halves(value: Float, step: Float, acc: List(Float)) -> List(Float) {
+  let candidate = value -. step
+  case candidate == value {
+    True -> list.reverse(acc)
+    False -> float_halves(value, step /. 2.0, [candidate, ..acc])
   }
 }
