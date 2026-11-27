@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `gleam run -m metamon/mutation -- run` compiles each copy with `gleam build` before `gleam test`, so the 256 MiB limit of 0.19.0 applies only to the test run. With the limit on the compiler as well, oaspec's run stopped before any mutant: the Erlang compiler needed more than 256 MiB for one of its modules.
+
 ## [0.19.0] - 2026-11-27
 
 ### Added
