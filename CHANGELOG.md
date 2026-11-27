@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `gleam run -m metamon/mutation -- run --shard K/N` runs part `K` of `N` of the mutants, and `merge` joins the results files of every part into `build/mutation/results.json` for `gate` and `baseline`. A long run can then be split over a CI matrix. The page on mutation testing shows a workflow.
+
 ## [0.18.0] - 2026-11-27
 
 ### Fixed

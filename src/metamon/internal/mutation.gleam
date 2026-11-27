@@ -1,6 +1,7 @@
 //// Runs the mutants of a project, records the results and compares them with
 //// a baseline. See `metamon/mutation` for the commands.
 
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
 import gleam/int
@@ -37,11 +38,22 @@ const retries: Int = 2
 const test_emulator_flags: String = "+hmax 134217728 +hmaxib true"
 
 pub type Command {
-  Run(workers: Int, exclude: List(String), files: List(String))
-  ListMutants(exclude: List(String), files: List(String))
+  Run(workers: Int, exclude: List(String), files: List(String), shard: Shard)
+  ListMutants(exclude: List(String), files: List(String), shard: Shard)
+  Merge(paths: List(String))
   Gate
   Baseline
   DocCheck
+}
+
+/// The mutants a run covers, so that CI can split a long run over several
+/// jobs.
+pub type Shard {
+  /// Every mutant of the chosen modules.
+  Whole
+  /// Part `index` of `count`, both counted from 1: every `count`-th mutant,
+  /// starting at the `index`-th, so each part gets a share of every module.
+  Part(index: Int, count: Int)
 }
 
 pub type MutationError {
@@ -50,6 +62,7 @@ pub type MutationError {
   FailedToCopyProject(path: String, reason: simplifile.FileError)
   FailedToParseModule(path: String)
   NotAResultsFile(path: String)
+  CannotMerge(reason: MergeError)
   TimeoutCommandMissing
   UnmutatedTestsFailed(output: String)
   BaselineNeedsFullRun
@@ -75,7 +88,12 @@ pub type Row {
 }
 
 pub type Results {
-  Results(files: List(String), excluded: List(String), rows: List(Row))
+  Results(
+    files: List(String),
+    excluded: List(String),
+    shard: Shard,
+    rows: List(Row),
+  )
 }
 
 pub type Summary {
@@ -85,11 +103,14 @@ pub type Summary {
 pub const usage: String =
   "usage: gleam run -m metamon/mutation -- COMMAND
 
-  run [--workers N] [--exclude FILE]... [FILE]...
+  run [--workers N] [--shard K/N] [--exclude FILE]... [FILE]...
       Mutate the given modules, or every module under src/, and write
-      build/mutation/results.json.
-  list [--exclude FILE]... [FILE]...
+      build/mutation/results.json. With --shard K/N, run only part K of N.
+  list [--shard K/N] [--exclude FILE]... [FILE]...
       Print the mutants without running them.
+  merge FILE...
+      Join the results files of every part of a sharded run into
+      build/mutation/results.json.
   gate
       Fail when a mutant lives that doc/mutation/baseline.json does not list.
   baseline
@@ -103,15 +124,23 @@ pub const usage: String =
 pub fn parse_arguments(arguments: List(String)) -> Result(Command, Nil) {
   case arguments {
     ["run", ..rest] -> {
-      use #(workers, exclude, files) <- result.map(
-        parse_options(rest, 4, [], []),
+      use options <- result.map(parse_options(rest, default_options(4)))
+      Run(
+        workers: options.workers,
+        exclude: options.exclude,
+        files: options.files,
+        shard: options.shard,
       )
-      Run(workers:, exclude:, files:)
     }
     ["list", ..rest] -> {
-      use #(_, exclude, files) <- result.map(parse_options(rest, 1, [], []))
-      ListMutants(exclude:, files:)
+      use options <- result.map(parse_options(rest, default_options(1)))
+      ListMutants(
+        exclude: options.exclude,
+        files: options.files,
+        shard: options.shard,
+      )
     }
+    ["merge", _, ..] -> Ok(Merge(paths: list.drop(arguments, 1)))
     ["gate"] -> Ok(Gate)
     ["baseline"] -> Ok(Baseline)
     ["doc-check"] -> Ok(DocCheck)
@@ -119,31 +148,78 @@ pub fn parse_arguments(arguments: List(String)) -> Result(Command, Nil) {
   }
 }
 
+type Options {
+  Options(
+    workers: Int,
+    exclude: List(String),
+    files: List(String),
+    shard: Shard,
+  )
+}
+
+fn default_options(workers: Int) -> Options {
+  Options(workers:, exclude: [], files: [], shard: Whole)
+}
+
 fn parse_options(
   arguments: List(String),
-  workers: Int,
-  exclude: List(String),
-  files: List(String),
-) -> Result(#(Int, List(String), List(String)), Nil) {
+  options: Options,
+) -> Result(Options, Nil) {
   case arguments {
-    [] -> Ok(#(workers, list.reverse(exclude), list.reverse(files)))
+    [] ->
+      Ok(
+        Options(
+          ..options,
+          exclude: list.reverse(options.exclude),
+          files: list.reverse(options.files),
+        ),
+      )
     ["--workers", count, ..rest] ->
       case int.parse(count) {
-        Ok(count) if count > 0 -> parse_options(rest, count, exclude, files)
+        Ok(count) if count > 0 ->
+          parse_options(rest, Options(..options, workers: count))
         _ -> Error(Nil)
       }
+    ["--shard", part, ..rest] -> {
+      use shard <- result.try(parse_shard(part))
+      parse_options(rest, Options(..options, shard:))
+    }
     ["--exclude", file, ..rest] ->
-      parse_options(rest, workers, [file, ..exclude], files)
+      parse_options(
+        rest,
+        Options(..options, exclude: [file, ..options.exclude]),
+      )
     ["--" <> _, ..] -> Error(Nil)
-    [file, ..rest] -> parse_options(rest, workers, exclude, [file, ..files])
+    [file, ..rest] ->
+      parse_options(rest, Options(..options, files: [file, ..options.files]))
+  }
+}
+
+/// Reads `K/N` with 1 <= K <= N.
+fn parse_shard(text: String) -> Result(Shard, Nil) {
+  use #(index, count) <- result.try(string.split_once(text, "/"))
+  use index <- result.try(int.parse(index))
+  use count <- result.try(int.parse(count))
+  case 1 <= index && index <= count {
+    True -> Ok(Part(index:, count:))
+    False -> Error(Nil)
+  }
+}
+
+fn shard_to_string(shard: Shard) -> String {
+  case shard {
+    Whole -> "whole"
+    Part(index:, count:) -> int.to_string(index) <> "/" <> int.to_string(count)
   }
 }
 
 /// Runs `command` and returns the exit code.
 pub fn execute(command: Command) -> Result(Int, MutationError) {
   case command {
-    Run(workers:, exclude:, files:) -> run(workers, exclude, files)
-    ListMutants(exclude:, files:) -> list_mutants(exclude, files)
+    Run(workers:, exclude:, files:, shard:) ->
+      run(workers, exclude, files, shard)
+    ListMutants(exclude:, files:, shard:) -> list_mutants(exclude, files, shard)
+    Merge(paths:) -> merge(paths)
     Gate -> gate()
     Baseline -> record_baseline()
     DocCheck -> doc_check()
@@ -160,12 +236,24 @@ pub fn describe(error: MutationError) -> String {
       "cannot copy " <> path <> ": " <> simplifile.describe_error(reason)
     FailedToParseModule(path:) -> path <> ": glance cannot parse this module"
     NotAResultsFile(path:) -> path <> ": not a mutation results file"
+    CannotMerge(reason:) ->
+      "cannot merge the results: " <> describe_merge_error(reason)
     TimeoutCommandMissing ->
       "neither timeout nor gtimeout is on PATH (install GNU coreutils)"
     UnmutatedTestsFailed(output:) ->
       "the tests fail before any mutation:\n" <> output
     BaselineNeedsFullRun ->
-      "the baseline needs a run over every module: run without FILE arguments"
+      "the baseline needs a run over every module: run without FILE arguments and --shard, or merge every part of a sharded run"
+  }
+}
+
+fn describe_merge_error(error: MergeError) -> String {
+  case error {
+    NoResults -> "no results files"
+    DifferentRuns -> "the files were made from different modules or exclusions"
+    NotSharded -> "a results file is not from a sharded run"
+    PartsMissingOrRepeated(count:) ->
+      "every part from 1 to " <> int.to_string(count) <> " must appear once"
   }
 }
 
@@ -226,13 +314,24 @@ fn find_mutants(
   |> result.map(list.flatten)
 }
 
-fn list_mutants(
+/// The chosen modules, their sources and the mutants of `shard` in them.
+fn mutants_to_run(
   exclude: List(String),
   files: List(String),
-) -> Result(Int, MutationError) {
+  shard: Shard,
+) -> Result(#(List(String), Dict(String, String), List(Mutant)), MutationError) {
   use files <- result.try(chosen_files(exclude, files))
   use sources <- result.try(read_sources(files))
   use mutants <- result.map(find_mutants(sources))
+  #(files, sources, select_shard(mutants, shard))
+}
+
+fn list_mutants(
+  exclude: List(String),
+  files: List(String),
+  shard: Shard,
+) -> Result(Int, MutationError) {
+  use #(_, _, mutants) <- result.map(mutants_to_run(exclude, files, shard))
   list.each(mutants, fn(mutant) {
     io.println(
       mutant.file
@@ -255,16 +354,23 @@ fn run(
   workers: Int,
   exclude: List(String),
   files: List(String),
+  shard: Shard,
 ) -> Result(Int, MutationError) {
-  use files <- result.try(chosen_files(exclude, files))
-  use sources <- result.try(read_sources(files))
-  use mutants <- result.try(find_mutants(sources))
+  use #(files, sources, mutants) <- result.try(mutants_to_run(
+    exclude,
+    files,
+    shard,
+  ))
   use timeout_command <- result.try(find_timeout())
   io.println(
     int.to_string(list.length(mutants))
     <> " mutants in "
     <> int.to_string(list.length(files))
-    <> " modules",
+    <> " modules"
+    <> case shard {
+      Whole -> ""
+      Part(..) -> ", part " <> shard_to_string(shard)
+    },
   )
   // Copies left behind by an interrupted run.
   use _ <- result.try(delete_if_present(work_root))
@@ -289,7 +395,9 @@ fn run(
     |> result.map(fn(rows) { list.flatten(rows) |> sort_rows }),
   )
   use _ <- result.try(delete_if_present(work_root))
-  use _ <- result.map(write_results(Results(files:, excluded: exclude, rows:)))
+  use _ <- result.map(
+    write_results(Results(files:, excluded: exclude, shard:, rows:)),
+  )
   io.println(summary_line(rows))
   0
 }
@@ -311,6 +419,14 @@ fn measure_unmutated(
         Killed | TimedOut | CompileError -> Error(UnmutatedTestsFailed(output:))
       }
     }
+  }
+}
+
+/// The mutants `shard` covers.
+pub fn select_shard(mutants: List(a), shard: Shard) -> List(a) {
+  case shard {
+    Whole -> mutants
+    Part(index:, count:) -> share(mutants, of: count, for: index - 1)
   }
 }
 
@@ -550,6 +666,12 @@ pub fn results_to_json(results: Results) -> String {
   <> json.to_string(json.array(results.files, json.string))
   <> ",\"excluded\":"
   <> json.to_string(json.array(results.excluded, json.string))
+  <> case results.shard {
+    Whole -> ""
+    Part(..) ->
+      ",\"shard\":"
+      <> json.to_string(json.string(shard_to_string(results.shard)))
+  }
   <> ",\"mutants\":[\n"
   <> string.join(
     list.map(results.rows, fn(row) { json.to_string(row_to_json(row)) }),
@@ -566,10 +688,19 @@ pub fn results_from_json(text: String) -> Result(Results, Nil) {
       [],
       decode.list(decode.string),
     )
+    use shard <- decode.optional_field("shard", Whole, shard_decoder())
     use rows <- decode.field("mutants", decode.list(row_decoder()))
-    decode.success(Results(files:, excluded:, rows:))
+    decode.success(Results(files:, excluded:, shard:, rows:))
   }
   json.parse(text, decoder) |> result.replace_error(Nil)
+}
+
+fn shard_decoder() -> decode.Decoder(Shard) {
+  use text <- decode.then(decode.string)
+  case parse_shard(text) {
+    Ok(shard) -> decode.success(shard)
+    Error(Nil) -> decode.failure(Whole, "shard K/N")
+  }
 }
 
 fn read_results(path: String) -> Result(Results, MutationError) {
@@ -697,9 +828,75 @@ fn gate() -> Result(Int, MutationError) {
   }
 }
 
-/// Whether `results` mutated every module in `all` that it did not exclude.
+/// Whether `results` ran every mutant of every module in `all` that it did not
+/// exclude.
 pub fn is_full_run(results: Results, all: List(String)) -> Bool {
-  results.files == select_modules(all:, exclude: results.excluded, files: [])
+  results.shard == Whole
+  && results.files == select_modules(all:, exclude: results.excluded, files: [])
+}
+
+fn merge(paths: List(String)) -> Result(Int, MutationError) {
+  use parts <- result.try(list.try_map(paths, read_results))
+  use merged <- result.try(
+    merge_results(parts) |> result.map_error(CannotMerge),
+  )
+  use _ <- result.map(write_results(merged))
+  io.println(summary_line(merged.rows))
+  0
+}
+
+/// Why the parts of a sharded run cannot be joined.
+pub type MergeError {
+  NoResults
+  DifferentRuns
+  NotSharded
+  /// Each part from 1 to `count` must appear exactly once.
+  PartsMissingOrRepeated(count: Int)
+}
+
+/// Joins the results of every part of one sharded run. The parts must share
+/// their modules and exclusions, and each of 1 to N must appear once.
+pub fn merge_results(parts: List(Results)) -> Result(Results, MergeError) {
+  use first <- result.try(list.first(parts) |> result.replace_error(NoResults))
+  use <- bool.guard(
+    !list.all(parts, fn(part) {
+      part.files == first.files && part.excluded == first.excluded
+    }),
+    Error(DifferentRuns),
+  )
+  use shards <- result.try(
+    list.try_map(parts, fn(part) {
+      case part.shard {
+        Part(index:, count:) -> Ok(#(index, count))
+        Whole -> Error(NotSharded)
+      }
+    }),
+  )
+  use _ <- result.map(covers_every_part(shards))
+  Results(
+    files: first.files,
+    excluded: first.excluded,
+    shard: Whole,
+    rows: list.flat_map(parts, fn(part) { part.rows }) |> sort_rows,
+  )
+}
+
+/// Whether `shards` holds each of 1 to N once, all with the same N.
+fn covers_every_part(shards: List(#(Int, Int))) -> Result(Nil, MergeError) {
+  let count = case shards {
+    [#(_, count), ..] -> count
+    [] -> 0
+  }
+  let indices = list.sort(list.map(shards, fn(shard) { shard.0 }), int.compare)
+  let expected =
+    int.range(from: 1, to: count + 1, with: [], run: fn(acc, index) {
+      [index, ..acc]
+    })
+    |> list.reverse
+  case list.all(shards, fn(shard) { shard.1 == count }) && indices == expected {
+    True -> Ok(Nil)
+    False -> Error(PartsMissingOrRepeated(count:))
+  }
 }
 
 fn record_baseline() -> Result(Int, MutationError) {
