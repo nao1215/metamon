@@ -561,33 +561,55 @@ fn retry_from(number: Int, retries: Int, attempt: fn(Int) -> Status) -> Status {
   }
 }
 
+/// Compiles the project, then runs its tests with `test_emulator_flags`. The
+/// compile comes first because the flags would also reach the Erlang compiler,
+/// which needs more than the limit for a large module; the test run then finds
+/// everything compiled.
 fn test_in(
   project: String,
   timeout_command: String,
   timeout: Int,
 ) -> #(Status, String) {
-  let arguments = [
-    "--kill-after=10",
-    int.to_string(timeout),
-    "gleam",
-    "test",
-    "--target",
-    "erlang",
-  ]
   let flags = case getenv("ERL_ZFLAGS") {
     Ok(flags) -> flags <> " " <> test_emulator_flags
     Error(Nil) -> test_emulator_flags
   }
-  case
-    run_command(timeout_command, arguments, in: project, with: [
-      #("ERL_ZFLAGS", flags),
-    ])
-  {
-    Ok(#(0, output)) -> #(Lived, output)
+  case gleam_in(project, "build", timeout_command, timeout, []) {
+    Ok(#(0, _)) ->
+      case
+        gleam_in(project, "test", timeout_command, timeout, [
+          #("ERL_ZFLAGS", flags),
+        ])
+      {
+        Ok(#(0, output)) -> #(Lived, output)
+        Ok(#(124, output)) | Ok(#(137, output)) -> #(TimedOut, output)
+        Ok(#(_, output)) -> #(classify_failure(output), output)
+        Error(Nil) -> #(CompileError, "")
+      }
     Ok(#(124, output)) | Ok(#(137, output)) -> #(TimedOut, output)
-    Ok(#(_, output)) -> #(classify_failure(output), output)
+    Ok(#(_, output)) -> #(CompileError, output)
     Error(Nil) -> #(CompileError, "")
   }
+}
+
+/// Runs `gleam <command> --target erlang` in `project`, stopped after
+/// `timeout` seconds.
+fn gleam_in(
+  project: String,
+  command: String,
+  timeout_command: String,
+  timeout: Int,
+  environment: List(#(String, String)),
+) -> Result(#(Int, String), Nil) {
+  let arguments = [
+    "--kill-after=10",
+    int.to_string(timeout),
+    "gleam",
+    command,
+    "--target",
+    "erlang",
+  ]
+  run_command(timeout_command, arguments, in: project, with: environment)
 }
 
 /// A failed `gleam test` that never ran a test did not compile.
