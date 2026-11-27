@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `gleam run -m metamon/mutation -- run --shard K/N` runs part `K` of `N` of the mutants, and `merge` joins the results files of every part into `build/mutation/results.json` for `gate` and `baseline`. A long run can then be split over a CI matrix. The page on mutation testing shows a workflow.
 
+### Fixed
+
+- A process in a test run is killed when it grows past 256 MiB instead of 1 GiB. A mutant that made a function recurse without end grew its test run to 12 GB before the 1 GiB limit killed it, and two such runs at once stopped finanza's full run on a 16 GB runner. With 256 MiB the same run peaks at 3.5 GB. The test suites of 14 packages that use metamon pass with the new limit.
+
 ## [0.18.0] - 2026-11-27
 
 ### Fixed
