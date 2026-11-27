@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `gleam run -m metamon/mutation -- run` no longer starves a CI runner. Four workers on a four-core runner kept every core busy, partly with idle schedulers that spin, and the runner was stopped (exit code 143 after a mutant was reported as TIMED_OUT, or "The hosted runner lost communication with the server"). Each test run now starts under `nice -n 10` with scheduler busy waiting turned off, and a process that grows past 1 GiB is killed. Only the first and the last 64 KiB of a test run's output are kept.
+
 ## [0.17.0] - 2026-11-27
 
 ### Fixed

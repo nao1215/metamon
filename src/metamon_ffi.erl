@@ -18,7 +18,7 @@
     parallel_map/2,
     monotonic_milliseconds/0,
     find_executable/1,
-    run_command/3
+    run_command/4
 ]).
 
 now_microseconds() ->
@@ -142,7 +142,7 @@ find_executable(Name) ->
 
 %% Run Executable with Arguments in Directory and return {ok, {Status, Output}}
 %% with stdout and stderr combined, or {error, nil} when it is not on PATH.
-run_command(Executable, Arguments, Directory) ->
+run_command(Executable, Arguments, Directory, Environment) ->
     case os:find_executable(unicode:characters_to_list(Executable)) of
         false ->
             {error, nil};
@@ -151,15 +151,45 @@ run_command(Executable, Arguments, Directory) ->
                 {spawn_executable, Path},
                 [{args, [unicode:characters_to_list(A) || A <- Arguments]},
                  {cd, unicode:characters_to_list(Directory)},
+                 {env, [{unicode:characters_to_list(Name), unicode:characters_to_list(Value)}
+                        || {Name, Value} <- Environment]},
                  exit_status, stderr_to_stdout, binary, hide, use_stdio]
             ),
-            collect_output(Port, [])
+            collect_output(Port, <<>>, <<>>, 0)
     end.
 
-collect_output(Port, Chunks) ->
+%% A mutant that prints in a loop must not fill the runner's memory, so only
+%% the start and the end of the output are kept: a compile error is at the
+%% start and the test summary at the end.
+-define(OUTPUT_KEPT, 65536).
+
+collect_output(Port, Head, Tail, Dropped) ->
     receive
+        {Port, {data, Data}} when byte_size(Head) < ?OUTPUT_KEPT ->
+            Room = ?OUTPUT_KEPT - byte_size(Head),
+            case Data of
+                <<Start:Room/binary, Rest/binary>> ->
+                    keep_tail(Port, <<Head/binary, Start/binary>>, Tail, Rest, Dropped);
+                _ ->
+                    collect_output(Port, <<Head/binary, Data/binary>>, Tail, Dropped)
+            end;
         {Port, {data, Data}} ->
-            collect_output(Port, [Data | Chunks]);
+            keep_tail(Port, Head, Tail, Data, Dropped);
         {Port, {exit_status, Status}} ->
-            {ok, {Status, iolist_to_binary(lists:reverse(Chunks))}}
+            Gap = case Dropped of
+                0 -> <<>>;
+                _ -> iolist_to_binary(
+                         io_lib:format("~n[~B bytes of output left out]~n", [Dropped]))
+            end,
+            {ok, {Status, <<Head/binary, Gap/binary, Tail/binary>>}}
+    end.
+
+keep_tail(Port, Head, Tail, Data, Dropped) ->
+    Joined = <<Tail/binary, Data/binary>>,
+    case byte_size(Joined) - ?OUTPUT_KEPT of
+        Excess when Excess > 0 ->
+            <<_:Excess/binary, Kept/binary>> = Joined,
+            collect_output(Port, Head, Kept, Dropped + Excess);
+        _ ->
+            collect_output(Port, Head, Joined, Dropped)
     end.

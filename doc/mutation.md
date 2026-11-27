@@ -36,6 +36,8 @@ Some survivors cannot be killed, because the change gives the same output (`x < 
 
 A survivor is run two more times and counts only when it lives every time, because property tests draw new inputs on each run. Each mutant may run for four times as long as the tests take without a mutation, and at least a minute; one that runs longer counts as killed.
 
+Each test run starts under `nice -n 10` when `nice` is on the PATH, with `+sbwt none +sbwtdcpu none +sbwtdio none +hmax 134217728 +hmaxib true` added to `ERL_ZFLAGS`. Idle schedulers then do not spin, which keeps the parallel workers from taking all the CPU time on a CI runner, and a process that grows past 1 GiB, binaries included, is killed, so a mutant that allocates without end fails the tests instead of filling the memory. If a test needs more than 1 GiB in one process, the run without a mutation fails and the output says so.
+
 ## On pull requests
 
 [`.github/workflows/mutation.yml`](https://github.com/nao1215/metamon/blob/main/.github/workflows/mutation.yml) in this repository mutates the modules a pull request or push changes, runs `gate`, and mutates every module once a week. It can be copied as is.
