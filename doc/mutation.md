@@ -36,6 +36,8 @@ Some survivors cannot be killed, because the change gives the same output (`x < 
 
 A survivor is run two more times and counts only when it lives every time, because property tests draw new inputs on each run. Each mutant may run for four times as long as the tests take without a mutation, and at least a minute; one that runs longer counts as killed.
 
+Each test run has `+hmax 134217728 +hmaxib true` added to `ERL_ZFLAGS`, so a process that grows past 1 GiB, binaries included, is killed and the mutant counts as killed. Without the limit, a mutant that makes a test allocate without end can fill the memory of a CI runner before the timeout ends it. If a test needs more than 1 GiB in one process, the run without a mutation fails and the output says so.
+
 ## On pull requests
 
 [`.github/workflows/mutation.yml`](https://github.com/nao1215/metamon/blob/main/.github/workflows/mutation.yml) in this repository mutates the modules a pull request or push changes, runs `gate`, and mutates every module once a week. It can be copied as is.

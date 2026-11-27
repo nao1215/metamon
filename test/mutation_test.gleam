@@ -428,6 +428,71 @@ fn on_erlang(run: fn() -> Nil) -> Nil {
   Nil
 }
 
+// Running commands ----------------------------------------------------------
+
+pub fn long_output_keeps_its_start_and_end_test() {
+  use <- on_erlang
+  let full =
+    int.range(from: 1, to: 200_001, with: [], run: fn(lines, number) {
+      [int.to_string(number) <> "\n", ..lines]
+    })
+    |> list.reverse
+    |> string.concat
+  let size = string.byte_size(full)
+  let assert Ok(head) =
+    bit_array.from_string(full)
+    |> bit_array.slice(at: 0, take: 65_536)
+    |> result_to_string
+  let assert Ok(tail) =
+    bit_array.from_string(full)
+    |> bit_array.slice(at: size - 65_536, take: 65_536)
+    |> result_to_string
+  let gap =
+    "\n[" <> int.to_string(size - 131_072) <> " bytes of output left out]\n"
+  assert run_command("seq", ["1", "200000"], in: ".", with: [])
+    == Ok(#(0, head <> gap <> tail))
+}
+
+pub fn short_output_is_kept_whole_test() {
+  use <- on_erlang
+  assert run_command("seq", ["1", "3"], in: ".", with: [])
+    == Ok(#(0, "1\n2\n3\n"))
+}
+
+pub fn the_environment_is_added_test() {
+  use <- on_erlang
+  assert run_command(
+      "sh",
+      ["-c", "printf '%s %s' \"$METAMON_PROBE\" \"$HOME\" && exit 3"],
+      in: ".",
+      with: [#("METAMON_PROBE", "+hmax 1")],
+    )
+    == Ok(#(3, "+hmax 1 " <> home()))
+}
+
+fn result_to_string(bits: Result(BitArray, Nil)) -> Result(String, Nil) {
+  case bits {
+    Ok(bits) -> bit_array.to_string(bits)
+    Error(Nil) -> Error(Nil)
+  }
+}
+
+@external(erlang, "metamon_ffi", "run_command")
+fn run_command(
+  executable: String,
+  arguments: List(String),
+  in directory: String,
+  with environment: List(#(String, String)),
+) -> Result(#(Int, String), Nil) {
+  let _ = #(executable, arguments, directory, environment)
+  Error(Nil)
+}
+
+@external(erlang, "mutation_test_ffi", "home")
+fn home() -> String {
+  ""
+}
+
 // Choosing and running ------------------------------------------------------
 
 pub fn every_module_is_chosen_unless_excluded_test() {

@@ -104,6 +104,6 @@ export function find_executable(_name) {
   return new ErrorResult(undefined);
 }
 
-export function run_command(_executable, _arguments, _directory) {
+export function run_command(_executable, _arguments, _directory, _environment) {
   return new ErrorResult(undefined);
 }

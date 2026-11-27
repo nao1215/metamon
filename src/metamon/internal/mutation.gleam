@@ -30,6 +30,12 @@ const work_root: String = "build/mutation/work"
 /// tests draw a new seed on each run.
 const retries: Int = 2
 
+/// Emulator flags for each test run: a process that grows past 1 GiB, counting
+/// its binaries, is killed. A mutant can make a test allocate without end, and
+/// several such runs in parallel fill the memory of a CI runner before the
+/// timeout ends them.
+const test_emulator_flags: String = "+hmax 134217728 +hmaxib true"
+
 pub type Command {
   Run(workers: Int, exclude: List(String), files: List(String))
   ListMutants(exclude: List(String), files: List(String))
@@ -450,7 +456,15 @@ fn test_in(
     "--target",
     "erlang",
   ]
-  case run_command(timeout_command, arguments, project) {
+  let flags = case getenv("ERL_ZFLAGS") {
+    Ok(flags) -> flags <> " " <> test_emulator_flags
+    Error(Nil) -> test_emulator_flags
+  }
+  case
+    run_command(timeout_command, arguments, in: project, with: [
+      #("ERL_ZFLAGS", flags),
+    ])
+  {
     Ok(#(0, output)) -> #(Lived, output)
     Ok(#(124, output)) | Ok(#(137, output)) -> #(TimedOut, output)
     Ok(#(_, output)) -> #(classify_failure(output), output)
@@ -806,11 +820,18 @@ fn monotonic_milliseconds() -> Int
 @external(javascript, "../../metamon_ffi.mjs", "find_executable")
 fn find_executable(name: String) -> Result(String, Nil)
 
-/// The exit status and the combined stdout and stderr of a command.
+/// The exit status and the combined stdout and stderr of a command run in
+/// `directory` with `environment` added to the variables of this process.
+/// Only the start and the end of a long output are kept.
 @external(erlang, "metamon_ffi", "run_command")
 @external(javascript, "../../metamon_ffi.mjs", "run_command")
 fn run_command(
   executable: String,
   arguments: List(String),
-  directory: String,
+  in directory: String,
+  with environment: List(#(String, String)),
 ) -> Result(#(Int, String), Nil)
+
+@external(erlang, "metamon_ffi", "getenv")
+@external(javascript, "../../metamon_ffi.mjs", "getenv")
+fn getenv(name: String) -> Result(String, Nil)
