@@ -29,20 +29,20 @@ metamon tests itself with metamon. `metamon_self_property_test.gleam` runs prope
 <!-- mutation:start -->
 | Module | Killed | Lived | Timed out | Score |
 |---|---:|---:|---:|---:|
-| `metamon` | 15 | 6 | 0 | 71.4% |
-| `metamon/generator` | 28 | 20 | 0 | 58.3% |
-| `metamon/internal/coverage` | 12 | 1 | 0 | 92.3% |
-| `metamon/internal/diff` | 6 | 4 | 0 | 60.0% |
+| `metamon` | 13 | 8 | 0 | 61.9% |
+| `metamon/generator` | 24 | 24 | 0 | 50.0% |
+| `metamon/internal/coverage` | 11 | 2 | 0 | 84.6% |
+| `metamon/internal/diff` | 5 | 5 | 0 | 50.0% |
 | `metamon/internal/edges` | 6 | 2 | 0 | 75.0% |
 | `metamon/internal/interval` | 5 | 6 | 0 | 45.5% |
 | `metamon/internal/mutant` | 8 | 0 | 0 | 100.0% |
 | `metamon/internal/mutation` | 28 | 1 | 0 | 96.6% |
 | `metamon/internal/regression` | 4 | 1 | 0 | 80.0% |
 | `metamon/internal/report` | 3 | 0 | 0 | 100.0% |
-| `metamon/internal/runner` | 18 | 11 | 0 | 62.1% |
+| `metamon/internal/runner` | 16 | 13 | 0 | 55.2% |
 | `metamon/internal/seed` | 16 | 10 | 1 | 63.0% |
 | `metamon/internal/shrink` | 13 | 8 | 0 | 61.9% |
-| all | 162 | 70 | 1 | 70.0% |
+| all | 152 | 80 | 1 | 65.7% |
 <!-- mutation:end -->
 
-The first full run (2026-11-27) scored 65.0% with 82 survivors; 12 were in the mutation modules and tests now kill them, except `measure_unmutated`, whose elapsed time only sets the timeout. The other 69 survivors are recorded in the baseline as found: boundary comparisons and arithmetic in generators, sizes, seeds and float shrinking, the tolerance checks in `approximately`, and flags in the runner that only change how a report is laid out. They are the next tests to write.
+The first full run (2026-11-27) scored 65.0% with 82 survivors; 12 were in the mutation modules and tests now kill them, except `measure_unmutated`, whose elapsed time only sets the timeout. The other 69 survivors are recorded in the baseline as found: boundary comparisons and arithmetic in generators, sizes, seeds and float shrinking, the tolerance checks in `approximately`, and flags in the runner that only change how a report is laid out. They are the next tests to write. That run was on a machine with a load average above 150, and 10 mutants were counted as killed because an unrelated test failed under the load; the first run on CI (2026-11-27) found them alive, so the baseline lists them as survivors. One of them, `actual_pct` with `total < 0`, is equivalent, since dividing by 0.0 gives 0.0.
