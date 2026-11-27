@@ -1,6 +1,6 @@
 name = "metamon"
 version = "0.16.0"
-description = "Property-based testing and metamorphic testing combinator library for Gleam"
+description = "Property-based, metamorphic and mutation testing for Gleam"
 licences = ["MIT"]
 repository = { type = "github", user = "nao1215", repo = "metamon" }
 gleam = ">= 1.14.0"

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `gleam run -m metamon/mutation -- run` stops with an error when it cannot write a mutated module into a copy of the project or restore it. It used to go on, and the later mutants of that copy ran against the wrong source.
+
 ## [0.16.0] - 2026-11-27
 
 ### Added

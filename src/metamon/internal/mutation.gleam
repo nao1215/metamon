@@ -14,11 +14,11 @@ import gleam/string
 import metamon/internal/mutant.{type Mutant}
 import simplifile
 
-pub const results_path: String = "build/mutation/results.json"
+const results_path: String = "build/mutation/results.json"
 
-pub const baseline_path: String = "doc/mutation/baseline.json"
+const baseline_path: String = "doc/mutation/baseline.json"
 
-pub const document_path: String = "doc/testing.md"
+const document_path: String = "doc/testing.md"
 
 const start_marker: String = "<!-- mutation:start -->"
 
@@ -254,7 +254,8 @@ fn run(
     <> int.to_string(list.length(files))
     <> " modules",
   )
-  let _ = simplifile.delete(work_root)
+  // Copies left behind by an interrupted run.
+  let _stale = simplifile.delete(work_root)
   use projects <- result.try(
     int.range(from: 0, to: workers, with: [], run: fn(acc, index) {
       [work_root <> "/w" <> int.to_string(index), ..acc]
@@ -265,16 +266,18 @@ fn run(
     }),
   )
   use timeout <- result.try(measure_unmutated(projects, timeout_command))
-  let rows =
+  use rows <- result.try(
     list.index_map(projects, fn(project, worker) { #(worker, project) })
     |> parallel_map(fn(pair) {
       let #(worker, project) = pair
       share(mutants, of: workers, for: worker)
-      |> list.map(run_mutant(project, _, sources, timeout_command, timeout))
+      |> list.try_map(run_mutant(project, _, sources, timeout_command, timeout))
     })
-    |> list.flatten
-    |> sort_rows
-  let _ = simplifile.delete(work_root)
+    |> result.all
+    |> result.map(fn(rows) { list.flatten(rows) |> sort_rows }),
+  )
+  // Only build output: a copy that cannot be removed is overwritten next run.
+  let _cleaned = simplifile.delete(work_root)
   use _ <- result.map(write_results(Results(files:, excluded: exclude, rows:)))
   io.println(summary_line(rows))
   0
@@ -367,28 +370,27 @@ fn run_mutant(
   sources: Dict(String, String),
   timeout_command: String,
   timeout: Int,
-) -> Row {
+) -> Result(Row, MutationError) {
   let path = project <> "/" <> mutant.file
   let applied = {
     use original <- result.try(dict.get(sources, mutant.file))
     use mutated <- result.map(mutant.apply(source: original, mutant:))
     #(original, mutated)
   }
-  let status = case applied {
-    Error(Nil) -> CompileError
-    Ok(#(original, mutated)) ->
-      case simplifile.write(path, mutated) {
-        Error(_) -> CompileError
-        Ok(Nil) -> {
-          let status =
-            retry_while_lived(retries, fn(_) {
-              test_in(project, timeout_command, timeout).0
-            })
-          let _ = simplifile.write(path, original)
-          status
-        }
-      }
-  }
+  // A copy whose module cannot be written or restored would run every later
+  // mutant of this worker against the wrong source, so the run stops.
+  use status <- result.map(case applied {
+    Error(Nil) -> Ok(CompileError)
+    Ok(#(original, mutated)) -> {
+      use _ <- result.try(write_file(path, mutated))
+      let status =
+        retry_while_lived(retries, fn(_) {
+          test_in(project, timeout_command, timeout).0
+        })
+      use _ <- result.map(write_file(path, original))
+      status
+    }
+  })
   io.println(
     status_name(status)
     <> " "
@@ -471,7 +473,7 @@ fn order_then(first: order.Order, second: order.Order) -> order.Order {
 
 // Results --------------------------------------------------------------------
 
-pub fn status_name(status: Status) -> String {
+fn status_name(status: Status) -> String {
   case status {
     Killed -> "KILLED"
     Lived -> "LIVED"
