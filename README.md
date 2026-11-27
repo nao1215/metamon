@@ -11,7 +11,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nao1215/metamon/badge)](https://scorecard.dev/viewer/?uri=github.com/nao1215/metamon)
 
 
-Property-based and metamorphic testing for Gleam, on Erlang and JavaScript. A property checks one input; a metamorphic relation checks how the outputs for two related inputs, such as `f(x)` and `f(list.reverse(x))`, must relate. metamon generates inputs, shrinks a failing one and prints a report with the seed that reproduces it.
+Property-based and metamorphic testing for Gleam, on Erlang and JavaScript. A property checks one input; a metamorphic relation checks how the outputs for two related inputs, such as `f(x)` and `f(list.reverse(x))`, must relate. metamon generates inputs, shrinks a failing one and prints a report with the seed that reproduces it. It also includes a mutation testing tool that checks whether the tests notice a changed operator.
 
 ```sh
 gleam add --dev metamon@0
@@ -151,6 +151,19 @@ pub fn trim_test() {
 `classify` counts inputs by label, `cover` fails the run when a label is hit less often than the given percentage, and `annotate` adds a labelled value to the failure report.
 
 Further documentation can be found at <https://hexdocs.pm/metamon>.
+
+## Mutation testing
+
+`gleam run -m metamon/mutation` checks the tests themselves. It changes one operator, `!` or boolean literal in a module under `src/` at a time and runs `gleam test --target erlang` in a copy of the project. If the tests still pass, no test checks the behaviour that changed. It needs `timeout` from GNU coreutils.
+
+```sh
+gleam run -m metamon/mutation -- run --workers 8
+gleam run -m metamon/mutation -- baseline
+gleam run -m metamon/mutation -- run src/my_module.gleam
+gleam run -m metamon/mutation -- gate
+```
+
+`baseline` records the survivors of a full run in `doc/mutation/baseline.json`, and `gate` fails when a mutant lives that the baseline does not list, so a pull request only needs to mutate the modules it changes. [`.github/workflows/mutation.yml`](https://github.com/nao1215/metamon/blob/main/.github/workflows/mutation.yml) runs it that way, and the module docs list every command.
 
 ## Verifying releases
 

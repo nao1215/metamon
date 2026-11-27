@@ -9,6 +9,7 @@ gleam = ">= 1.14.0"
 gleam_stdlib = ">= 0.44.0 and < 2.0.0"
 gleam_json = ">= 3.0.0 and < 4.0.0"
 simplifile = ">= 2.0.0 and < 3.0.0"
+glance = ">= 7.0.0 and < 8.0.0"
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
@@ -120,6 +121,10 @@ unwrap_used = "error"
 # `gleam.mjs` to interop with Gleam-shaped Results. There is no
 # stable replacement for this on the JS target.
 "src/metamon_ffi.mjs" = ["ffi_usage"]
+# Mutation testing reads the command line, runs `gleam test` as a subprocess
+# and runs the copies of the project in parallel processes.
+"src/metamon/mutation.gleam" = ["ffi_usage"]
+"src/metamon/internal/mutation.gleam" = ["ffi_usage"]
 
 [[documentation.pages]]
 title = "Limitations"
