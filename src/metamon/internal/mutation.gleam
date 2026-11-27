@@ -32,10 +32,8 @@ const retries: Int = 2
 
 /// Emulator flags for each test run. Idle schedulers do not spin, so that
 /// parallel workers leave CPU time to the rest of the machine (a CI runner that
-/// gets none stops the job), and a process that grows past 1 GiB, counting
-/// its binaries, is killed instead of filling the memory.
-const test_emulator_flags: String =
-  "+sbwt none +sbwtdcpu none +sbwtdio none +hmax 134217728 +hmaxib true"
+/// gets none stops the job).
+const test_emulator_flags: String = "+sbwt none +sbwtdcpu none +sbwtdio none"
 
 /// How a test run is started: the program and the arguments before the
 /// timeout in seconds.
