@@ -13,7 +13,12 @@
     ieee_smallest_positive_denormal/0,
     ieee_largest_finite/0,
     getenv/1,
-    capture_panic/1
+    capture_panic/1,
+    plain_arguments/0,
+    parallel_map/2,
+    monotonic_milliseconds/0,
+    find_executable/1,
+    run_command/3
 ]).
 
 now_microseconds() ->
@@ -108,4 +113,53 @@ capture_panic(Thunk) ->
             {true, Message};
         _:Reason ->
             {true, unicode:characters_to_binary(io_lib:format("~p", [Reason]))}
+    end.
+
+%% Mutation testing (metamon/mutation).
+
+%% The arguments after `--` of `gleam run -m metamon/mutation -- ...`.
+plain_arguments() ->
+    [unicode:characters_to_binary(Argument) || Argument <- init:get_plain_arguments()].
+
+%% Apply Fun to every item in its own process and return the results in order.
+parallel_map(Items, Fun) ->
+    Parent = self(),
+    Refs = [begin
+                Ref = make_ref(),
+                spawn_link(fun() -> Parent ! {Ref, Fun(Item)} end),
+                Ref
+            end || Item <- Items],
+    [receive {Ref, Result} -> Result end || Ref <- Refs].
+
+monotonic_milliseconds() ->
+    erlang:monotonic_time(millisecond).
+
+find_executable(Name) ->
+    case os:find_executable(unicode:characters_to_list(Name)) of
+        false -> {error, nil};
+        Path -> {ok, unicode:characters_to_binary(Path)}
+    end.
+
+%% Run Executable with Arguments in Directory and return {ok, {Status, Output}}
+%% with stdout and stderr combined, or {error, nil} when it is not on PATH.
+run_command(Executable, Arguments, Directory) ->
+    case os:find_executable(unicode:characters_to_list(Executable)) of
+        false ->
+            {error, nil};
+        Path ->
+            Port = open_port(
+                {spawn_executable, Path},
+                [{args, [unicode:characters_to_list(A) || A <- Arguments]},
+                 {cd, unicode:characters_to_list(Directory)},
+                 exit_status, stderr_to_stdout, binary, hide, use_stdio]
+            ),
+            collect_output(Port, [])
+    end.
+
+collect_output(Port, Chunks) ->
+    receive
+        {Port, {data, Data}} ->
+            collect_output(Port, [Data | Chunks]);
+        {Port, {exit_status, Status}} ->
+            {ok, {Status, iolist_to_binary(lists:reverse(Chunks))}}
     end.

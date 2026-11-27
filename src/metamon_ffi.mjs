@@ -5,7 +5,7 @@
 // already isolates assertion lifetimes per test, so reuse is safe as
 // long as the runner clears state at the start and end of each run.
 
-import { Ok, Error as ErrorResult } from "./gleam.mjs";
+import { Ok, Error as ErrorResult, List } from "./gleam.mjs";
 
 export function now_microseconds() {
   // Date.now() returns milliseconds; multiply to match the Erlang
@@ -87,4 +87,23 @@ export function capture_panic(thunk) {
     }
     return [true, String(error)];
   }
+}
+
+// Mutation testing runs `gleam test` as a subprocess and is Erlang-only. On
+// this target the command line is still read, but no command can be found,
+// so `gleam run -m metamon/mutation -- run` reports what is missing.
+export function plain_arguments() {
+  return List.fromArray(globalThis.process?.argv.slice(2) ?? []);
+}
+
+export function monotonic_milliseconds() {
+  return Math.floor(performance.now());
+}
+
+export function find_executable(_name) {
+  return new ErrorResult(undefined);
+}
+
+export function run_command(_executable, _arguments, _directory) {
+  return new ErrorResult(undefined);
 }

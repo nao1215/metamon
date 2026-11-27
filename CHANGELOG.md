@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `gleam run -m metamon/mutation` runs mutation testing on the Erlang target. It changes one operator, `!` or boolean literal at a time, runs `gleam test` in parallel copies of the project, records the survivors of a full run as a baseline and fails a run that has a survivor the baseline does not list. It was written for qrkit and moved here so the other packages can use it. metamon now depends on glance.
+
 ## [0.15.0] - 2026-11-23
 
 ### Changed

@@ -24,12 +24,25 @@ metamon tests itself with metamon. `metamon_self_property_test.gleam` runs prope
 
 ## Mutation testing
 
-There is no mutation testing tool for Gleam, so `gleam_mutate.py` (from the mutation-testing lab in nao1215/debimate) is run by hand on a copy of the project. It rewrites one operator or boolean result at a time (`==`/`!=`, `&&`/`||`, float comparisons, `-.`/`+.`, `-> True`/`-> False`, a dropped `!`) and runs `gleam test` on the Erlang target. The score is killed / (killed + lived).
+`gleam run -m metamon/mutation` (`src/metamon/mutation.gleam`) mutates every module under `src/`, including itself: `==` and `!=` swapped, `<` and `<=`, `>` and `>=` moved across the boundary, `&&` and `||` swapped, `!` dropped, `True` and `False` swapped, and the arithmetic operators swapped, for integers and floats. `.github/workflows/mutation.yml` mutates the modules a pull request changes and fails on a survivor that `doc/mutation/baseline.json` does not list; the weekly run mutates every module. The score is (killed + timed out) / (killed + timed out + lived). `test/mutation_test.gleam` applies every mutant of every module here and checks that glance still parses the result.
 
-| Date | Files | Killed | Lived | Score |
-|---|---|---:|---:|---:|
-| 2026-11-19 | every module under `src/` | 68 | 9 | 88.3% |
+<!-- mutation:start -->
+| Module | Killed | Lived | Timed out | Score |
+|---|---:|---:|---:|---:|
+| `metamon` | 15 | 6 | 0 | 71.4% |
+| `metamon/generator` | 28 | 20 | 0 | 58.3% |
+| `metamon/internal/coverage` | 12 | 1 | 0 | 92.3% |
+| `metamon/internal/diff` | 6 | 4 | 0 | 60.0% |
+| `metamon/internal/edges` | 6 | 2 | 0 | 75.0% |
+| `metamon/internal/interval` | 5 | 6 | 0 | 45.5% |
+| `metamon/internal/mutant` | 8 | 0 | 0 | 100.0% |
+| `metamon/internal/mutation` | 28 | 1 | 0 | 96.6% |
+| `metamon/internal/regression` | 4 | 1 | 0 | 80.0% |
+| `metamon/internal/report` | 3 | 0 | 0 | 100.0% |
+| `metamon/internal/runner` | 18 | 11 | 0 | 62.1% |
+| `metamon/internal/seed` | 16 | 10 | 1 | 63.0% |
+| `metamon/internal/shrink` | 13 | 8 | 0 | 61.9% |
+| all | 162 | 70 | 1 | 70.0% |
+<!-- mutation:end -->
 
-The first run scored 58/77 (75.3%). No test checked that `generator.float(lo, hi)` stays in `[lo, hi]` when `lo` is not 0, that float edges drop the anchors outside the range and keep both bounds, that edges are deduplicated, that a list generator keeps the lower bound of its length range, or that `generator.linear_range` picks 0 as its origin only when 0 is in range. Tests for each now exist.
-
-The 9 remaining survivors are kept as found, not relabelled: the vacuous-pass branches of two round-trip runners that have since been removed (2), which only recorded coverage; `attach_known_root` (1), whose fallback branch is unreachable because `tree.unfold` already puts the value at the root; `diff.build_row`, `is_list_inspect` and `is_tuple_inspect` (3), which only change how a failure report lays out a diff; a negation in the runner's `shrink_loop` (1); and boundary comparisons in `approximately` and the coverage shortfall check (2).
+The first full run (2026-11-27) scored 65.0% with 82 survivors; 12 were in the mutation modules and tests now kill them, except `measure_unmutated`, whose elapsed time only sets the timeout. The other 69 survivors are recorded in the baseline as found: boundary comparisons and arithmetic in generators, sizes, seeds and float shrinking, the tolerance checks in `approximately`, and flags in the runner that only change how a report is laid out. They are the next tests to write.
