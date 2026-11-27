@@ -30,16 +30,11 @@ const work_root: String = "build/mutation/work"
 /// tests draw a new seed on each run.
 const retries: Int = 2
 
-/// Emulator flags for each test run. Idle schedulers do not spin, so that
-/// parallel workers leave CPU time to the rest of the machine (a CI runner that
-/// gets none stops the job).
-const test_emulator_flags: String = "+sbwt none +sbwtdcpu none +sbwtdio none"
-
-/// How a test run is started: the program and the arguments before the
-/// timeout in seconds.
-type Launcher {
-  Launcher(executable: String, arguments: List(String))
-}
+/// Emulator flags for each test run: a process that grows past 1 GiB, counting
+/// its binaries, is killed. A mutant can make a test allocate without end, and
+/// several such runs in parallel fill the memory of a CI runner before the
+/// timeout ends them.
+const test_emulator_flags: String = "+hmax 134217728 +hmaxib true"
 
 pub type Command {
   Run(workers: Int, exclude: List(String), files: List(String))
@@ -264,7 +259,7 @@ fn run(
   use files <- result.try(chosen_files(exclude, files))
   use sources <- result.try(read_sources(files))
   use mutants <- result.try(find_mutants(sources))
-  use launcher <- result.try(find_launcher())
+  use timeout_command <- result.try(find_timeout())
   io.println(
     int.to_string(list.length(mutants))
     <> " mutants in "
@@ -282,13 +277,13 @@ fn run(
       copy_project(project) |> result.replace(project)
     }),
   )
-  use timeout <- result.try(measure_unmutated(projects, launcher))
+  use timeout <- result.try(measure_unmutated(projects, timeout_command))
   use rows <- result.try(
     list.index_map(projects, fn(project, worker) { #(worker, project) })
     |> parallel_map(fn(pair) {
       let #(worker, project) = pair
       share(mutants, of: workers, for: worker)
-      |> list.try_map(run_mutant(project, _, sources, launcher, timeout))
+      |> list.try_map(run_mutant(project, _, sources, timeout_command, timeout))
     })
     |> result.all
     |> result.map(fn(rows) { list.flatten(rows) |> sort_rows }),
@@ -303,13 +298,13 @@ fn run(
 /// mutant: four times as long as the clean run, and at least a minute.
 fn measure_unmutated(
   projects: List(String),
-  launcher: Launcher,
+  timeout_command: String,
 ) -> Result(Int, MutationError) {
   case projects {
     [] -> Ok(60)
     [first, ..] -> {
       let started = monotonic_milliseconds()
-      let #(status, output) = test_in(first, launcher, 900)
+      let #(status, output) = test_in(first, timeout_command, 900)
       let elapsed = monotonic_milliseconds() - started
       case status {
         Lived -> Ok(mutant_timeout(elapsed))
@@ -340,19 +335,10 @@ fn delete_if_present(path: String) -> Result(Nil, MutationError) {
   }
 }
 
-/// Starts each test run under `timeout`, and under `nice` when it is on the
-/// PATH so that the workers yield to the rest of the machine.
-fn find_launcher() -> Result(Launcher, MutationError) {
-  use timeout <- result.map(
-    ["timeout", "gtimeout"]
-    |> list.find(fn(name) { find_executable(name) |> result.is_ok })
-    |> result.replace_error(TimeoutCommandMissing),
-  )
-  let arguments = ["--kill-after=10"]
-  case find_executable("nice") {
-    Ok(_) -> Launcher("nice", ["-n", "10", timeout, ..arguments])
-    Error(Nil) -> Launcher(timeout, arguments)
-  }
+fn find_timeout() -> Result(String, MutationError) {
+  ["timeout", "gtimeout"]
+  |> list.find(fn(name) { find_executable(name) |> result.is_ok })
+  |> result.replace_error(TimeoutCommandMissing)
 }
 
 /// Copies the project into `destination`, with the compiled dependencies so
@@ -401,7 +387,7 @@ fn run_mutant(
   project: String,
   mutant: Mutant,
   sources: Dict(String, String),
-  launcher: Launcher,
+  timeout_command: String,
   timeout: Int,
 ) -> Result(Row, MutationError) {
   let path = project <> "/" <> mutant.file
@@ -418,7 +404,7 @@ fn run_mutant(
       use _ <- result.try(write_file(path, mutated))
       let status =
         retry_while_lived(retries, fn(_) {
-          test_in(project, launcher, timeout).0
+          test_in(project, timeout_command, timeout).0
         })
       use _ <- result.map(write_file(path, original))
       status
@@ -459,23 +445,23 @@ fn retry_from(number: Int, retries: Int, attempt: fn(Int) -> Status) -> Status {
 
 fn test_in(
   project: String,
-  launcher: Launcher,
+  timeout_command: String,
   timeout: Int,
 ) -> #(Status, String) {
-  let arguments =
-    list.append(launcher.arguments, [
-      int.to_string(timeout),
-      "gleam",
-      "test",
-      "--target",
-      "erlang",
-    ])
+  let arguments = [
+    "--kill-after=10",
+    int.to_string(timeout),
+    "gleam",
+    "test",
+    "--target",
+    "erlang",
+  ]
   let flags = case getenv("ERL_ZFLAGS") {
     Ok(flags) -> flags <> " " <> test_emulator_flags
     Error(Nil) -> test_emulator_flags
   }
   case
-    run_command(launcher.executable, arguments, in: project, with: [
+    run_command(timeout_command, arguments, in: project, with: [
       #("ERL_ZFLAGS", flags),
     ])
   {
