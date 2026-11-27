@@ -10,7 +10,7 @@ import metamon
 import metamon/generator
 import metamon/internal/mutant
 import metamon/internal/mutation.{
-  CompileError, Killed, Lived, Results, Row, Summary, TimedOut,
+  CompileError, Killed, Lived, Part, Results, Row, Summary, TimedOut, Whole,
 }
 import simplifile
 
@@ -183,18 +183,25 @@ pub fn moving_code_keeps_the_match_key_test() {
 
 pub fn arguments_are_parsed_test() {
   assert mutation.parse_arguments(["run"])
-    == Ok(mutation.Run(workers: 4, exclude: [], files: []))
+    == Ok(mutation.Run(workers: 4, exclude: [], files: [], shard: Whole))
   assert mutation.parse_arguments([
       "run", "--workers", "2", "--exclude", "src/a.gleam", "src/b.gleam",
-      "--exclude", "src/c.gleam",
+      "--exclude", "src/c.gleam", "--shard", "2/3",
     ])
-    == Ok(
-      mutation.Run(workers: 2, exclude: ["src/a.gleam", "src/c.gleam"], files: [
-        "src/b.gleam",
-      ]),
-    )
+    == Ok(mutation.Run(
+      workers: 2,
+      exclude: ["src/a.gleam", "src/c.gleam"],
+      files: ["src/b.gleam"],
+      shard: Part(index: 2, count: 3),
+    ))
   assert mutation.parse_arguments(["list", "src/a.gleam"])
-    == Ok(mutation.ListMutants(exclude: [], files: ["src/a.gleam"]))
+    == Ok(mutation.ListMutants(
+      exclude: [],
+      files: ["src/a.gleam"],
+      shard: Whole,
+    ))
+  assert mutation.parse_arguments(["merge", "a.json", "b.json"])
+    == Ok(mutation.Merge(paths: ["a.json", "b.json"]))
   assert mutation.parse_arguments(["gate"]) == Ok(mutation.Gate)
   assert mutation.parse_arguments(["baseline"]) == Ok(mutation.Baseline)
   assert mutation.parse_arguments(["doc-check"]) == Ok(mutation.DocCheck)
@@ -211,6 +218,12 @@ pub fn bad_arguments_print_the_usage_test() {
       ["run", "--workers", "x"],
       ["run", "--exclude"],
       ["run", "--verbose"],
+      ["run", "--shard"],
+      ["run", "--shard", "0/2"],
+      ["run", "--shard", "3/2"],
+      ["run", "--shard", "1"],
+      ["run", "--shard", "a/b"],
+      ["merge"],
     ],
     fn(arguments) {
       assert mutation.parse_arguments(arguments) == Error(Nil)
@@ -266,7 +279,15 @@ pub fn results_survive_a_round_trip_through_json_test() {
         length: generator.range(0, 2),
       ),
       fn(rows, excluded) {
-        Results(files: ["src/a.gleam", "src/b/c.gleam"], excluded:, rows:)
+        Results(
+          files: ["src/a.gleam", "src/b/c.gleam"],
+          excluded:,
+          shard: case list.length(rows) % 3 {
+            0 -> Whole
+            remainder -> Part(index: remainder, count: 2)
+          },
+          rows:,
+        )
       },
     )
   metamon.forall_round_trip(
@@ -280,7 +301,8 @@ pub fn results_survive_a_round_trip_through_json_test() {
 pub fn results_without_excluded_files_still_load_test() {
   let assert Ok(results) =
     mutation.results_from_json("{\"files\":[\"src/a.gleam\"],\"mutants\":[]}")
-  assert results == Results(files: ["src/a.gleam"], excluded: [], rows: [])
+  assert results
+    == Results(files: ["src/a.gleam"], excluded: [], shard: Whole, rows: [])
   assert mutation.results_from_json("{\"files\":[]}") == Error(Nil)
   assert mutation.results_from_json(
       "{\"files\":[],\"mutants\":[{\"file\":\"a\",\"line\":1,\"column\":0,\"function\":\"f\",\"mutator\":\"m\",\"text\":\"t\",\"status\":\"ALIVE\"}]}",
@@ -567,13 +589,94 @@ pub fn a_survivor_is_retried_test() {
 
 pub fn a_baseline_needs_every_module_that_is_not_excluded_test() {
   let all = ["src/a.gleam", "src/b.gleam", "src/gen.gleam"]
-  let results = fn(files, excluded) { Results(files:, excluded:, rows: []) }
+  let results = fn(files, excluded) {
+    Results(files:, excluded:, shard: Whole, rows: [])
+  }
   assert mutation.is_full_run(
     results(["src/a.gleam", "src/b.gleam"], ["src/gen.gleam"]),
     all,
   )
   assert !mutation.is_full_run(results(["src/a.gleam"], ["src/gen.gleam"]), all)
   assert !mutation.is_full_run(results(["src/a.gleam", "src/b.gleam"], []), all)
+  assert !mutation.is_full_run(
+    Results(
+      files: ["src/a.gleam", "src/b.gleam"],
+      excluded: ["src/gen.gleam"],
+      shard: Part(index: 1, count: 1),
+      rows: [],
+    ),
+    all,
+  )
+}
+
+// Shards --------------------------------------------------------------------
+
+pub fn the_shards_split_the_mutants_without_overlap_test() {
+  metamon.forall(
+    generator.tuple2(
+      generator.list_of(
+        generator.int(generator.range(0, 1000)),
+        length: generator.range(0, 40),
+      ),
+      generator.int(generator.range(1, 6)),
+    ),
+    fn(input) {
+      let #(mutants, count) = input
+      let parts =
+        int.range(from: 1, to: count + 1, with: [], run: fn(acc, index) {
+          [mutation.select_shard(mutants, Part(index:, count:)), ..acc]
+        })
+      assert list.sort(list.flatten(parts), int.compare)
+        == list.sort(mutants, int.compare)
+      let sizes = list.map(parts, list.length)
+      let assert Ok(largest) = list.max(sizes, int.compare)
+      let assert Ok(smallest) = list.max(sizes, fn(a, b) { int.compare(b, a) })
+      assert largest - smallest <= 1
+    },
+  )
+  assert mutation.select_shard([1, 2, 3], Whole) == [1, 2, 3]
+}
+
+fn part(index: Int, count: Int, rows: List(mutation.Row)) -> mutation.Results {
+  Results(
+    files: ["src/a.gleam"],
+    excluded: [],
+    shard: Part(index:, count:),
+    rows:,
+  )
+}
+
+pub fn merged_shards_make_a_full_run_test() {
+  let assert Ok(merged) =
+    mutation.merge_results([
+      part(2, 2, [row(3, 0, Lived)]),
+      part(1, 2, [row(1, 0, Killed), row(2, 0, TimedOut)]),
+    ])
+  assert merged
+    == Results(files: ["src/a.gleam"], excluded: [], shard: Whole, rows: [
+      row(1, 0, Killed),
+      row(2, 0, TimedOut),
+      row(3, 0, Lived),
+    ])
+  assert mutation.is_full_run(merged, ["src/a.gleam"])
+}
+
+pub fn shards_that_do_not_fit_are_not_merged_test() {
+  let whole =
+    Results(files: ["src/a.gleam"], excluded: [], shard: Whole, rows: [])
+  let other_modules =
+    Results(..part(2, 2, []), files: ["src/a.gleam", "src/b.gleam"])
+  assert mutation.merge_results([]) == Error(mutation.NoResults)
+  assert mutation.merge_results([part(1, 2, [])])
+    == Error(mutation.PartsMissingOrRepeated(count: 2))
+  assert mutation.merge_results([part(1, 2, []), part(1, 2, [])])
+    == Error(mutation.PartsMissingOrRepeated(count: 2))
+  assert mutation.merge_results([part(1, 2, []), part(2, 3, [])])
+    == Error(mutation.PartsMissingOrRepeated(count: 2))
+  assert mutation.merge_results([part(1, 2, []), other_modules])
+    == Error(mutation.DifferentRuns)
+  assert mutation.merge_results([part(1, 1, []), whole])
+    == Error(mutation.NotSharded)
 }
 
 pub fn the_document_check_compares_the_table_test() {
