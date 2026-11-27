@@ -140,7 +140,7 @@ pub fn parse_arguments(arguments: List(String)) -> Result(Command, Nil) {
         shard: options.shard,
       )
     }
-    ["merge", _, ..] -> Ok(Merge(paths: list.drop(arguments, 1)))
+    ["merge", first, ..rest] -> Ok(Merge(paths: [first, ..rest]))
     ["gate"] -> Ok(Gate)
     ["baseline"] -> Ok(Baseline)
     ["doc-check"] -> Ok(DocCheck)
@@ -847,10 +847,14 @@ fn merge(paths: List(String)) -> Result(Int, MutationError) {
 
 /// Why the parts of a sharded run cannot be joined.
 pub type MergeError {
+  /// No results file was given.
   NoResults
+  /// The parts mutated different modules or excluded different ones.
   DifferentRuns
+  /// A results file comes from a run without `--shard`.
   NotSharded
-  /// Each part from 1 to `count` must appear exactly once.
+  /// A part from 1 to `count` is missing or appears twice, or the parts
+  /// disagree on `count`.
   PartsMissingOrRepeated(count: Int)
 }
 
