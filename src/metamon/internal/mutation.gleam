@@ -31,11 +31,13 @@ const work_root: String = "build/mutation/work"
 /// tests draw a new seed on each run.
 const retries: Int = 2
 
-/// Emulator flags for each test run: a process that grows past 1 GiB, counting
-/// its binaries, is killed. A mutant can make a test allocate without end, and
-/// several such runs in parallel fill the memory of a CI runner before the
-/// timeout ends them.
-const test_emulator_flags: String = "+hmax 134217728 +hmaxib true"
+/// Emulator flags for each test run: a process that grows past 256 MiB,
+/// counting its binaries, is killed. A mutant can make a test allocate without
+/// end, and several such runs in parallel fill the memory of a CI runner
+/// before the timeout ends them. A process that recurses without end grows
+/// to about 13 times the limit before the kill, so a larger limit lets one
+/// test run take several gigabytes.
+const test_emulator_flags: String = "+hmax 33554432 +hmaxib true"
 
 pub type Command {
   Run(workers: Int, exclude: List(String), files: List(String), shard: Shard)
@@ -140,7 +142,7 @@ pub fn parse_arguments(arguments: List(String)) -> Result(Command, Nil) {
         shard: options.shard,
       )
     }
-    ["merge", _, ..] -> Ok(Merge(paths: list.drop(arguments, 1)))
+    ["merge", first, ..rest] -> Ok(Merge(paths: [first, ..rest]))
     ["gate"] -> Ok(Gate)
     ["baseline"] -> Ok(Baseline)
     ["doc-check"] -> Ok(DocCheck)
@@ -847,10 +849,14 @@ fn merge(paths: List(String)) -> Result(Int, MutationError) {
 
 /// Why the parts of a sharded run cannot be joined.
 pub type MergeError {
+  /// No results file was given.
   NoResults
+  /// The parts mutated different modules or excluded different ones.
   DifferentRuns
+  /// A results file comes from a run without `--shard`.
   NotSharded
-  /// Each part from 1 to `count` must appear exactly once.
+  /// A part from 1 to `count` is missing or appears twice, or the parts
+  /// disagree on `count`.
   PartsMissingOrRepeated(count: Int)
 }
 
