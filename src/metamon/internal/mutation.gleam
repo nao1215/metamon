@@ -14,11 +14,11 @@ import gleam/string
 import metamon/internal/mutant.{type Mutant}
 import simplifile
 
-pub const results_path: String = "build/mutation/results.json"
+const results_path: String = "build/mutation/results.json"
 
-pub const baseline_path: String = "doc/mutation/baseline.json"
+const baseline_path: String = "doc/mutation/baseline.json"
 
-pub const document_path: String = "doc/testing.md"
+const document_path: String = "doc/testing.md"
 
 const start_marker: String = "<!-- mutation:start -->"
 
@@ -39,11 +39,13 @@ pub type Command {
 }
 
 pub type MutationError {
-  FileFailed(path: String, reason: simplifile.FileError)
-  ParseFailed(path: String)
-  ResultsUnreadable(path: String)
-  NoTimeoutCommand
-  UnmutatedTestsFail(output: String)
+  FailedToReadFile(path: String, reason: simplifile.FileError)
+  FailedToWriteFile(path: String, reason: simplifile.FileError)
+  FailedToCopyProject(path: String, reason: simplifile.FileError)
+  FailedToParseModule(path: String)
+  NotAResultsFile(path: String)
+  TimeoutCommandMissing
+  UnmutatedTestsFailed(output: String)
   BaselineNeedsFullRun
 }
 
@@ -144,13 +146,17 @@ pub fn execute(command: Command) -> Result(Int, MutationError) {
 
 pub fn describe(error: MutationError) -> String {
   case error {
-    FileFailed(path:, reason:) ->
-      path <> ": " <> simplifile.describe_error(reason)
-    ParseFailed(path:) -> path <> ": glance cannot parse this module"
-    ResultsUnreadable(path:) -> path <> ": not a mutation results file"
-    NoTimeoutCommand ->
+    FailedToReadFile(path:, reason:) ->
+      "cannot read " <> path <> ": " <> simplifile.describe_error(reason)
+    FailedToWriteFile(path:, reason:) ->
+      "cannot write " <> path <> ": " <> simplifile.describe_error(reason)
+    FailedToCopyProject(path:, reason:) ->
+      "cannot copy " <> path <> ": " <> simplifile.describe_error(reason)
+    FailedToParseModule(path:) -> path <> ": glance cannot parse this module"
+    NotAResultsFile(path:) -> path <> ": not a mutation results file"
+    TimeoutCommandMissing ->
       "neither timeout nor gtimeout is on PATH (install GNU coreutils)"
-    UnmutatedTestsFail(output:) ->
+    UnmutatedTestsFailed(output:) ->
       "the tests fail before any mutation:\n" <> output
     BaselineNeedsFullRun ->
       "the baseline needs a run over every module: run without FILE arguments"
@@ -177,7 +183,7 @@ pub fn select_modules(
 }
 
 fn source_files() -> Result(List(String), MutationError) {
-  simplifile.get_files("src") |> result.map_error(FileFailed("src", _))
+  simplifile.get_files("src") |> result.map_error(FailedToReadFile("src", _))
 }
 
 fn chosen_files(
@@ -197,7 +203,7 @@ fn read_sources(
   list.try_map(files, fn(file) {
     simplifile.read(file)
     |> result.map(fn(source) { #(file, source) })
-    |> result.map_error(FileFailed(file, _))
+    |> result.map_error(FailedToReadFile(file, _))
   })
   |> result.map(dict.from_list)
 }
@@ -209,7 +215,7 @@ fn find_mutants(
   |> list.sort(fn(left, right) { string.compare(left.0, right.0) })
   |> list.try_map(fn(pair) {
     mutant.find(file: pair.0, source: pair.1)
-    |> result.replace_error(ParseFailed(pair.0))
+    |> result.replace_error(FailedToParseModule(pair.0))
   })
   |> result.map(list.flatten)
 }
@@ -254,7 +260,8 @@ fn run(
     <> int.to_string(list.length(files))
     <> " modules",
   )
-  let _ = simplifile.delete(work_root)
+  // Copies left behind by an interrupted run.
+  use _ <- result.try(delete_if_present(work_root))
   use projects <- result.try(
     int.range(from: 0, to: workers, with: [], run: fn(acc, index) {
       [work_root <> "/w" <> int.to_string(index), ..acc]
@@ -265,16 +272,17 @@ fn run(
     }),
   )
   use timeout <- result.try(measure_unmutated(projects, timeout_command))
-  let rows =
+  use rows <- result.try(
     list.index_map(projects, fn(project, worker) { #(worker, project) })
     |> parallel_map(fn(pair) {
       let #(worker, project) = pair
       share(mutants, of: workers, for: worker)
-      |> list.map(run_mutant(project, _, sources, timeout_command, timeout))
+      |> list.try_map(run_mutant(project, _, sources, timeout_command, timeout))
     })
-    |> list.flatten
-    |> sort_rows
-  let _ = simplifile.delete(work_root)
+    |> result.all
+    |> result.map(fn(rows) { list.flatten(rows) |> sort_rows }),
+  )
+  use _ <- result.try(delete_if_present(work_root))
   use _ <- result.map(write_results(Results(files:, excluded: exclude, rows:)))
   io.println(summary_line(rows))
   0
@@ -294,7 +302,7 @@ fn measure_unmutated(
       let elapsed = monotonic_milliseconds() - started
       case status {
         Lived -> Ok(mutant_timeout(elapsed))
-        _ -> Error(UnmutatedTestsFail(output:))
+        Killed | TimedOut | CompileError -> Error(UnmutatedTestsFailed(output:))
       }
     }
   }
@@ -314,10 +322,17 @@ pub fn mutant_timeout(clean_run_milliseconds: Int) -> Int {
   int.max(60, clean_run_milliseconds * 4 / 1000)
 }
 
+fn delete_if_present(path: String) -> Result(Nil, MutationError) {
+  case simplifile.delete(path) {
+    Ok(Nil) | Error(simplifile.Enoent) -> Ok(Nil)
+    Error(reason) -> Error(FailedToWriteFile(path, reason))
+  }
+}
+
 fn find_timeout() -> Result(String, MutationError) {
   ["timeout", "gtimeout"]
   |> list.find(fn(name) { find_executable(name) |> result.is_ok })
-  |> result.replace_error(NoTimeoutCommand)
+  |> result.replace_error(TimeoutCommandMissing)
 }
 
 /// Copies the project into `destination`, with the compiled dependencies so
@@ -325,10 +340,11 @@ fn find_timeout() -> Result(String, MutationError) {
 fn copy_project(destination: String) -> Result(Nil, MutationError) {
   use _ <- result.try(
     simplifile.create_directory_all(destination <> "/build")
-    |> result.map_error(FileFailed(destination, _)),
+    |> result.map_error(FailedToCopyProject(destination, _)),
   )
   use entries <- result.try(
-    simplifile.read_directory(".") |> result.map_error(FileFailed(".", _)),
+    simplifile.read_directory(".")
+    |> result.map_error(FailedToReadFile(".", _)),
   )
   copied_entries(entries)
   |> list.map(fn(entry) { #(entry, destination <> "/" <> entry) })
@@ -357,7 +373,7 @@ fn copy_entry(source: String, target: String) -> Result(Nil, MutationError) {
     Ok(Nil) -> Ok(Nil)
     // build/dev is missing until the project has been built once.
     Error(simplifile.Enoent) -> Ok(Nil)
-    Error(reason) -> Error(FileFailed(source, reason))
+    Error(reason) -> Error(FailedToCopyProject(source, reason))
   }
 }
 
@@ -367,28 +383,27 @@ fn run_mutant(
   sources: Dict(String, String),
   timeout_command: String,
   timeout: Int,
-) -> Row {
+) -> Result(Row, MutationError) {
   let path = project <> "/" <> mutant.file
   let applied = {
     use original <- result.try(dict.get(sources, mutant.file))
     use mutated <- result.map(mutant.apply(source: original, mutant:))
     #(original, mutated)
   }
-  let status = case applied {
-    Error(Nil) -> CompileError
-    Ok(#(original, mutated)) ->
-      case simplifile.write(path, mutated) {
-        Error(_) -> CompileError
-        Ok(Nil) -> {
-          let status =
-            retry_while_lived(retries, fn(_) {
-              test_in(project, timeout_command, timeout).0
-            })
-          let _ = simplifile.write(path, original)
-          status
-        }
-      }
-  }
+  // A copy whose module cannot be written or restored would run every later
+  // mutant of this worker against the wrong source, so the run stops.
+  use status <- result.map(case applied {
+    Error(Nil) -> Ok(CompileError)
+    Ok(#(original, mutated)) -> {
+      use _ <- result.try(write_file(path, mutated))
+      let status =
+        retry_while_lived(retries, fn(_) {
+          test_in(project, timeout_command, timeout).0
+        })
+      use _ <- result.map(write_file(path, original))
+      status
+    }
+  })
   io.println(
     status_name(status)
     <> " "
@@ -471,7 +486,7 @@ fn order_then(first: order.Order, second: order.Order) -> order.Order {
 
 // Results --------------------------------------------------------------------
 
-pub fn status_name(status: Status) -> String {
+fn status_name(status: Status) -> String {
   case status {
     Killed -> "KILLED"
     Lived -> "LIVED"
@@ -545,9 +560,9 @@ pub fn results_from_json(text: String) -> Result(Results, Nil) {
 
 fn read_results(path: String) -> Result(Results, MutationError) {
   use text <- result.try(
-    simplifile.read(path) |> result.map_error(FileFailed(path, _)),
+    simplifile.read(path) |> result.map_error(FailedToReadFile(path, _)),
   )
-  results_from_json(text) |> result.replace_error(ResultsUnreadable(path))
+  results_from_json(text) |> result.replace_error(NotAResultsFile(path))
 }
 
 fn write_results(results: Results) -> Result(Nil, MutationError) {
@@ -563,9 +578,10 @@ fn write_file(path: String, contents: String) -> Result(Nil, MutationError) {
     |> string.join("/")
   use _ <- result.try(
     simplifile.create_directory_all(directory)
-    |> result.map_error(FileFailed(directory, _)),
+    |> result.map_error(FailedToWriteFile(directory, _)),
   )
-  simplifile.write(path, contents) |> result.map_error(FileFailed(path, _))
+  simplifile.write(path, contents)
+  |> result.map_error(FailedToWriteFile(path, _))
 }
 
 pub fn summarise(rows: List(Row)) -> Summary {
@@ -616,7 +632,10 @@ fn key(row: Row) -> #(String, String, String, String, Int) {
 /// Survivors in `results` that `baseline` does not list. A survivor is
 /// matched by module, function, mutator, line text and column, not by line
 /// number, so moving code does not make it new.
-pub fn new_survivors(baseline: List(Row), results: List(Row)) -> List(Row) {
+pub fn new_survivors(
+  in results: List(Row),
+  against baseline: List(Row),
+) -> List(Row) {
   let known =
     baseline
     |> list.filter(fn(row) { row.status == Lived })
@@ -630,7 +649,7 @@ pub fn new_survivors(baseline: List(Row), results: List(Row)) -> List(Row) {
 fn gate() -> Result(Int, MutationError) {
   use baseline <- result.try(read_results(baseline_path))
   use results <- result.map(read_results(results_path))
-  let new = new_survivors(baseline.rows, results.rows)
+  let new = new_survivors(in: results.rows, against: baseline.rows)
   list.each(new, fn(row) {
     io.println(
       "new survivor "

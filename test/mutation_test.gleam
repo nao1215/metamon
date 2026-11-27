@@ -356,15 +356,25 @@ fn row(line: Int, column: Int, status: mutation.Status) -> mutation.Row {
 }
 
 pub fn a_known_survivor_on_another_line_is_not_new_test() {
-  assert mutation.new_survivors([row(10, 2, Lived)], [row(42, 2, Lived)]) == []
+  assert mutation.new_survivors(in: [row(42, 2, Lived)], against: [
+      row(10, 2, Lived),
+    ])
+    == []
 }
 
 pub fn a_survivor_the_baseline_does_not_list_is_new_test() {
-  assert mutation.new_survivors([row(10, 2, Lived)], [row(10, 6, Lived)])
+  assert mutation.new_survivors(in: [row(10, 6, Lived)], against: [
+      row(10, 2, Lived),
+    ])
     == [row(10, 6, Lived)]
-  assert mutation.new_survivors([row(10, 2, Killed)], [row(10, 2, Lived)])
+  assert mutation.new_survivors(in: [row(10, 2, Lived)], against: [
+      row(10, 2, Killed),
+    ])
     == [row(10, 2, Lived)]
-  assert mutation.new_survivors([row(10, 2, Lived)], [row(10, 2, Killed)]) == []
+  assert mutation.new_survivors(in: [row(10, 2, Killed)], against: [
+      row(10, 2, Lived),
+    ])
+    == []
 }
 
 /// The baseline never reports itself.
@@ -372,7 +382,7 @@ pub fn a_run_matching_the_baseline_passes_the_gate_test() {
   metamon.forall(
     generator.list_of(row_generator(), length: generator.range(0, 20)),
     fn(rows) {
-      assert mutation.new_survivors(rows, rows) == []
+      assert mutation.new_survivors(in: rows, against: rows) == []
     },
   )
 }

@@ -1,33 +1,19 @@
-//// Mutation testing for Gleam projects. It parses each module under `src/`
-//// with glance, changes one operator, `!` or boolean literal at a time, and
-//// runs `gleam test --target erlang` in a copy of the project. A mutant the
-//// tests still pass with has survived: some behaviour is not checked.
-////
-//// Add metamon as a dev dependency and run it from the project root on the
-//// Erlang target. It needs `timeout` from GNU coreutils (`gtimeout` on
-//// macOS).
+//// Mutation testing for the project in the current directory: change one
+//// operator, `!` or boolean literal in a module under `src/` at a time and
+//// see whether `gleam test` notices. Run it on the Erlang target; the
+//// [Mutation testing](mutation.html) page lists the commands and the files.
 ////
 //// ```sh
-//// gleam run -m metamon/mutation -- run --workers 4
-//// gleam run -m metamon/mutation -- baseline
-//// gleam run -m metamon/mutation -- run src/my_module.gleam
+//// gleam run -m metamon/mutation -- run --workers 8
 //// gleam run -m metamon/mutation -- gate
 //// ```
-////
-//// `run` writes `build/mutation/results.json`. `baseline` copies a run over
-//// every module to `doc/mutation/baseline.json`, and rewrites the table
-//// between `<!-- mutation:start -->` and `<!-- mutation:end -->` in
-//// `doc/testing.md` when the file has them. `gate` fails when a mutant lives
-//// that the baseline does not list, so a pull request can mutate only the
-//// modules it changes. Survivors are matched by module, function, mutator,
-//// line text and the column in that text, so moved code still matches. A
-//// survivor is run two more times and counts only when it lives every time,
-//// because property tests draw a new seed on each run. `--exclude FILE`
-//// leaves a module out, such as generated tables.
 
 import gleam/io
 import metamon/internal/mutation
 
+/// Runs the command given after `--`, printing the usage when there is none
+/// or it is not known. Exits with 0 on success, 1 when `gate` or `doc-check`
+/// fails and 2 on a usage or file error.
 pub fn main() -> Nil {
   let code = case mutation.parse_arguments(plain_arguments()) {
     Error(Nil) -> {
