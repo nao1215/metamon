@@ -154,16 +154,7 @@ Further documentation can be found at <https://hexdocs.pm/metamon>.
 
 ## Mutation testing
 
-`gleam run -m metamon/mutation` checks the tests themselves. It changes one operator, `!` or boolean literal in a module under `src/` at a time and runs `gleam test --target erlang` in a copy of the project. If the tests still pass, no test checks the behaviour that changed. It needs `timeout` from GNU coreutils.
-
-```sh
-gleam run -m metamon/mutation -- run --workers 8
-gleam run -m metamon/mutation -- baseline
-gleam run -m metamon/mutation -- run src/my_module.gleam
-gleam run -m metamon/mutation -- gate
-```
-
-`baseline` records the survivors of a full run in `doc/mutation/baseline.json`, and `gate` fails when a mutant lives that the baseline does not list, so a pull request only needs to mutate the modules it changes. [`.github/workflows/mutation.yml`](https://github.com/nao1215/metamon/blob/main/.github/workflows/mutation.yml) runs it that way, and the module docs list every command.
+`gleam run -m metamon/mutation` checks the tests themselves. It changes one operator, `!` or boolean literal in a module at a time and runs `gleam test --target erlang` in a copy of the project; if the tests still pass, no test checks the behaviour that changed. See [Mutation testing](https://hexdocs.pm/metamon/mutation.html) for the commands and for running it on pull requests.
 
 ## Verifying releases
 

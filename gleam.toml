@@ -132,6 +132,11 @@ path = "limitations.html"
 source = "./doc/limitations.md"
 
 [[documentation.pages]]
+title = "Mutation testing"
+path = "mutation.html"
+source = "./doc/mutation.md"
+
+[[documentation.pages]]
 title = "Targets"
 path = "targets.html"
 source = "./doc/targets.md"
