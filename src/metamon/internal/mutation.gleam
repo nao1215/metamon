@@ -33,6 +33,13 @@ const counts_path: String = "build/coverage/counts.tsv"
 
 const lcov_path: String = "build/coverage/lcov.info"
 
+/// Where `metamon_e2e:prepare/0` writes the compiled modules, the escript
+/// and the counts of every run of the escript.
+const e2e_path: String = "build/coverage/e2e"
+
+/// The variable that gives an end-to-end suite the path of the escript.
+const e2e_variable: String = "METAMON_COVERAGE_ESCRIPT"
+
 const erlang_build: String = "build/dev/erlang"
 
 /// A survivor is run this many more times before it counts, because property
@@ -54,7 +61,8 @@ pub type Command {
   Gate
   Baseline
   DocCheck
-  Coverage
+  /// Measure the tests, and each end-to-end command in `e2e` too.
+  Coverage(e2e: List(String))
 }
 
 /// The mutants a run covers, so that CI can split a long run over several
@@ -80,6 +88,7 @@ pub type MutationError {
   NoPackageName
   CoverageBuildFailed
   CoverageFailed(status: Int)
+  E2ePrepareFailed(status: Int)
   UnmutatedTestsFailed(output: String)
   BaselineNeedsFullRun
 }
@@ -135,9 +144,12 @@ pub const usage: String =
       doc/testing.md.
   doc-check
       Fail when the table in doc/testing.md does not match the baseline.
-  coverage
+  coverage [--e2e COMMAND]...
       Run the tests with every module under src/ measured and write the
-      lines they reach to build/coverage/lcov.info."
+      lines they reach to build/coverage/lcov.info. Each --e2e COMMAND runs
+      in sh with METAMON_COVERAGE_ESCRIPT set to an escript that runs the
+      program with its lines counted, and its lines are added to those of
+      the tests."
 
 /// Reads the command line. `Error(Nil)` means the usage should be printed.
 pub fn parse_arguments(arguments: List(String)) -> Result(Command, Nil) {
@@ -163,7 +175,19 @@ pub fn parse_arguments(arguments: List(String)) -> Result(Command, Nil) {
     ["gate"] -> Ok(Gate)
     ["baseline"] -> Ok(Baseline)
     ["doc-check"] -> Ok(DocCheck)
-    ["coverage"] -> Ok(Coverage)
+    ["coverage", ..rest] -> parse_e2e(rest, [])
+    _ -> Error(Nil)
+  }
+}
+
+fn parse_e2e(
+  arguments: List(String),
+  commands: List(String),
+) -> Result(Command, Nil) {
+  case arguments {
+    [] -> Ok(Coverage(e2e: list.reverse(commands)))
+    ["--e2e", "--" <> _, ..] -> Error(Nil)
+    ["--e2e", command, ..rest] -> parse_e2e(rest, [command, ..commands])
     _ -> Error(Nil)
   }
 }
@@ -243,7 +267,7 @@ pub fn execute(command: Command) -> Result(Int, MutationError) {
     Gate -> gate()
     Baseline -> record_baseline()
     DocCheck -> doc_check()
-    Coverage -> coverage()
+    Coverage(e2e:) -> coverage(e2e)
   }
 }
 
@@ -270,6 +294,10 @@ pub fn describe(error: MutationError) -> String {
       "gleam build --target erlang failed, so there was nothing to measure"
     CoverageFailed(status:) ->
       "measuring the coverage failed (erl exited with "
+      <> int.to_string(status)
+      <> "); build/coverage/lcov.info was left as it was"
+    E2ePrepareFailed(status:) ->
+      "compiling the modules for --e2e failed (erl exited with "
       <> int.to_string(status)
       <> "); build/coverage/lcov.info was left as it was"
     UnmutatedTestsFailed(output:) ->
@@ -1068,8 +1096,9 @@ pub fn render_document(text: String, rows: List(Row)) -> Result(String, Nil) {
 
 /// Runs the tests in a fresh `erl` with the modules under `src/` measured by
 /// Erlang's `cover`, then writes the counts as LCOV. The line numbers `cover`
-/// reports are the lines of the Gleam source.
-fn coverage() -> Result(Int, MutationError) {
+/// reports are the lines of the Gleam source. The lines each command in `e2e`
+/// reaches are added to those of the tests.
+fn coverage(e2e: List(String)) -> Result(Int, MutationError) {
   use erl <- result.try(
     find_executable("erl") |> result.replace_error(ErlMissing),
   )
@@ -1104,7 +1133,11 @@ fn coverage() -> Result(Int, MutationError) {
     |> result.map_error(FailedToReadFile(erlang_build, _)),
   )
   use _ <- result.try(write_file(counts_path, ""))
+  let erlang_modules =
+    list.filter(sources, string.ends_with(_, ".erl"))
+    |> list.filter_map(test_module)
   let sources = list.filter(sources, string.ends_with(_, ".gleam"))
+  let measured = list.map(sources, module_name(_, in: "src/"))
   use contents <- result.try(read_sources(sources))
   // glance is only used to find the lines to skip, so a module it cannot
   // parse is still measured, with none of its lines skipped.
@@ -1125,7 +1158,7 @@ fn coverage() -> Result(Int, MutationError) {
     list.flatten([
       ["-noshell", "-pa", ..paths],
       ["-eval", "metamon_ffi:measure_coverage().", "-extra", counts_path],
-      [package, ..list.map(sources, module_name(_, in: "src/"))],
+      [package, ..measured],
       ["--", ..list.filter_map(tests, test_module)],
     ])
   use status <- result.try(
@@ -1139,10 +1172,88 @@ fn coverage() -> Result(Int, MutationError) {
     simplifile.read(counts_path)
     |> result.map_error(FailedToReadFile(counts_path, _)),
   )
-  let #(lcov, summary) = coverage_report(counts, skipped)
+  use #(e2e_status, e2e_counts) <- result.try(case e2e {
+    [] -> Ok(#(0, ""))
+    _ -> measure_e2e(e2e, erl:, package:, paths:, measured:, erlang_modules:)
+  })
+  let #(lcov, summary) = coverage_report(counts <> e2e_counts, skipped)
   use _ <- result.try(write_file(lcov_path, lcov))
   io.println(summary)
-  Ok(status)
+  Ok(int.max(status, e2e_status))
+}
+
+/// Compiles the package once with its lines counted, runs each command with
+/// the escript that runs the program from those modules, and returns 1 when a
+/// command fails, 0 otherwise, with the counts of every run of the escript.
+fn measure_e2e(
+  commands: List(String),
+  erl erl: String,
+  package package: String,
+  paths paths: List(String),
+  measured measured: List(String),
+  erlang_modules erlang_modules: List(String),
+) -> Result(#(Int, String), MutationError) {
+  use _ <- result.try(delete_if_present(e2e_path))
+  let arguments =
+    list.flatten([
+      ["-noshell", "-pa", ..paths],
+      ["-eval", "metamon_e2e:prepare().", "-extra", e2e_path, package],
+      measured,
+      ["--", ..erlang_modules],
+    ])
+  use status <- result.try(
+    run_inheriting(erl, arguments) |> result.replace_error(ErlMissing),
+  )
+  use _ <- result.try(case status {
+    0 -> Ok(Nil)
+    _ -> Error(E2ePrepareFailed(status))
+  })
+  use directory <- result.try(
+    simplifile.current_directory()
+    |> result.map_error(FailedToReadFile(".", _)),
+  )
+  let environment =
+    e2e_variable <> "=" <> directory <> "/" <> e2e_path <> "/bin/" <> package
+  let failures =
+    list.filter_map(commands, fn(command) {
+      run_inheriting("env", [environment, "sh", "-c", command])
+      |> e2e_failure(command, _)
+    })
+  list.each(failures, io.println_error)
+  let counts_directory = e2e_path <> "/counts"
+  use files <- result.try(
+    simplifile.get_files(counts_directory)
+    |> result.map_error(FailedToReadFile(counts_directory, _)),
+  )
+  use counts <- result.try(
+    list.try_map(files, fn(file) {
+      simplifile.read(file) |> result.map_error(FailedToReadFile(file, _))
+    }),
+  )
+  let status = case failures {
+    [] -> 0
+    _ -> 1
+  }
+  Ok(#(status, string.concat(counts)))
+}
+
+/// The message for an `--e2e` command that `run_inheriting` ran with
+/// `status`, or `Error(Nil)` when it passed.
+pub fn e2e_failure(
+  command: String,
+  status: Result(Int, Nil),
+) -> Result(String, Nil) {
+  case status {
+    Ok(0) -> Error(Nil)
+    Ok(status) ->
+      Ok(
+        "the --e2e command exited with "
+        <> int.to_string(status)
+        <> ": "
+        <> command,
+      )
+    Error(Nil) -> Ok("env is not on PATH, so --e2e cannot run: " <> command)
+  }
 }
 
 /// The value of the `name` line of a `gleam.toml`.
@@ -1229,7 +1340,9 @@ type Count {
 
 /// The LCOV file and a summary line for the counts that
 /// `metamon_ffi:measure_coverage/0` writes, one `module<TAB>line<TAB>calls`
-/// per line. The lines in `skipped`, by module, are left out.
+/// per line. A line that appears more than once, as it does when the tests
+/// and an end-to-end suite both reach it, gets the sum of its calls. The
+/// lines in `skipped`, by module, are left out.
 pub fn coverage_report(
   counts: String,
   skipped: Dict(String, List(Int)),
@@ -1240,6 +1353,15 @@ pub fn coverage_report(
     |> list.filter(fn(count) {
       let lines = dict.get(skipped, count.module) |> result.unwrap([])
       !list.contains(lines, count.line)
+    })
+    |> list.fold(dict.new(), fn(sums, count) {
+      let key = #(count.module, count.line)
+      let sum = dict.get(sums, key) |> result.unwrap(0)
+      dict.insert(sums, key, sum + count.calls)
+    })
+    |> dict.to_list
+    |> list.map(fn(entry) {
+      Count(module: entry.0.0, line: entry.0.1, calls: entry.1)
     })
     |> list.group(fn(count) { count.module })
     |> dict.to_list

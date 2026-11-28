@@ -207,7 +207,12 @@ pub fn arguments_are_parsed_test() {
   assert mutation.parse_arguments(["gate"]) == Ok(mutation.Gate)
   assert mutation.parse_arguments(["baseline"]) == Ok(mutation.Baseline)
   assert mutation.parse_arguments(["doc-check"]) == Ok(mutation.DocCheck)
-  assert mutation.parse_arguments(["coverage"]) == Ok(mutation.Coverage)
+  assert mutation.parse_arguments(["coverage"])
+    == Ok(mutation.Coverage(e2e: []))
+  assert mutation.parse_arguments([
+      "coverage", "--e2e", "just e2e", "--e2e", "atago run spec",
+    ])
+    == Ok(mutation.Coverage(e2e: ["just e2e", "atago run spec"]))
 }
 
 pub fn bad_arguments_print_the_usage_test() {
@@ -228,6 +233,9 @@ pub fn bad_arguments_print_the_usage_test() {
       ["run", "--shard", "a/b"],
       ["merge"],
       ["coverage", "src/a.gleam"],
+      ["coverage", "--e2e"],
+      ["coverage", "--e2e", "--e2e", "just e2e"],
+      ["coverage", "--e2e", "just e2e", "extra"],
     ],
     fn(arguments) {
       assert mutation.parse_arguments(arguments) == Error(Nil)
@@ -741,6 +749,33 @@ pub fn skipped_lines_and_malformed_counts_are_left_out_test() {
       "SF:src/a.gleam\nDA:2,4\nLF:1\nLH:1\nend_of_record\n",
       "line coverage 100.0%: 1 of 1 lines reached",
     )
+}
+
+pub fn the_calls_of_a_line_in_several_runs_are_added_test() {
+  // The tests reach line 1 of a and miss line 2. Two end-to-end runs reach
+  // line 2; neither loaded module b, so b has only the counts of the tests.
+  let tests = "a\t1\t1\na\t2\t0\nb\t4\t0\n"
+  let first_run = "a\t2\t3\n"
+  let second_run = "a\t1\t0\na\t2\t1\n"
+  assert mutation.coverage_report(
+      string.concat([tests, first_run, second_run]),
+      dict.new(),
+    )
+    == #(
+      string.concat([
+        "SF:src/a.gleam\nDA:1,1\nDA:2,4\nLF:2\nLH:2\nend_of_record\n",
+        "SF:src/b.gleam\nDA:4,0\nLF:1\nLH:0\nend_of_record\n",
+      ]),
+      "line coverage 66.7%: 2 of 3 lines reached",
+    )
+}
+
+pub fn an_e2e_command_fails_unless_it_exits_with_zero_test() {
+  assert mutation.e2e_failure("just e2e", Ok(0)) == Error(Nil)
+  assert mutation.e2e_failure("just e2e", Ok(3))
+    == Ok("the --e2e command exited with 3: just e2e")
+  assert mutation.e2e_failure("just e2e", Error(Nil))
+    == Ok("env is not on PATH, so --e2e cannot run: just e2e")
 }
 
 pub fn no_counts_make_an_empty_report_test() {

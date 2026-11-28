@@ -21,7 +21,7 @@ gleam run -m metamon/mutation -- merge FILE...
 gleam run -m metamon/mutation -- baseline
 gleam run -m metamon/mutation -- gate
 gleam run -m metamon/mutation -- doc-check
-gleam run -m metamon/mutation -- coverage
+gleam run -m metamon/mutation -- coverage [--e2e COMMAND]...
 ```
 
 - `run` mutates the given modules, or every module, in `N` copies of the project (default 4) and writes `build/mutation/results.json`. `--exclude` leaves a module out, such as a generated table.
@@ -31,7 +31,7 @@ gleam run -m metamon/mutation -- coverage
 - `baseline` copies a run over every module that was not excluded to `doc/mutation/baseline.json`. When `doc/testing.md` has `<!-- mutation:start -->` and `<!-- mutation:end -->`, it also writes the table of killed and lived mutants per module between them.
 - `gate` exits with 1 when a mutant lives that the baseline does not list.
 - `doc-check` exits with 1 when the table in `doc/testing.md` does not match the baseline.
-- `coverage` runs the tests with every module under `src/` measured and writes the lines they reach to `build/coverage/lcov.info`. See [Line coverage](#line-coverage).
+- `coverage` runs the tests with every module under `src/` measured and writes the lines they reach to `build/coverage/lcov.info`. `--e2e` adds the lines that an end-to-end suite reaches. See [Line coverage](#line-coverage).
 
 The score is (killed + timed out) / (killed + timed out + lived); a mutant that does not compile is not counted.
 
@@ -54,9 +54,19 @@ coverage:
     - build/coverage/lcov.info
 ```
 
-It needs Gleam 1.19 or later: older compilers wrote Erlang source, and `cover` reported the lines of that source instead. Only the Erlang target is measured. Code that runs only on JavaScript, an `@external` function's Erlang or JavaScript module, and a program that a test starts in another process, such as an escript run by an end-to-end test, are not counted. The line that declares a function with an Erlang `@external` is left out, because a call to it goes straight to the Erlang function.
+It needs Gleam 1.19 or later: older compilers wrote Erlang source, and `cover` reported the lines of that source instead. Only the Erlang target is measured. Code that runs only on JavaScript, an `@external` function's Erlang or JavaScript module, and a program that a test starts in another process are not counted; for a program started by an end-to-end suite, use `--e2e`. The line that declares a function with an Erlang `@external` is left out, because a call to it goes straight to the Erlang function.
 
 Measured code runs several times slower, so each test gets 500 seconds instead of the 50 that `gleam test` gives it.
+
+### End-to-end suites
+
+An end-to-end suite that runs a program's escript starts it in processes of its own, which the tests do not measure. `--e2e COMMAND` counts those runs too:
+
+```sh
+gleam run -m metamon/mutation -- coverage --e2e 'OASPEC_BIN="$METAMON_COVERAGE_ESCRIPT" atago run ./e2e'
+```
+
+Before the command runs, `coverage` compiles the package once into `build/coverage/e2e/` with its lines counted and writes an escript, `build/coverage/e2e/bin/PACKAGE`, that runs the package's `main` from those modules as `gleam run` does. The command runs in `sh` with the path of that escript in `METAMON_COVERAGE_ESCRIPT`, so the suite must take the program's path from a variable. The escript runs directly or with `escript`. Each run writes the counts of its lines before it exits, and `coverage` adds them to the counts of the tests. The compiled copy replaces every call to `erlang:halt` or `init:stop` in the package's modules, its Erlang files included, so that the counts are written first; a run that ends in a dependency's call to halt writes no counts. A run starts about as fast as the real escript; on a runtime without native coverage, `cover` measures the modules on every start, which takes seconds. `coverage` exits with 1 when a command fails, and `--e2e` can be given more than once.
 
 ## On pull requests
 
