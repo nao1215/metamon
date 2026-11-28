@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-28
+
 ### Added
 
 - `gleam run -m metamon/mutation -- coverage` runs the tests on the Erlang target with every module under `src/` measured by Erlang's `cover` and writes the lines they reach to `build/coverage/lcov.info`, with the line numbers of the Gleam source. It needs Gleam 1.19 or later. octocov and other tools that read LCOV can report it.
