@@ -1119,7 +1119,10 @@ fn coverage() -> Result(Int, MutationError) {
   use status <- result.try(
     run_inheriting(erl, arguments) |> result.replace_error(ErlMissing),
   )
-  use <- bool.guard(status > 1, Error(CoverageFailed(status)))
+  use status <- result.try(case status {
+    0 | 1 -> Ok(status)
+    _ -> Error(CoverageFailed(status))
+  })
   use counts <- result.try(
     simplifile.read(counts_path)
     |> result.map_error(FailedToReadFile(counts_path, _)),
