@@ -770,43 +770,53 @@ fn map(items: List(a)) -> List(a) {
   assert mutation.external_lines(source) == Ok([5, 14])
 }
 
-pub fn gleam_1_19_and_later_keep_the_gleam_lines_test() {
-  assert mutation.keeps_gleam_lines("gleam 1.19.0")
-  assert mutation.keeps_gleam_lines("gleam 1.20.1")
-  assert mutation.keeps_gleam_lines("gleam 2.0.0")
-  assert !mutation.keeps_gleam_lines("gleam 1.18.1")
-  assert !mutation.keeps_gleam_lines("gleam 0.34.0")
-  assert !mutation.keeps_gleam_lines("an unknown version")
+pub fn coverage_needs_gleam_1_19_or_later_test() {
+  assert mutation.check_gleam_version("gleam 1.19.0") == Ok(Nil)
+  assert mutation.check_gleam_version("gleam 1.20.1") == Ok(Nil)
+  assert mutation.check_gleam_version("gleam 2.0.0") == Ok(Nil)
+  list.each(["gleam 1.18.1", "gleam 0.34.0", "nothing"], fn(version) {
+    assert mutation.check_gleam_version(version)
+      == Error(mutation.CoverageNeedsNewerGleam(version))
+  })
 }
 
-pub fn the_measuring_erl_reports_lines_of_the_gleam_source_test() {
+pub fn the_package_name_comes_from_gleam_toml_test() {
+  assert mutation.package_name("name = \"metamon\"\nversion = \"1.0.0\"\n")
+    == Ok("metamon")
+  assert mutation.package_name("# name = \"old\"\n  name=\"pkg\"\n")
+    == Ok("pkg")
+  assert mutation.package_name("version = \"1.0.0\"\n") == Error(Nil)
+}
+
+pub fn the_measuring_erl_counts_each_branch_test() {
   use <- on_erlang
   // The compiler that built this test run; older ones report Erlang lines.
   let assert Ok(#(0, version)) =
     run_command("gleam", ["--version"], in: ".", with: [])
-  use <- bool.guard(!mutation.keeps_gleam_lines(string.trim(version)), Nil)
+  use <- bool.guard(
+    mutation.check_gleam_version(string.trim(version)) != Ok(Nil),
+    Nil,
+  )
   let output = "build/coverage-test/counts.tsv"
   let assert Ok(Nil) = simplifile.create_directory_all("build/coverage-test")
   let assert Ok(packages) = simplifile.read_directory("build/dev/erlang")
   let paths =
     list.map(packages, fn(package) { "build/dev/erlang/" <> package <> "/ebin" })
-  let assert Ok(#(status, _)) =
+  let assert Ok(#(0, _)) =
     run_command(
       "erl",
       list.flatten([
         ["-noshell", "-pa", ..paths],
         ["-eval", "metamon_ffi:measure_coverage().", "-extra", output],
-        ["metamon@internal@interval", "--", "range_test"],
+        ["metamon", "coverage_fixture", "--", "coverage_fixture"],
       ]),
       in: ".",
       with: [],
     )
-  assert status == 0
   let assert Ok(counts) = simplifile.read(output)
-  let #(_, summary) = mutation.coverage_report(counts, dict.new())
-  // The two branches of the first `case` in `new` in
-  // src/metamon/internal/interval.gleam are on lines 22 and 23.
-  assert string.contains(counts, "metamon@internal@interval\t22\t")
-  assert string.contains(counts, "metamon@internal@interval\t23\t")
-  assert string.starts_with(summary, "line coverage ")
+  // `sign` in test/coverage_fixture.gleam: the `case` on line 5 runs once,
+  // the `True` branch on line 6 never and the `False` branch on line 7 once.
+  assert string.contains(counts, "coverage_fixture\t5\t1\n")
+  assert string.contains(counts, "coverage_fixture\t6\t0\n")
+  assert string.contains(counts, "coverage_fixture\t7\t1\n")
 }

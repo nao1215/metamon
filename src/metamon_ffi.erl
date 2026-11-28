@@ -19,6 +19,7 @@
     monotonic_milliseconds/0,
     find_executable/1,
     run_command/4,
+    run_inheriting/2,
     measure_coverage/0
 ]).
 
@@ -195,18 +196,45 @@ keep_tail(Port, Head, Tail, Data, Dropped) ->
             collect_output(Port, Head, Joined, Dropped)
     end.
 
+%% Run Executable with Arguments in the current directory, writing to the
+%% standard output and error of this process as it goes, and return
+%% {ok, Status}, or {error, nil} when it is not on PATH.
+run_inheriting(Executable, Arguments) ->
+    case os:find_executable(unicode:characters_to_list(Executable)) of
+        false ->
+            {error, nil};
+        Path ->
+            Port = open_port(
+                {spawn_executable, Path},
+                [{args, [unicode:characters_to_list(A) || A <- Arguments]},
+                 exit_status, nouse_stdio, hide]
+            ),
+            receive {Port, {exit_status, Status}} -> {ok, Status} end
+    end.
+
 %% Run by `gleam run -m metamon/mutation -- coverage` in a fresh `erl`, so
 %% that a test cannot stop the command and the modules of the command are not
 %% replaced while it runs. The plain arguments are the file to write, the
-%% modules to measure, `--` and the test modules. Each line of the file is
+%% package, the modules to measure, `--` and the test modules. The package's
+%% applications are started as `gleam test` does. Each line of the file is
 %% "module<TAB>line<TAB>calls". Halts with 0 when every test passes, 1 when
 %% one fails and 2 when the measuring itself fails.
 measure_coverage() ->
     try
-        [Output | Rest] = init:get_plain_arguments(),
+        io:setopts(standard_io, [binary, {encoding, utf8}]),
+        io:setopts(standard_error, [{encoding, utf8}]),
+        [Output, Package | Rest] = init:get_plain_arguments(),
         {Measured, ["--" | Tests]} = lists:splitwith(fun(A) -> A =/= "--" end, Rest),
         cover:start(),
-        Modules = [M || {ok, M} <- [cover:compile_beam(list_to_atom(N)) || N <- Measured]],
+        Compiled = [{N, cover:compile_beam(list_to_atom(N))} || N <- Measured],
+        Modules = [M || {_, {ok, M}} <- Compiled],
+        [io:format(standard_error, "cover cannot measure ~s: ~p~n", [N, E])
+         || {N, {error, E}} <- Compiled],
+        case {Measured, Modules} of
+            {[_ | _], []} -> erlang:error(no_module_measured);
+            _ -> ok
+        end,
+        {ok, _} = application:ensure_all_started(list_to_atom(Package)),
         Result = eunit:test([list_to_atom(T) || T <- Tests], [{scale_timeouts, 10}]),
         Lines = [io_lib:format("~s\t~B\t~B~n", [M, Line, Calls])
                  || M <- Modules,

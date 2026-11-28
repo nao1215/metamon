@@ -77,6 +77,8 @@ pub type MutationError {
   TimeoutCommandMissing
   ErlMissing
   CoverageNeedsNewerGleam(version: String)
+  NoPackageName
+  CoverageFailed(status: Int)
   UnmutatedTestsFailed(output: String)
   BaselineNeedsFullRun
 }
@@ -260,8 +262,13 @@ pub fn describe(error: MutationError) -> String {
       "neither timeout nor gtimeout is on PATH (install GNU coreutils)"
     ErlMissing -> "erl is not on PATH: coverage runs on the Erlang target"
     CoverageNeedsNewerGleam(version:) ->
-      "coverage needs Gleam 1.19 or later, the first to keep the line numbers of the Gleam source in the BEAM files; this is "
+      "coverage needs Gleam 1.19 or later, the first to keep the line numbers of the Gleam source in the BEAM files; gleam --version printed: "
       <> version
+    NoPackageName -> "gleam.toml has no name line"
+    CoverageFailed(status:) ->
+      "measuring the coverage failed (erl exited with "
+      <> int.to_string(status)
+      <> "); build/coverage/lcov.info was left as it was"
     UnmutatedTestsFailed(output:) ->
       "the tests fail before any mutation:\n" <> output
     BaselineNeedsFullRun ->
@@ -1065,11 +1072,15 @@ fn coverage() -> Result(Int, MutationError) {
   )
   let version = case run_command("gleam", ["--version"], in: ".", with: []) {
     Ok(#(0, output)) -> string.trim(output)
-    _ -> "an unknown version"
+    _ -> "nothing"
   }
-  use <- bool.guard(
-    !keeps_gleam_lines(version),
-    Error(CoverageNeedsNewerGleam(version)),
+  use _ <- result.try(check_gleam_version(version))
+  use manifest <- result.try(
+    simplifile.read("gleam.toml")
+    |> result.map_error(FailedToReadFile("gleam.toml", _)),
+  )
+  use package <- result.try(
+    package_name(manifest) |> result.replace_error(NoPackageName),
   )
   use sources <- result.try(source_files())
   use tests <- result.try(
@@ -1082,16 +1093,18 @@ fn coverage() -> Result(Int, MutationError) {
   )
   use _ <- result.try(write_file(counts_path, ""))
   let sources = list.filter(sources, string.ends_with(_, ".gleam"))
-  let measured = list.map(sources, module_name(_, in: "src/"))
   use contents <- result.try(read_sources(sources))
-  use skipped <- result.try(
+  // glance is only used to find the lines to skip, so a module it cannot
+  // parse is still measured, with none of its lines skipped.
+  let skipped =
     dict.to_list(contents)
-    |> list.try_map(fn(entry) {
-      external_lines(entry.1)
-      |> result.map(fn(lines) { #(module_name(entry.0, in: "src/"), lines) })
-      |> result.replace_error(FailedToParseModule(entry.0))
-    }),
-  )
+    |> list.map(fn(entry) {
+      #(
+        module_name(entry.0, in: "src/"),
+        external_lines(entry.1) |> result.unwrap([]),
+      )
+    })
+    |> dict.from_list
   let paths =
     packages
     |> list.sort(string.compare)
@@ -1100,37 +1113,50 @@ fn coverage() -> Result(Int, MutationError) {
     list.flatten([
       ["-noshell", "-pa", ..paths],
       ["-eval", "metamon_ffi:measure_coverage().", "-extra", counts_path],
-      measured,
+      [package, ..list.map(sources, module_name(_, in: "src/"))],
       ["--", ..list.filter_map(tests, test_module)],
     ])
-  use #(status, output) <- result.try(
-    run_command(erl, arguments, in: ".", with: [])
-    |> result.replace_error(ErlMissing),
+  use status <- result.try(
+    run_inheriting(erl, arguments) |> result.replace_error(ErlMissing),
   )
-  io.print(output)
+  use <- bool.guard(status > 1, Error(CoverageFailed(status)))
   use counts <- result.try(
     simplifile.read(counts_path)
     |> result.map_error(FailedToReadFile(counts_path, _)),
   )
-  let #(lcov, summary) = coverage_report(counts, dict.from_list(skipped))
+  let #(lcov, summary) = coverage_report(counts, skipped)
   use _ <- result.try(write_file(lcov_path, lcov))
   io.println(summary)
-  case status {
-    0 -> Ok(0)
-    _ -> Ok(1)
-  }
+  Ok(status)
 }
 
-/// Whether `gleam --version` printed 1.19 or later. Older compilers wrote
-/// Erlang source, so `cover` reported the lines of that source instead.
-pub fn keeps_gleam_lines(version: String) -> Bool {
+/// The value of the `name` line of a `gleam.toml`.
+pub fn package_name(manifest: String) -> Result(String, Nil) {
+  string.split(manifest, "\n")
+  |> list.find_map(fn(line) {
+    case string.split_once(string.trim(line), "=") {
+      Ok(#(key, value)) ->
+        case string.trim(key), string.trim(value) {
+          "name", "\"" <> rest -> string.split_once(rest, "\"")
+          _, _ -> Error(Nil)
+        }
+      Error(Nil) -> Error(Nil)
+    }
+  })
+  |> result.map(fn(pair) { pair.0 })
+}
+
+/// Fails unless `gleam --version` printed 1.19 or later. Older compilers
+/// wrote Erlang source, so `cover` reported the lines of that source instead.
+pub fn check_gleam_version(version: String) -> Result(Nil, MutationError) {
   let numbers =
     string.replace(version, "gleam ", "")
     |> string.split(".")
     |> list.map(int.parse)
   case numbers {
-    [Ok(major), Ok(minor), ..] -> major > 1 || major == 1 && minor >= 19
-    _ -> False
+    [Ok(major), Ok(minor), ..] if major > 1 || major == 1 && minor >= 19 ->
+      Ok(Nil)
+    _ -> Error(CoverageNeedsNewerGleam(version))
   }
 }
 
@@ -1281,6 +1307,15 @@ fn run_command(
   in directory: String,
   with environment: List(#(String, String)),
 ) -> Result(#(Int, String), Nil)
+
+/// The exit status of a command run in the current directory, which writes
+/// to the standard output and error of this process.
+@external(erlang, "metamon_ffi", "run_inheriting")
+@external(javascript, "../../metamon_ffi.mjs", "run_inheriting")
+fn run_inheriting(
+  executable: String,
+  arguments: List(String),
+) -> Result(Int, Nil)
 
 @external(erlang, "metamon_ffi", "getenv")
 @external(javascript, "../../metamon_ffi.mjs", "getenv")

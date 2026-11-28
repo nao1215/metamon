@@ -107,3 +107,7 @@ export function find_executable(_name) {
 export function run_command(_executable, _arguments, _directory, _environment) {
   return new ErrorResult(undefined);
 }
+
+export function run_inheriting(_executable, _arguments) {
+  return new ErrorResult(undefined);
+}
