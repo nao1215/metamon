@@ -56,6 +56,8 @@ coverage:
 
 It needs Gleam 1.19 or later: older compilers wrote Erlang source, and `cover` reported the lines of that source instead. Only the Erlang target is measured. Code that runs only on JavaScript, an `@external` function's Erlang or JavaScript module, and a program that a test starts in another process, such as an escript run by an end-to-end test, are not counted. The line that declares a function with an Erlang `@external` is left out, because a call to it goes straight to the Erlang function.
 
+Measured code runs several times slower, so each test gets 500 seconds instead of the 50 that `gleam test` gives it.
+
 ## On pull requests
 
 [`.github/workflows/mutation.yml`](https://github.com/nao1215/metamon/blob/main/.github/workflows/mutation.yml) in this repository mutates the modules a pull request or push changes, runs `gate`, and mutates every module once a week. It can be copied as is.
