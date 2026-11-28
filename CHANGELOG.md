@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-28
+
 ### Added
 
 - `coverage --e2e COMMAND` adds the lines that an end-to-end suite reaches. The package is compiled once with its lines counted, and the command runs with `METAMON_COVERAGE_ESCRIPT` set to an escript that runs the program from those modules; each run writes its counts before it exits.
