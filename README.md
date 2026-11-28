@@ -1,6 +1,7 @@
 # metamon
 
 [![CI](https://github.com/nao1215/metamon/actions/workflows/ci.yml/badge.svg)](https://github.com/nao1215/metamon/actions/workflows/ci.yml)
+![Coverage](https://raw.githubusercontent.com/nao1215/octocovs-central-repo/main/badges/nao1215/metamon/coverage.svg)
 [![Gitleaks](https://github.com/nao1215/metamon/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/nao1215/metamon/actions/workflows/gitleaks.yml)
 [![Trivy](https://github.com/nao1215/metamon/actions/workflows/trivy.yml/badge.svg)](https://github.com/nao1215/metamon/actions/workflows/trivy.yml)
 [![OSV-Scanner](https://github.com/nao1215/metamon/actions/workflows/osv-scan.yml/badge.svg)](https://github.com/nao1215/metamon/actions/workflows/osv-scan.yml)

@@ -22,6 +22,10 @@ metamon tests itself with metamon. `metamon_self_property_test.gleam` runs prope
 
 `.github/workflows/nightly-property.yml` runs the whole suite ten times with `METAMON_RUNS_MULTIPLIER=10`, each pass with a new seed. A failure report prints its seed, so the case can be replayed with `Config(..default_config(), seed: Some(seed))` and kept as a regression test.
 
+## Coverage
+
+`gleam run -m metamon/mutation -- coverage` (`just coverage`) runs the tests on the Erlang target with every module under `src/` measured and writes `build/coverage/lcov.info`; `.github/workflows/coverage.yml` reports it with octocov on pull requests and main.
+
 ## Mutation testing
 
 `gleam run -m metamon/mutation` (`src/metamon/mutation.gleam`) mutates every module under `src/`, including itself: `==` and `!=` swapped, `<` and `<=`, `>` and `>=` moved across the boundary, `&&` and `||` swapped, `!` dropped, `True` and `False` swapped, and the arithmetic operators swapped, for integers and floats. `.github/workflows/mutation.yml` mutates the modules a pull request changes and fails on a survivor that `doc/mutation/baseline.json` does not list; the weekly run mutates every module. The score is (killed + timed out) / (killed + timed out + lived). `test/mutation_test.gleam` applies every mutant of every module here and checks that glance still parses the result.
