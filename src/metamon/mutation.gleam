@@ -7,6 +7,7 @@
 //// gleam run -m metamon/mutation -- run --workers 8
 //// gleam run -m metamon/mutation -- gate
 //// gleam run -m metamon/mutation -- coverage
+//// gleam run -m metamon/mutation -- coverage --e2e 'just e2e'
 //// ```
 
 import gleam/io
