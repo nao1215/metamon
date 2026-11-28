@@ -1,5 +1,5 @@
 name = "metamon"
-version = "0.20.1"
+version = "0.21.0"
 description = "Property-based, metamorphic and mutation testing for Gleam"
 licences = ["MIT"]
 repository = { type = "github", user = "nao1215", repo = "metamon" }
