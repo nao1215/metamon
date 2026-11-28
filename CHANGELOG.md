@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - `gleam run -m metamon/mutation -- coverage` builds the project with `gleam build --target erlang` before it measures. In a project that depends on metamon, `gleam run -m metamon/mutation` compiles only the dependencies, so in a fresh checkout 0.20.0 found none of the project's modules and stopped with `no_module_measured`.
+- The coverage run gives each test 500 seconds instead of 50. Code measured by `cover` runs several times slower, and a packkit test that passes `gleam test` timed out.
 
 ## [0.20.0] - 2026-11-28
 

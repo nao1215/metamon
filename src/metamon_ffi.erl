@@ -235,7 +235,11 @@ measure_coverage() ->
             _ -> ok
         end,
         {ok, _} = application:ensure_all_started(list_to_atom(Package)),
-        Result = eunit:test([list_to_atom(T) || T <- Tests], [{scale_timeouts, 10}]),
+        %% gleeunit scales eunit's 5 s timeout by 10. Code measured by cover
+        %% runs several times slower, and a test with a tight loop (packkit's
+        %% 7z key derivation) passed `gleam test` but ran past 50 s here, so
+        %% the scale is ten times larger.
+        Result = eunit:test([list_to_atom(T) || T <- Tests], [{scale_timeouts, 100}]),
         Lines = [io_lib:format("~s\t~B\t~B~n", [M, Line, Calls])
                  || M <- Modules,
                     {ok, Counts} <- [cover:analyse(M, calls, line)],
