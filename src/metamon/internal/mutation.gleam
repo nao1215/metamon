@@ -1,6 +1,8 @@
 //// Runs the mutants of a project, records the results and compares them with
 //// a baseline. See `metamon/mutation` for the commands.
 
+import glance
+import gleam/bit_array
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
@@ -27,6 +29,12 @@ const end_marker: String = "<!-- mutation:end -->"
 
 const work_root: String = "build/mutation/work"
 
+const counts_path: String = "build/coverage/counts.tsv"
+
+const lcov_path: String = "build/coverage/lcov.info"
+
+const erlang_build: String = "build/dev/erlang"
+
 /// A survivor is run this many more times before it counts, because property
 /// tests draw a new seed on each run.
 const retries: Int = 2
@@ -46,6 +54,7 @@ pub type Command {
   Gate
   Baseline
   DocCheck
+  Coverage
 }
 
 /// The mutants a run covers, so that CI can split a long run over several
@@ -66,6 +75,10 @@ pub type MutationError {
   NotAResultsFile(path: String)
   CannotMerge(reason: MergeError)
   TimeoutCommandMissing
+  ErlMissing
+  CoverageNeedsNewerGleam(version: String)
+  NoPackageName
+  CoverageFailed(status: Int)
   UnmutatedTestsFailed(output: String)
   BaselineNeedsFullRun
 }
@@ -120,7 +133,10 @@ pub const usage: String =
       between <!-- mutation:start --> and <!-- mutation:end --> in
       doc/testing.md.
   doc-check
-      Fail when the table in doc/testing.md does not match the baseline."
+      Fail when the table in doc/testing.md does not match the baseline.
+  coverage
+      Run the tests with every module under src/ measured and write the
+      lines they reach to build/coverage/lcov.info."
 
 /// Reads the command line. `Error(Nil)` means the usage should be printed.
 pub fn parse_arguments(arguments: List(String)) -> Result(Command, Nil) {
@@ -146,6 +162,7 @@ pub fn parse_arguments(arguments: List(String)) -> Result(Command, Nil) {
     ["gate"] -> Ok(Gate)
     ["baseline"] -> Ok(Baseline)
     ["doc-check"] -> Ok(DocCheck)
+    ["coverage"] -> Ok(Coverage)
     _ -> Error(Nil)
   }
 }
@@ -225,6 +242,7 @@ pub fn execute(command: Command) -> Result(Int, MutationError) {
     Gate -> gate()
     Baseline -> record_baseline()
     DocCheck -> doc_check()
+    Coverage -> coverage()
   }
 }
 
@@ -242,6 +260,15 @@ pub fn describe(error: MutationError) -> String {
       "cannot merge the results: " <> describe_merge_error(reason)
     TimeoutCommandMissing ->
       "neither timeout nor gtimeout is on PATH (install GNU coreutils)"
+    ErlMissing -> "erl is not on PATH: coverage runs on the Erlang target"
+    CoverageNeedsNewerGleam(version:) ->
+      "coverage needs Gleam 1.19 or later, the first to keep the line numbers of the Gleam source in the BEAM files; gleam --version printed: "
+      <> version
+    NoPackageName -> "gleam.toml has no name line"
+    CoverageFailed(status:) ->
+      "measuring the coverage failed (erl exited with "
+      <> int.to_string(status)
+      <> "); build/coverage/lcov.info was left as it was"
     UnmutatedTestsFailed(output:) ->
       "the tests fail before any mutation:\n" <> output
     BaselineNeedsFullRun ->
@@ -768,10 +795,15 @@ pub fn summarise(rows: List(Row)) -> Summary {
 /// Mutants that did not compile are left out.
 pub fn score(summary: Summary) -> String {
   let detected = summary.killed + summary.timed_out
-  case detected + summary.lived {
+  percent(detected, of: detected + summary.lived)
+}
+
+/// `part` of `whole` to a tenth of a percent, and 100.0% when `whole` is 0.
+fn percent(part: Int, of whole: Int) -> String {
+  case whole {
     0 -> "100.0%"
-    executed -> {
-      let tenths = { detected * 1000 + executed / 2 } / executed
+    _ -> {
+      let tenths = { part * 1000 + whole / 2 } / whole
       int.to_string(tenths / 10) <> "." <> int.to_string(tenths % 10) <> "%"
     }
   }
@@ -1029,6 +1061,228 @@ pub fn render_document(text: String, rows: List(Row)) -> Result(String, Nil) {
   head <> start_marker <> "\n" <> table(rows) <> "\n" <> end_marker <> tail
 }
 
+// Line coverage --------------------------------------------------------------
+
+/// Runs the tests in a fresh `erl` with the modules under `src/` measured by
+/// Erlang's `cover`, then writes the counts as LCOV. The line numbers `cover`
+/// reports are the lines of the Gleam source.
+fn coverage() -> Result(Int, MutationError) {
+  use erl <- result.try(
+    find_executable("erl") |> result.replace_error(ErlMissing),
+  )
+  let version = case run_command("gleam", ["--version"], in: ".", with: []) {
+    Ok(#(0, output)) -> string.trim(output)
+    _ -> "nothing"
+  }
+  use _ <- result.try(check_gleam_version(version))
+  use manifest <- result.try(
+    simplifile.read("gleam.toml")
+    |> result.map_error(FailedToReadFile("gleam.toml", _)),
+  )
+  use package <- result.try(
+    package_name(manifest) |> result.replace_error(NoPackageName),
+  )
+  use sources <- result.try(source_files())
+  use tests <- result.try(
+    simplifile.get_files("test")
+    |> result.map_error(FailedToReadFile("test", _)),
+  )
+  use packages <- result.try(
+    simplifile.read_directory(erlang_build)
+    |> result.map_error(FailedToReadFile(erlang_build, _)),
+  )
+  use _ <- result.try(write_file(counts_path, ""))
+  let sources = list.filter(sources, string.ends_with(_, ".gleam"))
+  use contents <- result.try(read_sources(sources))
+  // glance is only used to find the lines to skip, so a module it cannot
+  // parse is still measured, with none of its lines skipped.
+  let skipped =
+    dict.to_list(contents)
+    |> list.map(fn(entry) {
+      #(
+        module_name(entry.0, in: "src/"),
+        external_lines(entry.1) |> result.unwrap([]),
+      )
+    })
+    |> dict.from_list
+  let paths =
+    packages
+    |> list.sort(string.compare)
+    |> list.map(fn(package) { erlang_build <> "/" <> package <> "/ebin" })
+  let arguments =
+    list.flatten([
+      ["-noshell", "-pa", ..paths],
+      ["-eval", "metamon_ffi:measure_coverage().", "-extra", counts_path],
+      [package, ..list.map(sources, module_name(_, in: "src/"))],
+      ["--", ..list.filter_map(tests, test_module)],
+    ])
+  use status <- result.try(
+    run_inheriting(erl, arguments) |> result.replace_error(ErlMissing),
+  )
+  use status <- result.try(case status {
+    0 | 1 -> Ok(status)
+    _ -> Error(CoverageFailed(status))
+  })
+  use counts <- result.try(
+    simplifile.read(counts_path)
+    |> result.map_error(FailedToReadFile(counts_path, _)),
+  )
+  let #(lcov, summary) = coverage_report(counts, skipped)
+  use _ <- result.try(write_file(lcov_path, lcov))
+  io.println(summary)
+  Ok(status)
+}
+
+/// The value of the `name` line of a `gleam.toml`.
+pub fn package_name(manifest: String) -> Result(String, Nil) {
+  string.split(manifest, "\n")
+  |> list.find_map(fn(line) {
+    case string.split_once(string.trim(line), "=") {
+      Ok(#(key, value)) ->
+        case string.trim(key), string.trim(value) {
+          "name", "\"" <> rest -> string.split_once(rest, "\"")
+          _, _ -> Error(Nil)
+        }
+      Error(Nil) -> Error(Nil)
+    }
+  })
+  |> result.map(fn(pair) { pair.0 })
+}
+
+/// Fails unless `gleam --version` printed 1.19 or later. Older compilers
+/// wrote Erlang source, so `cover` reported the lines of that source instead.
+pub fn check_gleam_version(version: String) -> Result(Nil, MutationError) {
+  let numbers =
+    string.replace(version, "gleam ", "")
+    |> string.split(".")
+    |> list.map(int.parse)
+  case numbers {
+    [Ok(major), Ok(minor), ..] if major > 1 || major == 1 && minor >= 19 ->
+      Ok(Nil)
+    _ -> Error(CoverageNeedsNewerGleam(version))
+  }
+}
+
+/// The Erlang module name of a Gleam file under `root`:
+/// `src/a/b.gleam` in `src/` is `a@b`.
+fn module_name(path: String, in root: String) -> String {
+  path
+  |> string.drop_start(string.length(root))
+  |> string.drop_end(string.length(".gleam"))
+  |> string.replace("/", "@")
+}
+
+/// The modules gleeunit runs: every Gleam module under `test/`, and every
+/// Erlang module by its file name.
+pub fn test_module(path: String) -> Result(String, Nil) {
+  case string.ends_with(path, ".gleam"), string.ends_with(path, ".erl") {
+    True, _ -> Ok(module_name(path, in: "test/"))
+    _, True ->
+      string.split(path, "/")
+      |> list.last
+      |> result.map(string.drop_end(_, string.length(".erl")))
+    _, _ -> Error(Nil)
+  }
+}
+
+/// The lines that declare a function implemented in Erlang. A call to one
+/// goes straight to the Erlang function, so `cover` reports its line as never
+/// reached.
+pub fn external_lines(source: String) -> Result(List(Int), glance.Error) {
+  use parsed <- result.map(glance.module(source))
+  let bytes = bit_array.from_string(source)
+  list.filter_map(parsed.functions, fn(definition) {
+    let is_erlang =
+      list.any(definition.attributes, fn(attribute) {
+        case attribute {
+          glance.Attribute(
+            name: "external",
+            arguments: [glance.Variable(name: "erlang", ..), ..],
+          ) -> True
+          _ -> False
+        }
+      })
+    use <- bool.guard(!is_erlang, Error(Nil))
+    bit_array.slice(bytes, 0, definition.definition.location.start)
+    |> result.try(bit_array.to_string)
+    |> result.map(fn(before) { list.length(string.split(before, "\n")) })
+  })
+  |> list.sort(int.compare)
+}
+
+/// How many times the tests reached one line of a module.
+type Count {
+  Count(module: String, line: Int, calls: Int)
+}
+
+/// The LCOV file and a summary line for the counts that
+/// `metamon_ffi:measure_coverage/0` writes, one `module<TAB>line<TAB>calls`
+/// per line. The lines in `skipped`, by module, are left out.
+pub fn coverage_report(
+  counts: String,
+  skipped: Dict(String, List(Int)),
+) -> #(String, String) {
+  let by_module =
+    string.split(counts, "\n")
+    |> list.filter_map(parse_count)
+    |> list.filter(fn(count) {
+      let lines = dict.get(skipped, count.module) |> result.unwrap([])
+      !list.contains(lines, count.line)
+    })
+    |> list.group(fn(count) { count.module })
+    |> dict.to_list
+    |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
+    |> list.map(fn(entry) {
+      #(entry.0, list.sort(entry.1, fn(a, b) { int.compare(a.line, b.line) }))
+    })
+  let all = list.flat_map(by_module, fn(entry) { entry.1 })
+  let reached = list.count(all, fn(count) { count.calls > 0 })
+  #(
+    string.concat(
+      list.map(by_module, fn(entry) { lcov_record(entry.0, entry.1) }),
+    ),
+    "line coverage "
+      <> percent(reached, of: list.length(all))
+      <> ": "
+      <> int.to_string(reached)
+      <> " of "
+      <> int.to_string(list.length(all))
+      <> " lines reached",
+  )
+}
+
+fn parse_count(line: String) -> Result(Count, Nil) {
+  case string.split(line, "\t") {
+    [module, line, calls] -> {
+      use line <- result.try(int.parse(line))
+      use calls <- result.map(int.parse(calls))
+      Count(module:, line:, calls:)
+    }
+    _ -> Error(Nil)
+  }
+}
+
+/// The LCOV record of `module`, whose counts are sorted by line.
+fn lcov_record(module: String, counts: List(Count)) -> String {
+  let data =
+    list.map(counts, fn(count) {
+      "DA:"
+      <> int.to_string(count.line)
+      <> ","
+      <> int.to_string(count.calls)
+      <> "\n"
+    })
+  "SF:src/"
+  <> string.replace(module, "@", "/")
+  <> ".gleam\n"
+  <> string.concat(data)
+  <> "LF:"
+  <> int.to_string(list.length(counts))
+  <> "\nLH:"
+  <> int.to_string(list.count(counts, fn(count) { count.calls > 0 }))
+  <> "\nend_of_record\n"
+}
+
 // FFI ------------------------------------------------------------------------
 
 /// Runs every item in its own Erlang process. Other targets run them in turn.
@@ -1056,6 +1310,15 @@ fn run_command(
   in directory: String,
   with environment: List(#(String, String)),
 ) -> Result(#(Int, String), Nil)
+
+/// The exit status of a command run in the current directory, which writes
+/// to the standard output and error of this process.
+@external(erlang, "metamon_ffi", "run_inheriting")
+@external(javascript, "../../metamon_ffi.mjs", "run_inheriting")
+fn run_inheriting(
+  executable: String,
+  arguments: List(String),
+) -> Result(Int, Nil)
 
 @external(erlang, "metamon_ffi", "getenv")
 @external(javascript, "../../metamon_ffi.mjs", "getenv")

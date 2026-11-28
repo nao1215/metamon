@@ -6,6 +6,7 @@
 //// ```sh
 //// gleam run -m metamon/mutation -- run --workers 8
 //// gleam run -m metamon/mutation -- gate
+//// gleam run -m metamon/mutation -- coverage
 //// ```
 
 import gleam/io
@@ -13,7 +14,7 @@ import metamon/internal/mutation
 
 /// Runs the command given after `--`, printing the usage when there is none
 /// or it is not known. Exits with 0 on success, 1 when `gate` or `doc-check`
-/// fails and 2 on a usage or file error.
+/// fails or a test fails under `coverage`, and 2 on a usage or file error.
 pub fn main() -> Nil {
   let code = case mutation.parse_arguments(plain_arguments()) {
     Error(Nil) -> {
