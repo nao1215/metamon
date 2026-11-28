@@ -78,6 +78,7 @@ pub type MutationError {
   ErlMissing
   CoverageNeedsNewerGleam(version: String)
   NoPackageName
+  CoverageBuildFailed
   CoverageFailed(status: Int)
   UnmutatedTestsFailed(output: String)
   BaselineNeedsFullRun
@@ -265,6 +266,8 @@ pub fn describe(error: MutationError) -> String {
       "coverage needs Gleam 1.19 or later, the first to keep the line numbers of the Gleam source in the BEAM files; gleam --version printed: "
       <> version
     NoPackageName -> "gleam.toml has no name line"
+    CoverageBuildFailed ->
+      "gleam build --target erlang failed, so there was nothing to measure"
     CoverageFailed(status:) ->
       "measuring the coverage failed (erl exited with "
       <> int.to_string(status)
@@ -1081,6 +1084,15 @@ fn coverage() -> Result(Int, MutationError) {
   )
   use package <- result.try(
     package_name(manifest) |> result.replace_error(NoPackageName),
+  )
+  // `gleam run -m metamon/mutation` in a project that depends on metamon
+  // compiles only the dependencies, so the project and its tests are built
+  // here before `cover` looks for their BEAM files.
+  use _ <- result.try(
+    case run_inheriting("gleam", ["build", "--target", "erlang"]) {
+      Ok(0) -> Ok(Nil)
+      _ -> Error(CoverageBuildFailed)
+    },
   )
   use sources <- result.try(source_files())
   use tests <- result.try(

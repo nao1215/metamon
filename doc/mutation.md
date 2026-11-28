@@ -45,7 +45,7 @@ Each copy is compiled with `gleam build` first, and then the test run has `+hmax
 
 ## Line coverage
 
-A mutant on a line that no test reaches always survives, so line coverage shows where the survivors will be before a long run. `coverage` measures it with Erlang's `cover` in a fresh `erl`: it measures every module under `src/`, starts the package's applications and runs every module under `test/` with eunit as `gleam test` does, and writes `build/coverage/lcov.info`. It exits with 1 when a test fails, and with 2, leaving `lcov.info` as it was, when the measuring fails. A module that `cover` cannot measure is named on standard error. The line numbers are those of the Gleam source, so the file works with any tool that reads LCOV, such as [octocov](https://github.com/k1LoW/octocov):
+A mutant on a line that no test reaches always survives, so line coverage shows where the survivors will be before a long run. `coverage` builds the project with `gleam build --target erlang` and measures it with Erlang's `cover` in a fresh `erl`: it measures every module under `src/`, starts the package's applications and runs every module under `test/` with eunit as `gleam test` does, and writes `build/coverage/lcov.info`. It exits with 1 when a test fails, and with 2, leaving `lcov.info` as it was, when the measuring fails. A module that `cover` cannot measure is named on standard error. The line numbers are those of the Gleam source, so the file works with any tool that reads LCOV, such as [octocov](https://github.com/k1LoW/octocov):
 
 ```yaml
 # .octocov.yml
