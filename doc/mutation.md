@@ -21,6 +21,7 @@ gleam run -m metamon/mutation -- merge FILE...
 gleam run -m metamon/mutation -- baseline
 gleam run -m metamon/mutation -- gate
 gleam run -m metamon/mutation -- doc-check
+gleam run -m metamon/mutation -- coverage
 ```
 
 - `run` mutates the given modules, or every module, in `N` copies of the project (default 4) and writes `build/mutation/results.json`. `--exclude` leaves a module out, such as a generated table.
@@ -30,6 +31,7 @@ gleam run -m metamon/mutation -- doc-check
 - `baseline` copies a run over every module that was not excluded to `doc/mutation/baseline.json`. When `doc/testing.md` has `<!-- mutation:start -->` and `<!-- mutation:end -->`, it also writes the table of killed and lived mutants per module between them.
 - `gate` exits with 1 when a mutant lives that the baseline does not list.
 - `doc-check` exits with 1 when the table in `doc/testing.md` does not match the baseline.
+- `coverage` runs the tests with every module under `src/` measured and writes the lines they reach to `build/coverage/lcov.info`. See [Line coverage](#line-coverage).
 
 The score is (killed + timed out) / (killed + timed out + lived); a mutant that does not compile is not counted.
 
@@ -40,6 +42,19 @@ Some survivors cannot be killed, because the change gives the same output (`x < 
 A survivor is run two more times and counts only when it lives every time, because property tests draw new inputs on each run. Each mutant may run for four times as long as the tests take without a mutation, and at least a minute; one that runs longer counts as killed.
 
 Each copy is compiled with `gleam build` first, and then the test run has `+hmax 33554432 +hmaxib true` added to `ERL_ZFLAGS`, so a process that grows past 256 MiB, binaries included, is killed and the mutant counts as killed. Without the limit, a mutant that makes a test allocate without end can fill the memory of a CI runner before the timeout ends it. A test process that recurses without end still grows to about 3.5 GB before the kill. The compiler runs without the limit, because it needs more than 256 MiB for a large module. If a test needs more than 256 MiB in one process, the run without a mutation fails and the output says so.
+
+## Line coverage
+
+A mutant on a line that no test reaches always survives, so line coverage shows where the survivors will be before a long run. `coverage` measures it with Erlang's `cover` in a fresh `erl`: it measures every module under `src/`, runs every module under `test/` with eunit as `gleam test` does, and writes `build/coverage/lcov.info`. It exits with 1 when a test fails. The line numbers are those of the Gleam source, so the file works with any tool that reads LCOV, such as [octocov](https://github.com/k1LoW/octocov):
+
+```yaml
+# .octocov.yml
+coverage:
+  paths:
+    - build/coverage/lcov.info
+```
+
+It needs Gleam 1.19 or later: older compilers wrote Erlang source, and `cover` reported the lines of that source instead. Only the Erlang target is measured. Code that runs only on JavaScript, an `@external` function's Erlang or JavaScript module, and a program that a test starts in another process, such as an escript run by an end-to-end test, are not counted. The line that declares a function with an Erlang `@external` is left out, because a call to it goes straight to the Erlang function.
 
 ## On pull requests
 

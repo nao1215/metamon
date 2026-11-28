@@ -18,7 +18,8 @@
     parallel_map/2,
     monotonic_milliseconds/0,
     find_executable/1,
-    run_command/4
+    run_command/4,
+    measure_coverage/0
 ]).
 
 now_microseconds() ->
@@ -192,4 +193,30 @@ keep_tail(Port, Head, Tail, Data, Dropped) ->
             collect_output(Port, Head, Kept, Dropped + Excess);
         _ ->
             collect_output(Port, Head, Joined, Dropped)
+    end.
+
+%% Run by `gleam run -m metamon/mutation -- coverage` in a fresh `erl`, so
+%% that a test cannot stop the command and the modules of the command are not
+%% replaced while it runs. The plain arguments are the file to write, the
+%% modules to measure, `--` and the test modules. Each line of the file is
+%% "module<TAB>line<TAB>calls". Halts with 0 when every test passes, 1 when
+%% one fails and 2 when the measuring itself fails.
+measure_coverage() ->
+    try
+        [Output | Rest] = init:get_plain_arguments(),
+        {Measured, ["--" | Tests]} = lists:splitwith(fun(A) -> A =/= "--" end, Rest),
+        cover:start(),
+        Modules = [M || {ok, M} <- [cover:compile_beam(list_to_atom(N)) || N <- Measured]],
+        Result = eunit:test([list_to_atom(T) || T <- Tests], [{scale_timeouts, 10}]),
+        Lines = [io_lib:format("~s\t~B\t~B~n", [M, Line, Calls])
+                 || M <- Modules,
+                    {ok, Counts} <- [cover:analyse(M, calls, line)],
+                    {{_, Line}, Calls} <- Counts,
+                    Line > 0],
+        ok = file:write_file(Output, Lines),
+        halt(case Result of ok -> 0; _ -> 1 end)
+    catch
+        Class:Reason:Stacktrace ->
+            io:format(standard_error, "~p~n", [{Class, Reason, Stacktrace}]),
+            halt(2)
     end.

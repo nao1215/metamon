@@ -3,6 +3,8 @@
 
 import glance
 import gleam/bit_array
+import gleam/bool
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/string
@@ -205,6 +207,7 @@ pub fn arguments_are_parsed_test() {
   assert mutation.parse_arguments(["gate"]) == Ok(mutation.Gate)
   assert mutation.parse_arguments(["baseline"]) == Ok(mutation.Baseline)
   assert mutation.parse_arguments(["doc-check"]) == Ok(mutation.DocCheck)
+  assert mutation.parse_arguments(["coverage"]) == Ok(mutation.Coverage)
 }
 
 pub fn bad_arguments_print_the_usage_test() {
@@ -224,6 +227,7 @@ pub fn bad_arguments_print_the_usage_test() {
       ["run", "--shard", "1"],
       ["run", "--shard", "a/b"],
       ["merge"],
+      ["coverage", "src/a.gleam"],
     ],
     fn(arguments) {
       assert mutation.parse_arguments(arguments) == Error(Nil)
@@ -694,4 +698,115 @@ pub fn the_document_check_compares_the_table_test() {
 fn workers_up_to(count: Int) -> List(Int) {
   int.range(from: 0, to: count, with: [], run: fn(acc, index) { [index, ..acc] })
   |> list.reverse
+}
+
+// Line coverage -------------------------------------------------------------
+
+pub fn test_modules_are_named_like_gleeunit_test() {
+  assert mutation.test_module("test/a_test.gleam") == Ok("a_test")
+  assert mutation.test_module("test/integration/b_test.gleam")
+    == Ok("integration@b_test")
+  assert mutation.test_module("test/support/c_ffi.erl") == Ok("c_ffi")
+  assert mutation.test_module("test/c_ffi.mjs") == Error(Nil)
+}
+
+pub fn counts_become_one_lcov_record_per_module_test() {
+  let counts = "b@c\t3\t0\na\t2\t5\nb@c\t1\t2\na\t1\t1\n"
+  assert mutation.coverage_report(counts, dict.new())
+    == #(
+      "SF:src/a.gleam
+DA:1,1
+DA:2,5
+LF:2
+LH:2
+end_of_record
+SF:src/b/c.gleam
+DA:1,2
+DA:3,0
+LF:2
+LH:1
+end_of_record
+",
+      "line coverage 75.0%: 3 of 4 lines reached",
+    )
+}
+
+pub fn skipped_lines_and_malformed_counts_are_left_out_test() {
+  let counts = "a\t1\t0\na\t2\t4\nb\t7\t0\nnot a count\na\tx\t1\n"
+  assert mutation.coverage_report(
+      counts,
+      dict.from_list([#("a", [1]), #("b", [7])]),
+    )
+    == #(
+      "SF:src/a.gleam\nDA:2,4\nLF:1\nLH:1\nend_of_record\n",
+      "line coverage 100.0%: 1 of 1 lines reached",
+    )
+}
+
+pub fn no_counts_make_an_empty_report_test() {
+  assert mutation.coverage_report("", dict.new())
+    == #("", "line coverage 100.0%: 0 of 0 lines reached")
+}
+
+pub fn only_erlang_externals_are_skipped_test() {
+  let source =
+    "import gleam/io
+
+@external(erlang, \"m_ffi\", \"put\")
+@external(javascript, \"./m_ffi.mjs\", \"put\")
+pub fn put(key: String) -> Nil
+
+@external(javascript, \"./m_ffi.mjs\", \"now\")
+pub fn now() -> Int {
+  0
+}
+
+/// Doc.
+@external(erlang, \"m_ffi\", \"map\")
+fn map(items: List(a)) -> List(a) {
+  items
+}
+"
+  assert mutation.external_lines(source) == Ok([5, 14])
+}
+
+pub fn gleam_1_19_and_later_keep_the_gleam_lines_test() {
+  assert mutation.keeps_gleam_lines("gleam 1.19.0")
+  assert mutation.keeps_gleam_lines("gleam 1.20.1")
+  assert mutation.keeps_gleam_lines("gleam 2.0.0")
+  assert !mutation.keeps_gleam_lines("gleam 1.18.1")
+  assert !mutation.keeps_gleam_lines("gleam 0.34.0")
+  assert !mutation.keeps_gleam_lines("an unknown version")
+}
+
+pub fn the_measuring_erl_reports_lines_of_the_gleam_source_test() {
+  use <- on_erlang
+  // The compiler that built this test run; older ones report Erlang lines.
+  let assert Ok(#(0, version)) =
+    run_command("gleam", ["--version"], in: ".", with: [])
+  use <- bool.guard(!mutation.keeps_gleam_lines(string.trim(version)), Nil)
+  let output = "build/coverage-test/counts.tsv"
+  let assert Ok(Nil) = simplifile.create_directory_all("build/coverage-test")
+  let assert Ok(packages) = simplifile.read_directory("build/dev/erlang")
+  let paths =
+    list.map(packages, fn(package) { "build/dev/erlang/" <> package <> "/ebin" })
+  let assert Ok(#(status, _)) =
+    run_command(
+      "erl",
+      list.flatten([
+        ["-noshell", "-pa", ..paths],
+        ["-eval", "metamon_ffi:measure_coverage().", "-extra", output],
+        ["metamon@internal@interval", "--", "range_test"],
+      ]),
+      in: ".",
+      with: [],
+    )
+  assert status == 0
+  let assert Ok(counts) = simplifile.read(output)
+  let #(_, summary) = mutation.coverage_report(counts, dict.new())
+  // The two branches of the first `case` in `new` in
+  // src/metamon/internal/interval.gleam are on lines 22 and 23.
+  assert string.contains(counts, "metamon@internal@interval\t22\t")
+  assert string.contains(counts, "metamon@internal@interval\t23\t")
+  assert string.starts_with(summary, "line coverage ")
 }
