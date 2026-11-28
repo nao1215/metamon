@@ -1204,13 +1204,22 @@ fn measure_e2e(
   use status <- result.try(
     run_inheriting(erl, arguments) |> result.replace_error(ErlMissing),
   )
-  use <- bool.guard(status != 0, Error(E2ePrepareFailed(status)))
+  use _ <- result.try(case status {
+    0 -> Ok(Nil)
+    _ -> Error(E2ePrepareFailed(status))
+  })
   use directory <- result.try(
     simplifile.current_directory()
     |> result.map_error(FailedToReadFile(".", _)),
   )
-  let escript = directory <> "/" <> e2e_path <> "/bin/" <> package
-  let passed = list.map(commands, run_e2e_command(_, escript))
+  let environment =
+    e2e_variable <> "=" <> directory <> "/" <> e2e_path <> "/bin/" <> package
+  let failures =
+    list.filter_map(commands, fn(command) {
+      run_inheriting("env", [environment, "sh", "-c", command])
+      |> e2e_failure(command, _)
+    })
+  list.each(failures, io.println_error)
   let counts_directory = e2e_path <> "/counts"
   use files <- result.try(
     simplifile.get_files(counts_directory)
@@ -1221,32 +1230,29 @@ fn measure_e2e(
       simplifile.read(file) |> result.map_error(FailedToReadFile(file, _))
     }),
   )
-  let status = case list.all(passed, fn(ok) { ok }) {
-    True -> 0
-    False -> 1
+  let status = case failures {
+    [] -> 0
+    _ -> 1
   }
   Ok(#(status, string.concat(counts)))
 }
 
-/// Runs `command` in `sh` with the escript in `METAMON_COVERAGE_ESCRIPT`, and
-/// says so when it fails.
-fn run_e2e_command(command: String, escript: String) -> Bool {
-  let environment = e2e_variable <> "=" <> escript
-  case run_inheriting("env", [environment, "sh", "-c", command]) {
-    Ok(0) -> True
-    Ok(status) -> {
-      io.println_error(
+/// The message for an `--e2e` command that `run_inheriting` ran with
+/// `status`, or `Error(Nil)` when it passed.
+pub fn e2e_failure(
+  command: String,
+  status: Result(Int, Nil),
+) -> Result(String, Nil) {
+  case status {
+    Ok(0) -> Error(Nil)
+    Ok(status) ->
+      Ok(
         "the --e2e command exited with "
         <> int.to_string(status)
         <> ": "
         <> command,
       )
-      False
-    }
-    Error(Nil) -> {
-      io.println_error("env is not on PATH, so --e2e cannot run: " <> command)
-      False
-    }
+    Error(Nil) -> Ok("env is not on PATH, so --e2e cannot run: " <> command)
   }
 }
 

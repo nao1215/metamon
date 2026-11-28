@@ -770,6 +770,14 @@ pub fn the_calls_of_a_line_in_several_runs_are_added_test() {
     )
 }
 
+pub fn an_e2e_command_fails_unless_it_exits_with_zero_test() {
+  assert mutation.e2e_failure("just e2e", Ok(0)) == Error(Nil)
+  assert mutation.e2e_failure("just e2e", Ok(3))
+    == Ok("the --e2e command exited with 3: just e2e")
+  assert mutation.e2e_failure("just e2e", Error(Nil))
+    == Ok("env is not on PATH, so --e2e cannot run: just e2e")
+}
+
 pub fn no_counts_make_an_empty_report_test() {
   assert mutation.coverage_report("", dict.new())
     == #("", "line coverage 100.0%: 0 of 0 lines reached")
